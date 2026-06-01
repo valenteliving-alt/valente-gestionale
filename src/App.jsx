@@ -279,7 +279,7 @@ const AiPanel = ({ onClose, proprieta, owners }) => {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), send(input))}
-          placeholder="Chiedi qualcosa..."
+          placeholder="Chiedi o carica 📎 un doc..."
           style={{ flex: 1, fontSize: 13 }}
           disabled={loading}
         />
