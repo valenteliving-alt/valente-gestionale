@@ -184,9 +184,6 @@ const AiPanel = ({ onClose, proprieta, owners }) => {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [pendingData, setPendingData] = useState(null);
-  const fileRef = useRef(null);
   const bottomRef = useRef(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
