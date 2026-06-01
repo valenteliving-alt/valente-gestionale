@@ -3,7 +3,7 @@ export default async (req) => {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env["ANTHROPIC_API_KEY"];
   if (!apiKey) {
     return new Response(JSON.stringify({ error: "API key non configurata" }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
