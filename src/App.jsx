@@ -141,6 +141,21 @@ button{font-family:'Poppins',sans-serif;cursor:pointer}
 .ai-btn:hover{background:var(--gold);transform:scale(1.05)}
 .ai-panel{position:fixed;bottom:0;right:0;width:420px;height:100vh;background:var(--cream);border-left:1px solid var(--gl);display:flex;flex-direction:column;z-index:600;animation:slideIn .3s ease}
 @keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--sw);z-index:100;background:var(--black);color:var(--white);display:flex;flex-direction:column;overflow-y:auto}
+.main{margin-left:var(--sw);flex:1;padding:32px;min-height:100vh;min-width:0}
+.topbar{display:none}
+.backdrop{display:none}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px}
+@media (max-width:768px){
+  .sidebar{transform:translateX(-100%);transition:transform .25s ease;width:min(82vw,300px);box-shadow:0 0 40px rgba(0,0,0,.45)}
+  .sidebar.open{transform:translateX(0)}
+  .main{margin-left:0;padding:16px;padding-top:64px}
+  .topbar{display:flex;position:fixed;top:0;left:0;right:0;height:52px;background:var(--black);color:var(--white);align-items:center;gap:14px;padding:0 16px;z-index:90}
+  .backdrop{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:95}
+  .ai-panel{width:100%;right:0}
+  .ai-btn{bottom:18px;right:18px;width:50px;height:50px;font-size:20px}
+  .fg{grid-template-columns:1fr}
+}
 `;
 
 const SB = ({ stato }) => <span className="pill" style={{ background: STATI_COLOR[stato] || "#888" }}>{stato || "—"}</span>;
@@ -151,7 +166,7 @@ const DR = ({ label, val }) => val ? (
     <span style={{ fontSize: 13, flex: 1, wordBreak: "break-all" }}>{val}</span>
   </div>
 ) : null;
-const FG = ({ children }) => <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 20px" }}>{children}</div>;
+const FG = ({ children }) => <div className="fg">{children}</div>;
 const FF = ({ label, span = 1, children }) => (
   <div style={{ gridColumn: `span ${span}` }}>
     <label style={{ display: "block", fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", marginBottom: 5 }}>{label}</label>
@@ -688,6 +703,7 @@ export default function App() {
   const [aiOpen, setAiOpen] = useState(false);
   const [propVista, setPropVista] = useState("griglia");
   const [propRaggr, setPropRaggr] = useState("provincia");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -729,8 +745,14 @@ export default function App() {
     <>
       <style>{CSS}</style>
       <div style={{ display: "flex", minHeight: "100vh" }}>
+        {/* Mobile top bar */}
+        <div className="topbar">
+          <button onClick={() => setSidebarOpen(true)} aria-label="Apri menu" style={{ background: "none", border: "none", color: "#fff", fontSize: 24, lineHeight: 1, padding: 4, cursor: "pointer" }}>☰</button>
+          <span style={{ fontFamily: "Playfair Display", fontSize: 16, fontWeight: 700 }}>Valente <span style={{ color: "var(--gold)" }}>Living</span></span>
+        </div>
+        {sidebarOpen && <div className="backdrop" onClick={() => setSidebarOpen(false)} />}
         {/* Sidebar */}
-        <aside style={{ width: "var(--sw)", background: "var(--black)", color: "var(--white)", display: "flex", flexDirection: "column", position: "fixed", top: 0, left: 0, bottom: 0, zIndex: 100 }}>
+        <aside className={"sidebar" + (sidebarOpen ? " open" : "")}>
           <div style={{ padding: "28px 20px 20px" }}>
             <span style={{ fontFamily: "Playfair Display", fontSize: 13, fontWeight: 700, letterSpacing: ".15em", color: "var(--gold)", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Valente</span>
             <span style={{ fontFamily: "Playfair Display", fontSize: 22, fontWeight: 700, lineHeight: 1, display: "block" }}>Living</span>
@@ -752,14 +774,14 @@ export default function App() {
           </div>
           <nav style={{ flex: 1, padding: "0 12px" }}>
             {navItems.map(item => (
-              <button key={item.id} onClick={() => { setView(item.id); setSearch(""); setFStato(""); setFContratto(""); setFGestore(""); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", background: view === item.id ? "rgba(214,156,49,.15)" : "transparent", border: view === item.id ? "1px solid rgba(214,156,49,.3)" : "1px solid transparent", color: view === item.id ? "var(--gold)" : "rgba(255,255,255,.6)", fontSize: 13, fontWeight: view === item.id ? 600 : 400, marginBottom: 4, transition: "all .2s", textAlign: "left" }}>
+              <button key={item.id} onClick={() => { setView(item.id); setSearch(""); setFStato(""); setFContratto(""); setFGestore(""); setSidebarOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", background: view === item.id ? "rgba(214,156,49,.15)" : "transparent", border: view === item.id ? "1px solid rgba(214,156,49,.3)" : "1px solid transparent", color: view === item.id ? "var(--gold)" : "rgba(255,255,255,.6)", fontSize: 13, fontWeight: view === item.id ? 600 : 400, marginBottom: 4, transition: "all .2s", textAlign: "left" }}>
                 <span>{item.icon}</span><span style={{ flex: 1 }}>{item.label}</span>
                 {item.count !== null && <span style={{ fontSize: 10, background: "rgba(255,255,255,.1)", padding: "1px 6px", borderRadius: 10 }}>{item.count}</span>}
               </button>
             ))}
           </nav>
           <div style={{ padding: "12px 20px", borderTop: "1px solid rgba(255,255,255,.08)" }}>
-            <button onClick={() => setAiOpen(true)} style={{ width: "100%", padding: "10px", background: "linear-gradient(135deg, #D69C31, #f0c84a)", border: "none", color: "var(--black)", fontSize: 12, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <button onClick={() => { setAiOpen(true); setSidebarOpen(false); }} style={{ width: "100%", padding: "10px", background: "linear-gradient(135deg, #D69C31, #f0c84a)", border: "none", color: "var(--black)", fontSize: 12, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               ✦ Assistente AI
             </button>
           </div>
@@ -769,7 +791,7 @@ export default function App() {
         </aside>
 
         {/* Main */}
-        <main style={{ marginLeft: "var(--sw)", flex: 1, padding: "32px", minHeight: "100vh" }}>
+        <main className="main">
           {loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
             view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} /> :
             view === "import" ? <ImportView proprieta={proprieta} owners={owners} onImport={load} /> :
