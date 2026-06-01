@@ -1,127 +1,68 @@
-exports.handler = async (event) => {
-  const headers = {
+const handler = async (event) => {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+
+  const CORS = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
   };
-
-  if (event.httpMethod === "OPTIONS") {
-    return { statusCode: 200, headers, body: "" };
-  }
-
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, headers, body: JSON.stringify({ error: "Method not allowed" }) };
-  }
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return { statusCode: 500, headers, body: JSON.stringify({ error: "API key mancante" }) };
-  }
 
   let body;
   try {
-    body = JSON.parse(event.body);
+    body = JSON.parse(event.body || "{}");
   } catch {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: "Body non valido" }) };
+    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Body non valido" }) };
   }
 
-  const { fileBase64, fileType, fileName, proprieta, proprietari } = body;
+  const { filename, mediaType, data, context } = body;
 
-  const systemPrompt = `Sei un assistente specializzato nell'analisi di documenti immobiliari italiani per Valente Living SRL.
-Il tuo compito è analizzare documenti (mandati, CIN, planimetrie, contratti, visure catastali) ed estrarre i dati rilevanti.
+  if (!data || !mediaType) {
+    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Documento mancante" }) };
+  }
 
-DEVI rispondere SOLO con un JSON valido nel seguente formato, senza testo aggiuntivo:
-{
-  "tipo_documento": "mandato|cin|visura_catastale|contratto|planimetria|altro",
-  "sommario": "breve descrizione del documento in italiano",
-  "dati_estratti": {
-    "nome_proprietario": null,
-    "cognome_proprietario": null,
-    "codice_fiscale": null,
-    "indirizzo": null,
-    "citta": null,
-    "provincia": null,
-    "cap": null,
-    "catasto_foglio": null,
-    "catasto_mappale": null,
-    "catasto_sub": null,
-    "categoria_catastale": null,
-    "cin": null,
-    "cir": null,
-    "commissione": null,
-    "commissione_iva_inclusa": null,
-    "posti_letto": null,
-    "camere": null,
-    "bagni": null,
-    "mq": null,
-    "data_inizio": null,
-    "email": null,
-    "telefono": null,
-    "pec": null,
-    "note": null
-  },
-  "proprieta_match": null,
-  "proprietario_match": null,
-  "confidenza": "alta|media|bassa",
-  "azioni_suggerite": ["lista di azioni da fare"]
-}
+  let block;
+  if (mediaType === "application/pdf") {
+    block = { type: "document", source: { type: "base64", media_type: "application/pdf", data } };
+  } else if (mediaType.indexOf("image/") === 0) {
+    block = { type: "image", source: { type: "base64", media_type: mediaType, data } };
+  } else {
+    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Formato non supportato. Carica un PDF o un'immagine (png, jpg, webp)." }) };
+  }
 
-Estrai tutti i dati che riesci a trovare. Per i campi non trovati metti null.
-Per proprieta_match e proprietario_match metti il nome della proprietà/proprietario se riesci ad abbinarlo con quelli esistenti.`;
+  const systemPrompt =
+    "Sei l'assistente AI di Valente Living SRL, societa di gestione affitti brevi. " +
+    "Analizza il documento allegato (di solito: contratti, mandati di gestione, moduli Alloggiati Web, visure catastali, documenti d'identita, bollette, planimetrie). " +
+    "Rispondi sempre in italiano, in modo chiaro e ordinato: indica di che tipo di documento si tratta ed estrai i dati chiave (nomi, codici fiscali, indirizzi, CIN, CIR, dati catastali, importi, date), elencandoli. " +
+    "Se mancano informazioni importanti, segnalalo. Hai accesso al database:\n" + (context || "");
 
-  const userMessage = `Analizza questo documento: ${fileName}
-
-PROPRIETÀ ESISTENTI NEL DATABASE:
-${proprieta?.map(p => `- ${p.nome} (${p.citta}) - ID: ${p.id}`).join('\n') || 'Nessuna'}
-
-PROPRIETARI ESISTENTI:
-${proprietari?.map(o => `- ${o.cognome} ${o.nome} CF: ${o.codice_fiscale || 'N/A'} - ID: ${o.id}`).join('\n') || 'Nessuno'}
-
-Estrai tutti i dati rilevanti dal documento.`;
+  const messages = [
+    {
+      role: "user",
+      content: [
+        block,
+        { type: "text", text: "Analizza questo documento" + (filename ? " (" + filename + ")" : "") + " ed estrai le informazioni utili per la gestione della proprieta." },
+      ],
+    },
+  ];
 
   try {
-    const messageContent = fileType === 'application/pdf' 
-      ? [
-          { type: "document", source: { type: "base64", media_type: "application/pdf", data: fileBase64 } },
-          { type: "text", text: userMessage }
-        ]
-      : [
-          { type: "image", source: { type: "base64", media_type: fileType, data: fileBase64 } },
-          { type: "text", text: userMessage }
-        ];
-
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "pdfs-2024-09-25"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 2000,
-        system: systemPrompt,
-        messages: [{ role: "user", content: messageContent }]
-      }),
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 2000, system: systemPrompt, messages }),
     });
-
-    const data = await response.json();
+    const result = await response.json();
     if (!response.ok) {
-      return { statusCode: response.status, headers, body: JSON.stringify({ error: data.error?.message || "Errore API" }) };
+      return { statusCode: response.status, headers: CORS, body: JSON.stringify({ error: result.error?.message || "Errore API" }) };
     }
-
-    let result;
-    try {
-      const text = data.content[0].text.replace(/```json|```/g, '').trim();
-      result = JSON.parse(text);
-    } catch {
-      result = { sommario: data.content[0].text, dati_estratti: {}, tipo_documento: "altro", confidenza: "bassa" };
-    }
-
-    return { statusCode: 200, headers, body: JSON.stringify(result) };
+    const text = (result.content || [])
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("\n")
+      .trim();
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ content: text || "Documento ricevuto ma non e stato estratto testo." }) };
   } catch (err) {
-    return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
+    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: err.message }) };
   }
 };
+
+exports.handler = handler;
