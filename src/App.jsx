@@ -628,6 +628,48 @@ const ImportView = ({ proprieta, owners, onImport }) => {
   );
 };
 
+// ── Vista Proprietà: tile compatte, riga elenco, raggruppamento per zona ───────
+const PROV_NOMI = { PT: "Pistoia", LU: "Lucca", LI: "Livorno", NA: "Napoli", SP: "La Spezia", BO: "Bologna", FI: "Firenze", SI: "Siena", RM: "Roma", TP: "Trapani", BZ: "Bolzano", PI: "Pisa", MS: "Massa-Carrara", PO: "Prato", AR: "Arezzo", GR: "Grosseto" };
+const areaLabel = (key, modo) => {
+  if (key === "—" || !key) return modo === "citta" ? "Senza città" : "Senza provincia";
+  return modo === "citta" ? key : (PROV_NOMI[key] || key);
+};
+
+const PropTile = ({ p, o, onClick }) => (
+  <div className="card fi" onClick={onClick} style={{ padding: 12 }}>
+    <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: STATI_COLOR[p.stato] || "#ccc" }} />
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+      <h3 style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.25 }}>{p.nome}</h3>
+      <SB stato={p.stato} />
+    </div>
+    <p style={{ fontSize: 11, color: "var(--gray)", marginBottom: 8 }}>{p.citta || "—"}{p.provincia ? ` (${p.provincia})` : ""}</p>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+      <span style={{ fontSize: 10, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o ? `${o.cognome} ${o.nome}` : "—"}</span>
+      <span style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
+        {p.commissione && <span className="tag" style={{ fontSize: 9, padding: "1px 5px" }}>{p.commissione}%</span>}
+        {!p.cin && p.stato === "attivo" && <span className="tag" style={{ fontSize: 9, padding: "1px 5px", color: "var(--red)", borderColor: "var(--red)" }}>No CIN</span>}
+      </span>
+    </div>
+  </div>
+);
+
+const PropRow = ({ p, o, onClick }) => (
+  <div className="fi" onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "var(--white)", border: "1px solid var(--gl)", cursor: "pointer" }}
+    onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--gold)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--gl)"; }}>
+    <span style={{ width: 9, height: 9, borderRadius: "50%", background: STATI_COLOR[p.stato] || "#ccc", flexShrink: 0 }} />
+    <div style={{ flex: 2, minWidth: 0 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.nome}</div>
+      <div style={{ fontSize: 11, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.indirizzo}{p.citta ? `, ${p.citta}` : ""}{p.provincia ? ` (${p.provincia})` : ""}</div>
+    </div>
+    <div style={{ flex: 1, minWidth: 0, fontSize: 11, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o ? `${o.cognome} ${o.nome}` : "—"}</div>
+    <div style={{ width: 50, textAlign: "right", fontSize: 11, color: "var(--gray)", flexShrink: 0 }}>{p.commissione ? `${p.commissione}%` : "—"}</div>
+    <div style={{ width: 130, textAlign: "right", flexShrink: 0, display: "flex", justifyContent: "flex-end", gap: 6, alignItems: "center" }}>
+      {!p.cin && p.stato === "attivo" && <span className="tag" style={{ fontSize: 9, color: "var(--red)", borderColor: "var(--red)" }}>No CIN</span>}
+      <SB stato={p.stato} />
+    </div>
+  </div>
+);
+
 // ── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [view, setView] = useState("proprieta");
@@ -644,6 +686,8 @@ export default function App() {
   const [detP, setDetP] = useState(null);
   const [detO, setDetO] = useState(null);
   const [aiOpen, setAiOpen] = useState(false);
+  const [propVista, setPropVista] = useState("griglia");
+  const [propRaggr, setPropRaggr] = useState("provincia");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -768,34 +812,47 @@ export default function App() {
                   <select value={fStato} onChange={e => setFStato(e.target.value)} style={{ width: 150 }}><option value="">Tutti gli stati</option>{STATI.map(s => <option key={s}>{s}</option>)}</select>
                   <select value={fContratto} onChange={e => setFContratto(e.target.value)} style={{ width: 140 }}><option value="">Tutti contratti</option>{CONTRATTI.map(c => <option key={c}>{c}</option>)}</select>
                   <select value={fGestore} onChange={e => setFGestore(e.target.value)} style={{ width: 130 }}><option value="">Tutti gestori</option>{GESTORI.map(g => <option key={g}>{g}</option>)}</select>
+                  <div style={{ display: "flex", gap: 6, marginLeft: "auto", alignItems: "stretch" }}>
+                    <button onClick={() => setPropVista("griglia")} title="Vista a griglia" style={{ padding: "0 14px", border: "1px solid var(--gl)", background: propVista === "griglia" ? "var(--black)" : "var(--white)", color: propVista === "griglia" ? "var(--white)" : "var(--gray)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Griglia</button>
+                    <button onClick={() => setPropVista("elenco")} title="Vista a elenco" style={{ padding: "0 14px", border: "1px solid var(--gl)", background: propVista === "elenco" ? "var(--black)" : "var(--white)", color: propVista === "elenco" ? "var(--white)" : "var(--gray)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Elenco</button>
+                    <select value={propRaggr} onChange={e => setPropRaggr(e.target.value)} style={{ width: 160 }}>
+                      <option value="provincia">Zona: per provincia</option>
+                      <option value="citta">Zona: per città</option>
+                      <option value="nessuno">Zona: nessuna</option>
+                    </select>
+                  </div>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
-                  {filtP.map(p => {
-                    const o = owners.find(x => x.id === p.proprietario_id);
-                    return (
-                      <div key={p.id} className="card fi" onClick={() => setDetP(p)}>
-                        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: STATI_COLOR[p.stato] || "#ccc" }} />
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-                          <h3 style={{ fontSize: 15, fontWeight: 600, flex: 1, paddingRight: 10 }}>{p.nome}</h3>
-                          <SB stato={p.stato} />
+                {(() => {
+                  if (filtP.length === 0) return <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessuna proprietà trovata.</div>;
+                  let groups;
+                  if (propRaggr === "nessuno") {
+                    groups = [{ key: "__all__", label: null, items: filtP }];
+                  } else {
+                    const map = {};
+                    filtP.forEach(p => { const k = (propRaggr === "citta" ? (p.citta || "") : (p.provincia || "")) || "—"; (map[k] = map[k] || []).push(p); });
+                    groups = Object.keys(map).sort((a, b) => map[b].length - map[a].length).map(k => ({ key: k, label: areaLabel(k, propRaggr), items: map[k] }));
+                  }
+                  return groups.map(g => (
+                    <div key={g.key} style={{ marginBottom: g.label ? 26 : 0 }}>
+                      {g.label && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                          <h2 style={{ fontSize: 13, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase" }}>{g.label}</h2>
+                          <span style={{ fontSize: 11, color: "var(--gray)" }}>{g.items.length}</span>
+                          <div style={{ flex: 1, height: 1, background: "var(--gl)" }} />
                         </div>
-                        <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 8 }}>{p.indirizzo}{p.citta ? `, ${p.citta}` : ""}{p.provincia ? ` (${p.provincia})` : ""}</p>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-                          <CT tipo={p.tipo_contratto} />
-                          {p.commissione && <span className="tag">{p.commissione}%</span>}
-                          {p.posti_letto && <span className="tag">🛏 {p.posti_letto}</span>}
-                          {!p.cin && p.stato === "attivo" && <span className="tag" style={{ color: "var(--red)", borderColor: "var(--red)" }}>No CIN</span>}
+                      )}
+                      {propVista === "griglia" ? (
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12 }}>
+                          {g.items.map(p => <PropTile key={p.id} p={p} o={owners.find(x => x.id === p.proprietario_id)} onClick={() => setDetP(p)} />)}
                         </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--cd)" }}>
-                          <span style={{ fontSize: 11, color: "var(--gray)" }}>{o ? `${o.cognome} ${o.nome}` : "—"}</span>
-                          {p.cin && <span style={{ fontSize: 10, fontFamily: "monospace", color: "var(--gold)" }}>{p.cin.slice(0, 14)}…</span>}
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {g.items.map(p => <PropRow key={p.id} p={p} o={owners.find(x => x.id === p.proprietario_id)} onClick={() => setDetP(p)} />)}
                         </div>
-                        {p.gestore_interno && <div style={{ position: "absolute", bottom: 12, right: 14, width: 26, height: 26, borderRadius: "50%", background: "var(--black)", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 9, fontWeight: 700, color: "var(--gold)" }}>{p.gestore_interno.slice(0, 2).toUpperCase()}</span></div>}
-                      </div>
-                    );
-                  })}
-                  {filtP.length === 0 && <div style={{ gridColumn: "1/-1", textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessuna proprietà trovata.</div>}
-                </div>
+                      )}
+                    </div>
+                  ));
+                })()}
               </>
             )
           }
