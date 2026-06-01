@@ -184,6 +184,9 @@ const AiPanel = ({ onClose, proprieta, owners }) => {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [pendingData, setPendingData] = useState(null);
+  const fileRef = useRef(null);
   const bottomRef = useRef(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
@@ -221,6 +224,57 @@ const AiPanel = ({ onClose, proprieta, owners }) => {
     setLoading(false);
   };
 
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || loading || analyzing) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      setMessages(m => [...m, { role: "assistant", content: "Il file supera i 10 MB. Caricane uno più piccolo." }]);
+      return;
+    }
+
+    setMessages(m => [...m, { role: "user", content: `📎 ${file.name}` }]);
+    setAnalyzing(true);
+
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result).split(",")[1]);
+        r.onerror = () => reject(new Error("lettura del file fallita"));
+        r.readAsDataURL(file);
+      });
+
+      const resp = await fetch("/api/analyze-document", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, mediaType: file.type, data: base64, context: buildContext() }),
+      });
+      const raw = await resp.text();
+
+      if (!resp.ok) {
+        setMessages(m => [...m, { role: "assistant", content: `DEBUG — la function ha risposto con stato ${resp.status}.\n\n${raw.slice(0, 600)}` }]);
+        setAnalyzing(false);
+        return;
+      }
+
+      let data = {};
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        setMessages(m => [...m, { role: "assistant", content: `DEBUG — risposta non in formato JSON:\n\n${raw.slice(0, 600)}` }]);
+        setAnalyzing(false);
+        return;
+      }
+
+      const reply = data.content || data.analysis || data.result || data.text || data.error || "Nessun risultato dall'analisi.";
+      setMessages(m => [...m, { role: "assistant", content: reply }]);
+    } catch (err) {
+      setMessages(m => [...m, { role: "assistant", content: `DEBUG — errore di rete: ${err.message}` }]);
+    }
+    setAnalyzing(false);
+  };
+
   return (
     <div className="ai-panel">
       {/* Header */}
@@ -252,7 +306,7 @@ const AiPanel = ({ onClose, proprieta, owners }) => {
         {messages.map((m, i) => (
           <div key={i} className={m.role === "user" ? "msg-user" : "msg-ai"}>{m.content}</div>
         ))}
-        {loading && (
+        {(loading || analyzing) && (
           <div className="typing">
             <div className="dot" /><div className="dot" /><div className="dot" />
           </div>
@@ -275,15 +329,20 @@ const AiPanel = ({ onClose, proprieta, owners }) => {
 
       {/* Input */}
       <div style={{ padding: "12px 16px", borderTop: "1px solid var(--gl)", flexShrink: 0, display: "flex", gap: 8 }}>
+        <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" style={{ display: "none" }} onChange={handleFile} />
+        <button onClick={() => fileRef.current?.click()} disabled={loading || analyzing} title="Allega un documento (PDF o immagine)"
+          style={{ padding: "8px 12px", background: "var(--white)", border: "1px solid var(--gl)", color: "var(--gray)", fontSize: 15, cursor: (loading || analyzing) ? "default" : "pointer" }}>
+          📎
+        </button>
         <input
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), send(input))}
           placeholder="Chiedi qualcosa..."
           style={{ flex: 1, fontSize: 13 }}
-          disabled={loading}
+          disabled={loading || analyzing}
         />
-        <button onClick={() => send(input)} disabled={loading || !input.trim()} style={{ padding: "8px 16px", background: input.trim() ? "var(--black)" : "var(--gl)", color: input.trim() ? "var(--white)" : "var(--gray)", border: "none", fontSize: 12, fontWeight: 600, transition: "all .2s", cursor: input.trim() ? "pointer" : "default" }}>
+        <button onClick={() => send(input)} disabled={loading || analyzing || !input.trim()} style={{ padding: "8px 16px", background: input.trim() ? "var(--black)" : "var(--gl)", color: input.trim() ? "var(--white)" : "var(--gray)", border: "none", fontSize: 12, fontWeight: 600, transition: "all .2s", cursor: input.trim() ? "pointer" : "default" }}>
           ↑
         </button>
       </div>
