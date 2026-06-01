@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 
 const SUPABASE_URL = "https://heabtbdmwbjlgujsisor.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
@@ -178,7 +178,20 @@ const Modal = ({ title, onClose, children }) => (
 );
 
 // ── AI Chat Panel ────────────────────────────────────────────────────────────
-const AiPanel = ({ onClose, proprieta, owners }) => {
+// Estrae l'eventuale blocco dati-proprietario dalla risposta dell'AI e separa il testo da mostrare
+function estraiAzioneProprietario(text) {
+  const m = text.match(/\[\[PROPRIETARIO\]\]([\s\S]*?)\[\[\/PROPRIETARIO\]\]/);
+  if (!m) return { testo: text.trim(), action: null };
+  const testo = text.replace(m[0], "").trim();
+  let data = null;
+  try { data = JSON.parse(m[1].trim()); } catch { data = null; }
+  if (data && (data.nome || data.cognome || data.codice_fiscale)) {
+    return { testo: testo || "Ho letto i dati del proprietario dal documento.", action: { kind: "crea_proprietario", data, status: "idle" } };
+  }
+  return { testo: testo || text.trim(), action: null };
+}
+
+const AiPanel = ({ onClose, proprieta, owners, onDataChanged }) => {
   const [messages, setMessages] = useState([
     { role: "assistant", content: "Ciao! Sono l'assistente AI di Valente Living. Posso aiutarti con informazioni sulle proprietà, scrivere email ai proprietari, spiegare procedure burocratiche e molto altro. Come posso aiutarti?" }
   ]);
@@ -268,11 +281,44 @@ const AiPanel = ({ onClose, proprieta, owners }) => {
       }
 
       const reply = data.content || data.analysis || data.result || data.text || data.error || "Nessun risultato dall'analisi.";
-      setMessages(m => [...m, { role: "assistant", content: reply }]);
+      const ext = estraiAzioneProprietario(reply);
+      setMessages(m => [...m, { role: "assistant", content: ext.testo, action: ext.action }]);
     } catch (err) {
       setMessages(m => [...m, { role: "assistant", content: `DEBUG — errore di rete: ${err.message}` }]);
     }
     setAnalyzing(false);
+  };
+
+  const eseguiAzione = async (idx) => {
+    const msg = messages[idx];
+    if (!msg || !msg.action || msg.action.status === "loading" || msg.action.status === "done") return;
+    setMessages(ms => ms.map((x, i) => i === idx ? { ...x, action: { ...x.action, status: "loading" } } : x));
+
+    try {
+      if (msg.action.kind === "crea_proprietario") {
+        const d = msg.action.data || {};
+        const cf = (d.codice_fiscale || "").trim().toUpperCase();
+        if (cf && owners.some(o => (o.codice_fiscale || "").trim().toUpperCase() === cf)) {
+          setMessages(ms => ms.map((x, i) => i === idx ? { ...x, action: { ...x.action, status: "idle" } } : x)
+            .concat({ role: "assistant", content: "Esiste già un proprietario con codice fiscale " + cf + ". Non l'ho ricreato per evitare doppioni." }));
+          return;
+        }
+        const payload = {
+          nome: d.nome || "", cognome: d.cognome || "", codice_fiscale: cf,
+          email: d.email || "", telefono: d.telefono || "", pec: d.pec || "",
+          indirizzo: d.indirizzo || "", citta: d.citta || "",
+        };
+        const res = await sb.post("proprietari", payload);
+        if (!res.ok) throw new Error("post fallita");
+        if (onDataChanged) await onDataChanged();
+        const nomeC = (payload.nome + " " + payload.cognome).trim() || "il proprietario";
+        setMessages(ms => ms.map((x, i) => i === idx ? { ...x, action: { ...x.action, status: "done" } } : x)
+          .concat({ role: "assistant", content: "Fatto! Ho creato " + nomeC + ". Lo trovi nella sezione Proprietari." }));
+      }
+    } catch (e) {
+      setMessages(ms => ms.map((x, i) => i === idx ? { ...x, action: { ...x.action, status: "idle" } } : x)
+        .concat({ role: "assistant", content: "Non sono riuscito a creare il proprietario. Riprova, oppure crealo a mano dalla sezione Proprietari." }));
+    }
   };
 
   return (
@@ -304,7 +350,23 @@ const AiPanel = ({ onClose, proprieta, owners }) => {
       {/* Messages */}
       <div style={{ flex: 1, overflow: "auto", padding: "16px", display: "flex", flexDirection: "column", gap: 12 }}>
         {messages.map((m, i) => (
-          <div key={i} className={m.role === "user" ? "msg-user" : "msg-ai"}>{m.content}</div>
+          <Fragment key={i}>
+            <div className={m.role === "user" ? "msg-user" : "msg-ai"}>{m.content}</div>
+            {m.action && m.action.kind === "crea_proprietario" && (
+              <div style={{ alignSelf: "flex-start", maxWidth: "85%" }}>
+                <button
+                  onClick={() => eseguiAzione(i)}
+                  disabled={m.action.status === "loading" || m.action.status === "done"}
+                  style={{ padding: "9px 14px", background: m.action.status === "done" ? "var(--gl)" : "var(--gold)", color: m.action.status === "done" ? "var(--gray)" : "#fff", border: "none", fontSize: 12, fontWeight: 600, cursor: m.action.status === "done" ? "default" : "pointer" }}>
+                  {m.action.status === "loading"
+                    ? "Creazione…"
+                    : m.action.status === "done"
+                    ? "✓ Proprietario creato"
+                    : "+ Crea proprietario" + ((m.action.data.nome || m.action.data.cognome) ? ": " + [m.action.data.nome, m.action.data.cognome].filter(Boolean).join(" ") : "")}
+                </button>
+              </div>
+            )}
+          </Fragment>
         ))}
         {(loading || analyzing) && (
           <div className="typing">
@@ -812,7 +874,7 @@ export default function App() {
       {modalO && <Modal title={modalO === "new" ? "Nuovo Proprietario" : `Modifica — ${modalO.cognome} ${modalO.nome}`} onClose={() => setModalO(null)}><OwnerForm init={modalO === "new" ? EP : modalO} onSave={saveO} onClose={() => setModalO(null)} loading={saving} /></Modal>}
 
       {/* AI Panel */}
-      {aiOpen && <AiPanel onClose={() => setAiOpen(false)} proprieta={proprieta} owners={owners} />}
+      {aiOpen && <AiPanel onClose={() => setAiOpen(false)} proprieta={proprieta} owners={owners} onDataChanged={load} />}
 
       {/* AI Button */}
       {!aiOpen && (
