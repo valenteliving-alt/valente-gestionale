@@ -245,7 +245,7 @@ const AiPanel = ({ onClose, proprieta, owners }) => {
         r.readAsDataURL(file);
       });
 
-      const resp = await fetch("/api/analyze-document", {
+      const resp = await fetch("/.netlify/functions/analyze-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: file.name, mediaType: file.type, data: base64, context: buildContext() }),
