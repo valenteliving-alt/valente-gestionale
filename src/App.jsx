@@ -382,7 +382,15 @@ const KanbanView = ({ proprieta, owners }) => {
   const [scadenze, setScadenze] = useState({});
   const inLancio = proprieta.filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato));
   const getPropCol = pid => workflow[pid] || "mandato";
-  const getProgress = pid => { const idx = WORKFLOW_COLUMNS.findIndex(c => c.id === getPropCol(pid)); return Math.round(((idx + 1) / WORKFLOW_COLUMNS.length) * 100); };
+  const getProgress = pid => {
+    let done = 0, total = 0;
+    WORKFLOW_COLUMNS.forEach(col => {
+      const t = tasks[`${pid}-${col.id}`] || STEP_TASKS[col.id].map((t, i) => ({ id: i, label: t, done: false }));
+      done += t.filter(x => x.done).length;
+      total += t.length;
+    });
+    return total > 0 ? Math.round((done / total) * 100) : 0;
+  };
   const getTasks = (pid, stepId) => tasks[`${pid}-${stepId}`] || STEP_TASKS[stepId].map((t, i) => ({ id: i, label: t, done: false }));
   const toggleTask = (pid, stepId, taskId) => { const key = `${pid}-${stepId}`; const cur = getTasks(pid, stepId); setTasks(t => ({ ...t, [key]: cur.map(tk => tk.id === taskId ? { ...tk, done: !tk.done } : tk) })); };
   const selProp = selected ? proprieta.find(p => p.id === selected) : null;
