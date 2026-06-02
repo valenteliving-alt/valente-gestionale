@@ -481,7 +481,7 @@ const OwnerForm = ({ init = EP, onSave, onClose, loading }) => {
 };
 
 // ── Form Proprietà ───────────────────────────────────────────────────────────
-const EP2 = { nome: "", indirizzo: "", citta: "", cap: "", provincia: "", proprietario_id: "", tipo_contratto: "gestione", stato: "in lancio", cin: "", cir: "", commissione: "", commissione_iva_inclusa: true, posti_letto: "", camere: "", bagni: "", mq: "", catasto_foglio: "", catasto_mappale: "", catasto_sub: "", categoria_catastale: "", gestore_interno: "Tommaso", piattaforme: [], note: "", data_inizio: "" };
+const EP2 = { nome: "", indirizzo: "", citta: "", cap: "", provincia: "", proprietario_id: "", tipo_contratto: "gestione", stato: "in lancio", cin: "", cir: "", commissione: "", commissione_iva_inclusa: true, posti_letto: "", camere: "", bagni: "", mq: "", catasto_foglio: "", catasto_mappale: "", catasto_sub: "", categoria_catastale: "", gestore_interno: "Tommaso", piattaforme: [], note: "", data_inizio: "", personale_pulizie: "", telefono_pulizie: "" };
 const PropForm = ({ init = EP2, owners, onSave, onClose, loading }) => {
   const [f, setF] = useState(init);
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
@@ -520,6 +520,10 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading }) => {
         <FF label="Bagni"><input type="number" value={f.bagni} onChange={e => s("bagni", e.target.value)} /></FF>
         <FF label="MQ"><input type="number" value={f.mq} onChange={e => s("mq", e.target.value)} /></FF>
       </FG></div>
+      <div style={{ marginTop: 20 }}><ST>Pulizie</ST><FG>
+        <FF label="Personale pulizie" span={2}><input value={f.personale_pulizie || ""} onChange={e => s("personale_pulizie", e.target.value)} /></FF>
+        <FF label="Telefono pulizie" span={2}><input value={f.telefono_pulizie || ""} onChange={e => s("telefono_pulizie", e.target.value)} /></FF>
+      </FG></div>
       <div style={{ marginTop: 20 }}><ST>Piattaforme</ST>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {PIATTAFORME.map(p => <button key={p} onClick={() => tp(p)} style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, border: "1.5px solid", borderColor: f.piattaforme?.includes(p) ? "var(--gold)" : "var(--gl)", background: f.piattaforme?.includes(p) ? "var(--gold)" : "transparent", color: f.piattaforme?.includes(p) ? "var(--black)" : "var(--gray)", transition: "all .15s" }}>{p}</button>)}
@@ -535,12 +539,35 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading }) => {
 };
 
 // ── Kanban View ──────────────────────────────────────────────────────────────
-const KanbanView = ({ proprieta, owners }) => {
+const KanbanView = ({ proprieta, owners, onDataChanged }) => {
   const [workflow, setWorkflow] = useState({});
   const [drag, setDrag] = useState(null);
   const [selected, setSelected] = useState(null);
   const [tasks, setTasks] = useState({});
   const [scadenze, setScadenze] = useState({});
+  const [edit, setEdit] = useState({});
+  const [savingE, setSavingE] = useState(false);
+  useEffect(() => {
+    const sp = selected ? proprieta.find(p => p.id === selected) : null;
+    if (sp) setEdit({ cin: sp.cin || "", cir: sp.cir || "", personale_pulizie: sp.personale_pulizie || "", telefono_pulizie: sp.telefono_pulizie || "" });
+  }, [selected, proprieta]);
+  const salvaDati = async () => {
+    const sp = proprieta.find(p => p.id === selected);
+    if (!sp) return;
+    setSavingE(true);
+    await sb.patch("proprieta", sp.id, { cin: edit.cin || null, cir: edit.cir || null, personale_pulizie: edit.personale_pulizie || null, telefono_pulizie: edit.telefono_pulizie || null });
+    if (onDataChanged) await onDataChanged();
+    setSavingE(false);
+  };
+  const rendiAttiva = async () => {
+    const sp = proprieta.find(p => p.id === selected);
+    if (!sp) return;
+    if (!confirm("Rendere attiva questa proprietà? Uscirà dal Workflow e comparirà in Proprietà.")) return;
+    setSavingE(true);
+    await sb.patch("proprieta", sp.id, { stato: "attivo", cin: edit.cin || null, cir: edit.cir || null, personale_pulizie: edit.personale_pulizie || null, telefono_pulizie: edit.telefono_pulizie || null });
+    if (onDataChanged) await onDataChanged();
+    setSavingE(false); setSelected(null);
+  };
   const inLancio = proprieta.filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato));
   const getPropCol = pid => workflow[pid] || "mandato";
   const getProgress = pid => {
@@ -570,7 +597,8 @@ const KanbanView = ({ proprieta, owners }) => {
                 {inLancio.filter(p => getPropCol(p.id) === col.id).map(p => (
                   <div key={p.id} className="kcard" draggable onDragStart={() => setDrag(p.id)} onClick={() => setSelected(p.id)}>
                     <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, lineHeight: 1.3 }}>{p.nome}</div>
-                    <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 8 }}>{p.citta}</div>
+                    <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 6 }}>{p.citta}</div>
+                    <div style={{ fontSize: 10, marginBottom: 8 }}>{p.cin ? <span style={{ color: "#2d6a4f", fontFamily: "monospace" }}>CIN ✓</span> : <span style={{ color: "var(--red)" }}>CIN mancante</span>}</div>
                     <div style={{ height: 3, background: "var(--gl)", marginBottom: 4 }}><div style={{ height: "100%", background: col.color, width: `${getProgress(p.id)}%`, transition: "width .3s" }} /></div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--gray)" }}>
                       <span>{getProgress(p.id)}%</span>
@@ -601,6 +629,19 @@ const KanbanView = ({ proprieta, owners }) => {
             <div style={{ marginBottom: 16 }}>
               <p style={{ fontSize: 10, fontWeight: 700, color: "var(--gold)", letterSpacing: ".1em", textTransform: "uppercase", marginBottom: 6 }}>Scadenza</p>
               <input type="date" value={scadenze[selProp.id] || ""} onChange={e => setScadenze(s => ({ ...s, [selProp.id]: e.target.value }))} />
+            </div>
+            <div style={{ marginBottom: 16, background: "var(--white)", border: "1px solid var(--gl)", padding: 14 }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--gold)", letterSpacing: ".1em", textTransform: "uppercase", marginBottom: 10 }}>Dati chiave (modificabili)</p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div><label style={{ fontSize: 10, color: "var(--gray)", display: "block", marginBottom: 3 }}>CIN</label><input value={edit.cin || ""} onChange={e => setEdit(x => ({ ...x, cin: e.target.value }))} style={{ width: "100%", fontFamily: "monospace" }} /></div>
+                <div><label style={{ fontSize: 10, color: "var(--gray)", display: "block", marginBottom: 3 }}>CIR</label><input value={edit.cir || ""} onChange={e => setEdit(x => ({ ...x, cir: e.target.value }))} style={{ width: "100%", fontFamily: "monospace" }} /></div>
+                <div><label style={{ fontSize: 10, color: "var(--gray)", display: "block", marginBottom: 3 }}>Personale pulizie</label><input value={edit.personale_pulizie || ""} onChange={e => setEdit(x => ({ ...x, personale_pulizie: e.target.value }))} style={{ width: "100%" }} /></div>
+                <div><label style={{ fontSize: 10, color: "var(--gray)", display: "block", marginBottom: 3 }}>Telefono pulizie</label><input value={edit.telefono_pulizie || ""} onChange={e => setEdit(x => ({ ...x, telefono_pulizie: e.target.value }))} style={{ width: "100%" }} /></div>
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
+                <button className="bg" onClick={salvaDati} disabled={savingE}>{savingE ? "Salvo…" : "Salva dati"}</button>
+                <button className="bp" onClick={rendiAttiva} disabled={savingE} style={{ marginLeft: "auto" }}>✓ Rendi attiva</button>
+              </div>
             </div>
             {WORKFLOW_COLUMNS.map(col => {
               const taskList = getTasks(selProp.id, col.id);
@@ -710,7 +751,7 @@ const PropRow = ({ p, o, onClick }) => (
   </div>
 );
 
-function Allegati({ proprietaId, proprietarioId }) {
+function Allegati({ proprietaId, proprietarioId, linkProprietarioId }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -743,7 +784,7 @@ function Allegati({ proprietaId, proprietarioId }) {
     const troppoGrandi = arr.filter(f => f.size > 4 * 1024 * 1024).map(f => f.name);
     const validi = arr.filter(f => f.size <= 4 * 1024 * 1024);
     setBusy(true);
-    const target = proprietaId ? { proprieta_id: proprietaId } : { proprietario_id: proprietarioId };
+    const target = proprietaId ? { proprieta_id: proprietaId, proprietario_id: linkProprietarioId || null } : { proprietario_id: proprietarioId };
     const falliti = [];
     for (let i = 0; i < validi.length; i++) {
       const file = validi[i];
@@ -905,12 +946,22 @@ function Smistamento({ proprieta, owners, onDataChanged }) {
     for (const row of daFare) {
       setRows(rs => rs.map(x => x.rid === row.rid ? { ...x, stato: "archiviando" } : x));
       try {
-        let proprieta_id = null, proprietario_id = null;
-        if (row.scelta.tipo === "proprieta") proprieta_id = row.scelta.id;
-        else if (row.scelta.tipo === "proprietario") proprietario_id = row.scelta.id;
+        let proprieta_id = null, proprietario_id = null, destNome = "";
+        if (row.scelta.tipo === "proprieta") {
+          proprieta_id = row.scelta.id;
+          const prop = proprieta.find(p => String(p.id) === String(row.scelta.id));
+          destNome = (prop && prop.nome) || "proprietà";
+          if (prop && prop.proprietario_id) proprietario_id = String(prop.proprietario_id);
+        }
+        else if (row.scelta.tipo === "proprietario") {
+          proprietario_id = row.scelta.id;
+          const ow = owners.find(o => String(o.id) === String(row.scelta.id));
+          destNome = ow ? ((ow.cognome || "") + " " + (ow.nome || "")).trim() : "proprietario";
+        }
         else if (row.scelta.tipo === "nuovo_proprietario") {
           const pn = (row.analisi && row.analisi.proprietario_nuovo) || {};
           const cf = (pn.codice_fiscale || "").trim().toUpperCase();
+          destNome = ((pn.cognome || "") + " " + (pn.nome || "")).trim() || "nuovo proprietario";
           const esistente = owners.find(o => cf && (o.codice_fiscale || "").trim().toUpperCase() === cf);
           if (esistente) proprietario_id = String(esistente.id);
           else {
@@ -924,12 +975,13 @@ function Smistamento({ proprieta, owners, onDataChanged }) {
             proprietario_id = nuovo && String(nuovo.id);
           }
         }
+        if (proprieta_id && proprietario_id) destNome = destNome + " (+ proprietario)";
         const ra = await fetch("/.netlify/functions/allegati", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "upload", proprieta_id, proprietario_id, nome_file: row.file.name, tipo: row.file.type, data: row.file.data }),
         });
         if (!ra.ok) throw new Error("allegato");
-        setRows(rs => rs.map(x => x.rid === row.rid ? { ...x, stato: "archiviato" } : x));
+        setRows(rs => rs.map(x => x.rid === row.rid ? { ...x, stato: "archiviato", dest: destNome } : x));
       } catch {
         setRows(rs => rs.map(x => x.rid === row.rid ? { ...x, stato: "errore", analisi: { ...(x.analisi || {}), motivo: "Archiviazione non riuscita." } } : x));
       }
@@ -970,7 +1022,7 @@ function Smistamento({ proprieta, owners, onDataChanged }) {
                 <span style={{ flex: 1, fontSize: 13, fontWeight: 600, wordBreak: "break-all" }}>{row.file.name}</span>
                 {row.stato === "analizzando" && <span style={{ fontSize: 11, color: "var(--gray)" }}>Analizzo…</span>}
                 {row.stato === "archiviando" && <span style={{ fontSize: 11, color: "var(--gray)" }}>Archivio…</span>}
-                {row.stato === "archiviato" && <span style={{ fontSize: 11, color: "#2d6a4f", fontWeight: 600 }}>✓ Archiviato</span>}
+                {row.stato === "archiviato" && <span style={{ fontSize: 11, color: "#2d6a4f", fontWeight: 600 }}>✓ Archiviato{row.dest ? " · " + row.dest : ""}</span>}
                 {row.stato === "errore" && <span style={{ fontSize: 11, color: "var(--red)", fontWeight: 600 }}>Errore</span>}
               </div>
 
@@ -1147,7 +1199,7 @@ export default function App() {
         {/* Main */}
         <main className="main">
           {loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
-            view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} /> :
+            view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} /> :
             view === "import" ? <ImportView proprieta={proprieta} owners={owners} onImport={load} /> :
             view === "smistamento" ? <Smistamento proprieta={proprieta} owners={owners} onDataChanged={load} /> :
             view === "lead" ? (
@@ -1293,8 +1345,9 @@ export default function App() {
             <DR label="CIR" val={detP.cir} />
             <DR label="Catasto" val={[detP.catasto_foglio && `Foglio ${detP.catasto_foglio}`, detP.catasto_mappale && `Mapp. ${detP.catasto_mappale}`, detP.catasto_sub && `Sub ${detP.catasto_sub}`, detP.categoria_catastale].filter(Boolean).join(" · ") || null} />
             {detP.piattaforme?.length > 0 && <div style={{ padding: "8px 0", borderBottom: "1px solid var(--cd)" }}><span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", display: "block", marginBottom: 6 }}>Piattaforme</span><div style={{ display: "flex", gap: 6 }}>{detP.piattaforme.map(pp => <span key={pp} className="tag">{pp}</span>)}</div></div>}
+            <DR label="Pulizie" val={[detP.personale_pulizie, detP.telefono_pulizie].filter(Boolean).join(" · ") || null} />
             {detP.note && <DR label="Note" val={detP.note} />}
-            <Allegati proprietaId={detP.id} />
+            <Allegati proprietaId={detP.id} linkProprietarioId={detP.proprietario_id} />
             <div style={{ display: "flex", gap: 10, marginTop: 28 }}>
               <button className="bp" style={{ flex: 1 }} onClick={() => { setModalP(detP); setDetP(null); }}>Modifica</button>
               <button className="bd" onClick={() => delP(detP.id)}>Elimina</button>
