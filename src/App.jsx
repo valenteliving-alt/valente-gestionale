@@ -715,6 +715,8 @@ function Allegati({ proprietaId, proprietarioId }) {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [dragOver, setDragOver] = useState(false);
+  const [progress, setProgress] = useState("");
   const fileRef = useRef(null);
 
   const carica = useCallback(async () => {
@@ -734,30 +736,39 @@ function Allegati({ proprietaId, proprietarioId }) {
 
   useEffect(() => { carica(); }, [carica]);
 
-  const onPick = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
+  const caricaFiles = async (fileList) => {
+    const arr = Array.from(fileList || []);
+    if (arr.length === 0 || busy) return;
     setErr("");
-    if (file.size > 4 * 1024 * 1024) { setErr("Il file supera i 4 MB. Caricane uno più piccolo."); return; }
+    const troppoGrandi = arr.filter(f => f.size > 4 * 1024 * 1024).map(f => f.name);
+    const validi = arr.filter(f => f.size <= 4 * 1024 * 1024);
     setBusy(true);
     const target = proprietaId ? { proprieta_id: proprietaId } : { proprietario_id: proprietarioId };
-    try {
-      const base64 = await new Promise((res, rej) => {
-        const rd = new FileReader();
-        rd.onload = () => res(String(rd.result).split(",")[1]);
-        rd.onerror = () => rej(new Error("lettura fallita"));
-        rd.readAsDataURL(file);
-      });
-      const r = await fetch("/.netlify/functions/allegati", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "upload", nome_file: file.name, tipo: file.type, data: base64, ...target }),
-      });
-      const d = await r.json();
-      if (!r.ok) setErr(d.error || "Caricamento fallito.");
-      else await carica();
-    } catch { setErr("Caricamento fallito."); }
+    const falliti = [];
+    for (let i = 0; i < validi.length; i++) {
+      const file = validi[i];
+      setProgress("Carico " + (i + 1) + " di " + validi.length + "…");
+      try {
+        const base64 = await new Promise((res, rej) => {
+          const rd = new FileReader();
+          rd.onload = () => res(String(rd.result).split(",")[1]);
+          rd.onerror = () => rej(new Error("lettura fallita"));
+          rd.readAsDataURL(file);
+        });
+        const r = await fetch("/.netlify/functions/allegati", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "upload", nome_file: file.name, tipo: file.type, data: base64, ...target }),
+        });
+        if (!r.ok) falliti.push(file.name);
+      } catch { falliti.push(file.name); }
+    }
+    setProgress("");
     setBusy(false);
+    const messaggi = [];
+    if (troppoGrandi.length) messaggi.push("Saltati perché oltre 4 MB: " + troppoGrandi.join(", "));
+    if (falliti.length) messaggi.push("Non caricati: " + falliti.join(", "));
+    setErr(messaggi.join(" · "));
+    await carica();
   };
 
   const apri = async (path) => {
@@ -787,17 +798,23 @@ function Allegati({ proprietaId, proprietarioId }) {
   };
 
   return (
-    <div style={{ marginTop: 24 }}>
+    <div
+      style={{ marginTop: 24, border: dragOver ? "2px dashed var(--gold)" : "2px dashed transparent", padding: dragOver ? 10 : 0, background: dragOver ? "rgba(214,156,49,.06)" : "transparent", transition: "all .12s" }}
+      onDragOver={(e) => { e.preventDefault(); if (!busy) setDragOver(true); }}
+      onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
+      onDrop={(e) => { e.preventDefault(); setDragOver(false); caricaFiles(e.dataTransfer.files); }}
+    >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)" }}>Allegati</p>
-        <button className="bg" onClick={() => fileRef.current?.click()} disabled={busy} style={{ padding: "6px 12px", fontSize: 11 }}>{busy ? "Carico…" : "+ Carica file"}</button>
-        <input ref={fileRef} type="file" style={{ display: "none" }} onChange={onPick} />
+        <button className="bg" onClick={() => fileRef.current?.click()} disabled={busy} style={{ padding: "6px 12px", fontSize: 11 }}>{busy ? (progress || "Carico…") : "+ Carica file"}</button>
+        <input ref={fileRef} type="file" multiple style={{ display: "none" }} onChange={(e) => { caricaFiles(e.target.files); e.target.value = ""; }} />
       </div>
+      {dragOver && <div style={{ fontSize: 12, color: "var(--gold)", textAlign: "center", padding: "8px 0" }}>Rilascia qui i file da caricare</div>}
       {err && <div style={{ fontSize: 12, color: "var(--red)", marginBottom: 8 }}>{err}</div>}
       {loading ? (
         <p style={{ fontSize: 12, color: "var(--gray)" }}>Caricamento…</p>
       ) : files.length === 0 ? (
-        <p style={{ fontSize: 12, color: "var(--gray)" }}>Nessun allegato. Caricane uno con "+ Carica file".</p>
+        <p style={{ fontSize: 12, color: "var(--gray)" }}>Nessun allegato. Trascina qui i file (anche più di uno) oppure usa "+ Carica file".</p>
       ) : (
         files.map(f => (
           <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--white)", border: "1px solid var(--gl)", marginBottom: 6 }}>
