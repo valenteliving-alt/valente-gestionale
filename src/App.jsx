@@ -538,126 +538,83 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading }) => {
   );
 };
 
-// ── Kanban View ──────────────────────────────────────────────────────────────
-const KanbanView = ({ proprieta, owners, onDataChanged }) => {
-  const [drag, setDrag] = useState(null);
-  const [selected, setSelected] = useState(null);
-  const [tasks, setTasks] = useState({});
-  const [scadenze, setScadenze] = useState({});
-  const [edit, setEdit] = useState({});
-  const [savingE, setSavingE] = useState(false);
-  useEffect(() => {
-    const sp = selected ? proprieta.find(p => p.id === selected) : null;
-    if (sp) setEdit({ cin: sp.cin || "", cir: sp.cir || "", personale_pulizie: sp.personale_pulizie || "", telefono_pulizie: sp.telefono_pulizie || "" });
-  }, [selected, proprieta]);
-  const salvaDati = async () => {
-    const sp = proprieta.find(p => p.id === selected);
-    if (!sp) return;
-    setSavingE(true);
-    await sb.patch("proprieta", sp.id, { cin: edit.cin || null, cir: edit.cir || null, personale_pulizie: edit.personale_pulizie || null, telefono_pulizie: edit.telefono_pulizie || null });
-    if (onDataChanged) await onDataChanged();
-    setSavingE(false);
-  };
-  const rendiAttiva = async () => {
-    const sp = proprieta.find(p => p.id === selected);
-    if (!sp) return;
-    if (!confirm("Rendere attiva questa proprietà? Uscirà dal Workflow e comparirà in Proprietà.")) return;
-    setSavingE(true);
-    await sb.patch("proprieta", sp.id, { stato: "attivo", cin: edit.cin || null, cir: edit.cir || null, personale_pulizie: edit.personale_pulizie || null, telefono_pulizie: edit.telefono_pulizie || null });
-    if (onDataChanged) await onDataChanged();
-    setSavingE(false); setSelected(null);
-  };
+// ── Workflow Lancio ──────────────────────────────────────────────────────────
+const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
+  const [saving, setSaving] = useState(null);
   const inLancio = proprieta.filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato));
-  const getPropCol = pid => { const p = proprieta.find(x => x.id === pid); return (p && p.fase_workflow) || "mandato"; };
-  const spostaFase = async (pid, faseId) => { await sb.patch("proprieta", pid, { fase_workflow: faseId }); if (onDataChanged) await onDataChanged(); };
-  const getProgress = pid => {
-    let done = 0, total = 0;
-    WORKFLOW_COLUMNS.forEach(col => {
-      const t = tasks[`${pid}-${col.id}`] || STEP_TASKS[col.id].map((t, i) => ({ id: i, label: t, done: false }));
-      done += t.filter(x => x.done).length;
-      total += t.length;
-    });
-    return total > 0 ? Math.round((done / total) * 100) : 0;
+  const parseSteps = p => { try { return p.workflow_steps ? JSON.parse(p.workflow_steps) : {}; } catch { return {}; } };
+  const stepDone = (p, stepId) => {
+    if (stepId === "cin") return !!(p.cin && String(p.cin).trim());
+    if (stepId === "cir") return !!(p.cir && String(p.cir).trim());
+    return parseSteps(p)[stepId] === true;
   };
-  const getTasks = (pid, stepId) => tasks[`${pid}-${stepId}`] || STEP_TASKS[stepId].map((t, i) => ({ id: i, label: t, done: false }));
-  const toggleTask = (pid, stepId, taskId) => { const key = `${pid}-${stepId}`; const cur = getTasks(pid, stepId); setTasks(t => ({ ...t, [key]: cur.map(tk => tk.id === taskId ? { ...tk, done: !tk.done } : tk) })); };
-  const selProp = selected ? proprieta.find(p => p.id === selected) : null;
+  const nDone = p => WORKFLOW_COLUMNS.filter(c => stepDone(p, c.id)).length;
+  const progress = p => Math.round((nDone(p) / WORKFLOW_COLUMNS.length) * 100);
+  const toggleStep = async (p, stepId) => {
+    if (stepId === "cin" || stepId === "cir") { if (onEdit) onEdit(p); return; }
+    const st = parseSteps(p); st[stepId] = !st[stepId];
+    setSaving(p.id);
+    await sb.patch("proprieta", p.id, { workflow_steps: JSON.stringify(st) });
+    if (onDataChanged) await onDataChanged();
+    setSaving(null);
+  };
+  const rendiAttiva = async (p) => {
+    if (!confirm("Rendere attiva questa proprietà? Uscirà dal Workflow e comparirà in Proprietà.")) return;
+    setSaving(p.id);
+    await sb.patch("proprieta", p.id, { stato: "attivo" });
+    if (onDataChanged) await onDataChanged();
+    setSaving(null);
+  };
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
         <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Workflow Lancio</h1><p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{inLancio.length} proprietà in onboarding</p></div>
+        <button className="bp" onClick={() => onEdit && onEdit("new")}>+ Nuova proprietà</button>
       </div>
       <div className="gl" style={{ marginBottom: 24 }} />
       {inLancio.length === 0 ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessuna proprietà in lancio.</div> : (
-        <div style={{ overflowX: "auto", paddingBottom: 16 }}>
-          <div style={{ display: "flex", gap: 10, minWidth: "max-content" }}>
-            {WORKFLOW_COLUMNS.map(col => (
-              <div key={col.id} className="kcol" style={{ borderTop: `3px solid ${col.color}` }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (drag) { const id = drag; setDrag(null); spostaFase(id, col.id); } }}>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: col.color, marginBottom: 10 }}>{col.label} <span style={{ marginLeft: 4, background: "rgba(0,0,0,.1)", padding: "1px 5px", borderRadius: 10, fontSize: 9, color: "var(--gray)" }}>{inLancio.filter(p => getPropCol(p.id) === col.id).length}</span></div>
-                {inLancio.filter(p => getPropCol(p.id) === col.id).map(p => (
-                  <div key={p.id} className="kcard" draggable onDragStart={() => setDrag(p.id)} onClick={() => setSelected(p.id)}>
-                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, lineHeight: 1.3 }}>{p.nome}</div>
-                    <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 6 }}>{p.citta}</div>
-                    <div style={{ fontSize: 10, marginBottom: 8 }}>{p.cin ? <span style={{ color: "#2d6a4f", fontFamily: "monospace" }}>CIN ✓</span> : <span style={{ color: "var(--red)" }}>CIN mancante</span>}</div>
-                    <div style={{ height: 3, background: "var(--gl)", marginBottom: 4 }}><div style={{ height: "100%", background: col.color, width: `${getProgress(p.id)}%`, transition: "width .3s" }} /></div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--gray)" }}>
-                      <span>{getProgress(p.id)}%</span>
-                      {scadenze[p.id] && <span style={{ color: new Date(scadenze[p.id]) < new Date() ? "var(--red)" : "var(--gray)" }}>📅 {scadenze[p.id]}</span>}
-                    </div>
+        <div style={{ display: "grid", gap: 14 }}>
+          {inLancio.map(p => {
+            const pct = progress(p);
+            const owner = owners.find(o => o.id === p.proprietario_id);
+            const busy = saving === p.id;
+            const complete = pct === 100;
+            return (
+              <div key={p.id} className="card" style={{ padding: 18, opacity: busy ? .55 : 1, transition: "opacity .15s" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 600 }}>{p.nome}</div>
+                    <div style={{ fontSize: 12, color: "var(--gray)", marginTop: 2 }}>{[p.citta, p.provincia].filter(Boolean).join(", ")}{owner ? ` · ${owner.cognome || ""} ${owner.nome || ""}`.replace(/ +$/, "") : ""}</div>
                   </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {selProp && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 900, display: "flex", justifyContent: "flex-end" }} onClick={e => e.target === e.currentTarget && setSelected(null)}>
-          <div style={{ background: "var(--cream)", width: "100%", maxWidth: 500, height: "100%", overflow: "auto", padding: 28 }} className="fi">
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <h2 style={{ fontSize: 18 }}>{selProp.nome}</h2>
-              <button onClick={() => setSelected(null)} style={{ background: "none", border: "none", fontSize: 22, color: "var(--gray)" }}>×</button>
-            </div>
-            <SB stato={selProp.stato} />
-            <div className="gl" style={{ margin: "16px 0" }} />
-            <div style={{ marginBottom: 16 }}>
-              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--gold)", letterSpacing: ".1em", textTransform: "uppercase", marginBottom: 8 }}>Fase attuale</p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {WORKFLOW_COLUMNS.map(col => <button key={col.id} onClick={() => spostaFase(selProp.id, col.id)} style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600, border: `1.5px solid ${col.color}`, background: getPropCol(selProp.id) === col.id ? col.color : "transparent", color: getPropCol(selProp.id) === col.id ? "#fff" : col.color }}>{col.label}</button>)}
-              </div>
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--gold)", letterSpacing: ".1em", textTransform: "uppercase", marginBottom: 6 }}>Scadenza</p>
-              <input type="date" value={scadenze[selProp.id] || ""} onChange={e => setScadenze(s => ({ ...s, [selProp.id]: e.target.value }))} />
-            </div>
-            <div style={{ marginBottom: 16, background: "var(--white)", border: "1px solid var(--gl)", padding: 14 }}>
-              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--gold)", letterSpacing: ".1em", textTransform: "uppercase", marginBottom: 10 }}>Dati chiave (modificabili)</p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <div><label style={{ fontSize: 10, color: "var(--gray)", display: "block", marginBottom: 3 }}>CIN</label><input value={edit.cin || ""} onChange={e => setEdit(x => ({ ...x, cin: e.target.value }))} style={{ width: "100%", fontFamily: "monospace" }} /></div>
-                <div><label style={{ fontSize: 10, color: "var(--gray)", display: "block", marginBottom: 3 }}>CIR</label><input value={edit.cir || ""} onChange={e => setEdit(x => ({ ...x, cir: e.target.value }))} style={{ width: "100%", fontFamily: "monospace" }} /></div>
-                <div><label style={{ fontSize: 10, color: "var(--gray)", display: "block", marginBottom: 3 }}>Personale pulizie</label><input value={edit.personale_pulizie || ""} onChange={e => setEdit(x => ({ ...x, personale_pulizie: e.target.value }))} style={{ width: "100%" }} /></div>
-                <div><label style={{ fontSize: 10, color: "var(--gray)", display: "block", marginBottom: 3 }}>Telefono pulizie</label><input value={edit.telefono_pulizie || ""} onChange={e => setEdit(x => ({ ...x, telefono_pulizie: e.target.value }))} style={{ width: "100%" }} /></div>
-              </div>
-              <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
-                <button className="bg" onClick={salvaDati} disabled={savingE}>{savingE ? "Salvo…" : "Salva dati"}</button>
-                <button className="bp" onClick={rendiAttiva} disabled={savingE} style={{ marginLeft: "auto" }}>✓ Rendi attiva</button>
-              </div>
-            </div>
-            {WORKFLOW_COLUMNS.map(col => {
-              const taskList = getTasks(selProp.id, col.id);
-              const done = taskList.filter(t => t.done).length;
-              const isCur = getPropCol(selProp.id) === col.id;
-              return (
-                <div key={col.id} style={{ marginBottom: 12, border: `1px solid ${isCur ? col.color : "var(--gl)"}`, padding: 12, background: isCur ? `${col.color}08` : "var(--white)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                    <p style={{ fontSize: 10, fontWeight: 700, color: isCur ? col.color : "var(--gray)", textTransform: "uppercase", letterSpacing: ".06em" }}>{col.label}</p>
-                    <span style={{ fontSize: 10, color: done === taskList.length ? "#2d6a4f" : "var(--gray)" }}>{done}/{taskList.length} ✓</span>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: 24, fontWeight: 700, color: complete ? "#2d6a4f" : "var(--gold)", lineHeight: 1 }}>{pct}%</div>
+                    <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 3 }}>{nDone(p)}/{WORKFLOW_COLUMNS.length} step</div>
                   </div>
-                  {taskList.map(t => <div key={t.id} className={`check ${t.done ? "done" : ""}`} onClick={() => toggleTask(selProp.id, col.id, t.id)}><input type="checkbox" checked={t.done} onChange={() => {}} /><span>{t.label}</span></div>)}
                 </div>
-              );
-            })}
-          </div>
+                <div style={{ height: 6, background: "var(--gl)", marginBottom: 14 }}>
+                  <div style={{ height: "100%", width: `${pct}%`, background: complete ? "#2d6a4f" : "var(--gold)", transition: "width .35s ease" }} />
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 14 }}>
+                  {WORKFLOW_COLUMNS.map(col => {
+                    const done = stepDone(p, col.id);
+                    const auto = col.id === "cin" || col.id === "cir";
+                    return (
+                      <button key={col.id} onClick={() => toggleStep(p, col.id)} disabled={busy}
+                        title={auto ? (done ? "Compilato" : "Si spunta da solo quando inserisci il dato — clic per aprire la scheda") : (done ? "Fatto — clic per annullare" : "Clic quando completato")}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", transition: "all .15s",
+                          border: `1.5px solid ${done ? "#2d6a4f" : "var(--gl)"}`, background: done ? "#2d6a4f" : "transparent", color: done ? "#fff" : "var(--gray)" }}>
+                        <span style={{ fontSize: 12, lineHeight: 1 }}>{done ? "✓" : (auto ? "✎" : "○")}</span>{col.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <button className="bg" onClick={() => onEdit && onEdit(p)} disabled={busy}>Compila dati</button>
+                  <button className="bp" onClick={() => rendiAttiva(p)} disabled={busy} style={{ marginLeft: "auto" }}>✓ Rendi attiva</button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -1199,7 +1156,7 @@ export default function App() {
         {/* Main */}
         <main className="main">
           {loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
-            view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} /> :
+            view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} onEdit={setModalP} /> :
             view === "import" ? <ImportView proprieta={proprieta} owners={owners} onImport={load} /> :
             view === "smistamento" ? <Smistamento proprieta={proprieta} owners={owners} onDataChanged={load} /> :
             view === "lead" ? (
