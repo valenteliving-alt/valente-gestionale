@@ -828,6 +828,196 @@ function Allegati({ proprietaId, proprietarioId }) {
   );
 }
 
+function Smistamento({ proprieta, owners, onDataChanged }) {
+  const [rows, setRows] = useState([]);
+  const [dragOver, setDragOver] = useState(false);
+  const [archiviando, setArchiviando] = useState(false);
+  const [nota, setNota] = useState("");
+  const fileRef = useRef(null);
+  const idRef = useRef(0);
+
+  const aggiungiFiles = async (fileList) => {
+    const tutti = Array.from(fileList || []);
+    if (tutti.length === 0) return;
+    setNota("");
+    const validi = tutti.filter(f => f.size <= 4 * 1024 * 1024);
+    const grandi = tutti.filter(f => f.size > 4 * 1024 * 1024).map(f => f.name);
+    if (grandi.length) setNota("Saltati perché oltre 4 MB: " + grandi.join(", "));
+    const nuovi = [];
+    for (const file of validi) {
+      const data = await new Promise((res) => {
+        const rd = new FileReader();
+        rd.onload = () => res(String(rd.result).split(",")[1]);
+        rd.onerror = () => res(null);
+        rd.readAsDataURL(file);
+      });
+      nuovi.push({ rid: ++idRef.current, file: { name: file.name, type: file.type, size: file.size, data }, stato: data ? "analizzando" : "errore", analisi: data ? null : { motivo: "Lettura del file non riuscita." }, scelta: { tipo: "", id: "" } });
+    }
+    setRows(rs => [...rs, ...nuovi]);
+    for (const row of nuovi) {
+      if (!row.file.data) continue;
+      try {
+        const r = await fetch("/.netlify/functions/smista-documento", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: row.file.name, mediaType: row.file.type, data: row.file.data,
+            proprieta: proprieta.map(p => ({ id: String(p.id), nome: p.nome, indirizzo: p.indirizzo, citta: p.citta, cin: p.cin })),
+            proprietari: owners.map(o => ({ id: String(o.id), nome: o.nome, cognome: o.cognome, codice_fiscale: o.codice_fiscale })),
+          }),
+        });
+        const d = await r.json();
+        if (!r.ok || !d || d.error) {
+          setRows(rs => rs.map(x => x.rid === row.rid ? { ...x, stato: "errore", analisi: { motivo: (d && d.error) || "Analisi non riuscita." } } : x));
+        } else {
+          let scelta = { tipo: "", id: "" };
+          if (d.tipo_destinazione === "proprietario" && d.id_destinazione) scelta = { tipo: "proprietario", id: String(d.id_destinazione) };
+          else if (d.tipo_destinazione === "proprieta" && d.id_destinazione) scelta = { tipo: "proprieta", id: String(d.id_destinazione) };
+          else if (d.tipo_destinazione === "nuovo_proprietario") scelta = { tipo: "nuovo_proprietario", id: "" };
+          setRows(rs => rs.map(x => x.rid === row.rid ? { ...x, stato: "pronto", analisi: d, scelta } : x));
+        }
+      } catch {
+        setRows(rs => rs.map(x => x.rid === row.rid ? { ...x, stato: "errore", analisi: { motivo: "Errore di rete durante l'analisi." } } : x));
+      }
+    }
+  };
+
+  const valoreScelta = (row) => {
+    if (row.scelta.tipo === "nuovo_proprietario") return "nuovo_proprietario";
+    if (row.scelta.tipo && row.scelta.id) return row.scelta.tipo + ":" + row.scelta.id;
+    return "";
+  };
+
+  const cambiaScelta = (rid, val) => {
+    setRows(rs => rs.map(x => {
+      if (x.rid !== rid) return x;
+      if (!val) return { ...x, scelta: { tipo: "", id: "" } };
+      if (val === "nuovo_proprietario") return { ...x, scelta: { tipo: "nuovo_proprietario", id: "" } };
+      const i = val.indexOf(":");
+      return { ...x, scelta: { tipo: val.slice(0, i), id: val.slice(i + 1) } };
+    }));
+  };
+
+  const rimuovi = (rid) => setRows(rs => rs.filter(x => x.rid !== rid));
+
+  const archivia = async () => {
+    setArchiviando(true);
+    const daFare = rows.filter(r => r.stato === "pronto" && r.scelta.tipo);
+    for (const row of daFare) {
+      setRows(rs => rs.map(x => x.rid === row.rid ? { ...x, stato: "archiviando" } : x));
+      try {
+        let proprieta_id = null, proprietario_id = null;
+        if (row.scelta.tipo === "proprieta") proprieta_id = row.scelta.id;
+        else if (row.scelta.tipo === "proprietario") proprietario_id = row.scelta.id;
+        else if (row.scelta.tipo === "nuovo_proprietario") {
+          const pn = (row.analisi && row.analisi.proprietario_nuovo) || {};
+          const cf = (pn.codice_fiscale || "").trim().toUpperCase();
+          const esistente = owners.find(o => cf && (o.codice_fiscale || "").trim().toUpperCase() === cf);
+          if (esistente) proprietario_id = String(esistente.id);
+          else {
+            const res = await sb.post("proprietari", {
+              nome: pn.nome || "", cognome: pn.cognome || "", codice_fiscale: cf,
+              email: pn.email || "", telefono: pn.telefono || "", pec: pn.pec || "",
+              indirizzo: pn.indirizzo || "", citta: pn.citta || "",
+            });
+            if (!res.ok) throw new Error("owner");
+            const nuovo = Array.isArray(res.data) ? res.data[0] : res.data;
+            proprietario_id = nuovo && String(nuovo.id);
+          }
+        }
+        const ra = await fetch("/.netlify/functions/allegati", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "upload", proprieta_id, proprietario_id, nome_file: row.file.name, tipo: row.file.type, data: row.file.data }),
+        });
+        if (!ra.ok) throw new Error("allegato");
+        setRows(rs => rs.map(x => x.rid === row.rid ? { ...x, stato: "archiviato" } : x));
+      } catch {
+        setRows(rs => rs.map(x => x.rid === row.rid ? { ...x, stato: "errore", analisi: { ...(x.analisi || {}), motivo: "Archiviazione non riuscita." } } : x));
+      }
+    }
+    setArchiviando(false);
+    if (onDataChanged) await onDataChanged();
+  };
+
+  const pronti = rows.filter(r => r.stato === "pronto" && r.scelta.tipo).length;
+
+  return (
+    <>
+      <div style={{ marginBottom: 8 }}>
+        <h1 style={{ fontSize: 26, fontWeight: 700 }}>Smistamento documenti</h1>
+        <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Trascina più documenti insieme: l'AI propone dove archiviarli, tu confermi e archivi.</p>
+      </div>
+      <div className="gl" style={{ marginBottom: 24 }} />
+
+      <div
+        onClick={() => fileRef.current?.click()}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); aggiungiFiles(e.dataTransfer.files); }}
+        style={{ border: dragOver ? "2px dashed var(--gold)" : "2px dashed var(--gl)", background: dragOver ? "rgba(214,156,49,.06)" : "var(--white)", padding: 36, textAlign: "center", cursor: "pointer", transition: "all .12s" }}
+      >
+        <input ref={fileRef} type="file" multiple style={{ display: "none" }} onChange={(e) => { aggiungiFiles(e.target.files); e.target.value = ""; }} />
+        <p style={{ fontSize: 14, fontWeight: 600, color: dragOver ? "var(--gold)" : "var(--black)" }}>{dragOver ? "Rilascia qui i documenti" : "Trascina qui i documenti o clicca per selezionarli"}</p>
+        <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 6 }}>PDF o immagini, fino a 4 MB ciascuno. Puoi caricarne più di uno.</p>
+      </div>
+
+      {nota && <div style={{ fontSize: 12, color: "var(--red)", marginTop: 12 }}>{nota}</div>}
+
+      {rows.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          {rows.map(row => (
+            <div key={row.rid} style={{ background: "var(--white)", border: "1px solid var(--gl)", padding: 14, marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 600, wordBreak: "break-all" }}>{row.file.name}</span>
+                {row.stato === "analizzando" && <span style={{ fontSize: 11, color: "var(--gray)" }}>Analizzo…</span>}
+                {row.stato === "archiviando" && <span style={{ fontSize: 11, color: "var(--gray)" }}>Archivio…</span>}
+                {row.stato === "archiviato" && <span style={{ fontSize: 11, color: "#2d6a4f", fontWeight: 600 }}>✓ Archiviato</span>}
+                {row.stato === "errore" && <span style={{ fontSize: 11, color: "var(--red)", fontWeight: 600 }}>Errore</span>}
+              </div>
+
+              {row.stato === "errore" && <p style={{ fontSize: 12, color: "var(--red)" }}>{row.analisi && row.analisi.motivo}</p>}
+
+              {(row.stato === "pronto" || row.stato === "archiviando") && (
+                <>
+                  {row.analisi && row.analisi.categoria && (
+                    <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 6 }}>
+                      Tipo rilevato: <strong style={{ color: "var(--black)" }}>{row.analisi.categoria}</strong>
+                      {row.analisi.confidenza ? " · confidenza " + row.analisi.confidenza : ""}
+                    </p>
+                  )}
+                  {row.analisi && row.analisi.motivo && <p style={{ fontSize: 11, color: "var(--gray)", fontStyle: "italic", marginBottom: 8 }}>{row.analisi.motivo}</p>}
+                  <label style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gold)", display: "block", marginBottom: 4 }}>Archivia in</label>
+                  <select value={valoreScelta(row)} onChange={(e) => cambiaScelta(row.rid, e.target.value)} disabled={row.stato !== "pronto"} style={{ width: "100%", maxWidth: 360, padding: "8px 10px", fontSize: 13, border: "1px solid var(--gl)", background: "var(--cream)" }}>
+                    <option value="">— scegli destinazione —</option>
+                    {row.analisi && row.analisi.proprietario_nuovo && (row.analisi.proprietario_nuovo.cognome || row.analisi.proprietario_nuovo.nome) && (
+                      <option value="nuovo_proprietario">➕ Crea nuovo proprietario: {row.analisi.proprietario_nuovo.cognome || ""} {row.analisi.proprietario_nuovo.nome || ""}</option>
+                    )}
+                    <optgroup label="Proprietari">
+                      {owners.map(o => <option key={o.id} value={"proprietario:" + o.id}>{o.cognome} {o.nome}</option>)}
+                    </optgroup>
+                    <optgroup label="Proprietà">
+                      {proprieta.map(p => <option key={p.id} value={"proprieta:" + p.id}>{p.nome}</option>)}
+                    </optgroup>
+                  </select>
+                </>
+              )}
+
+              {row.stato !== "archiviato" && row.stato !== "archiviando" && (
+                <div style={{ marginTop: 8 }}>
+                  <button onClick={() => rimuovi(row.rid)} style={{ background: "none", border: "none", color: "var(--red)", fontSize: 11, cursor: "pointer", padding: 0 }}>Rimuovi</button>
+                </div>
+              )}
+            </div>
+          ))}
+
+          <button className="bp" onClick={archivia} disabled={archiviando || pronti === 0} style={{ marginTop: 8 }}>
+            {archiviando ? "Archivio…" : "Archivia tutto" + (pronti ? " (" + pronti + ")" : "")}
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [view, setView] = useState("proprieta");
@@ -902,6 +1092,7 @@ export default function App() {
     { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding },
     { id: "import", label: "Importa Monday", icon: "⬇️", count: null },
     { id: "lead", label: "Lead", icon: "🎯", count: null },
+    { id: "smistamento", label: "Smistamento doc", icon: "📥", count: null },
   ];
 
   return (
@@ -958,6 +1149,7 @@ export default function App() {
           {loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
             view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} /> :
             view === "import" ? <ImportView proprieta={proprieta} owners={owners} onImport={load} /> :
+            view === "smistamento" ? <Smistamento proprieta={proprieta} owners={owners} onDataChanged={load} /> :
             view === "lead" ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
