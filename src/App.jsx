@@ -540,7 +540,6 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading }) => {
 
 // ── Kanban View ──────────────────────────────────────────────────────────────
 const KanbanView = ({ proprieta, owners, onDataChanged }) => {
-  const [workflow, setWorkflow] = useState({});
   const [drag, setDrag] = useState(null);
   const [selected, setSelected] = useState(null);
   const [tasks, setTasks] = useState({});
@@ -569,7 +568,8 @@ const KanbanView = ({ proprieta, owners, onDataChanged }) => {
     setSavingE(false); setSelected(null);
   };
   const inLancio = proprieta.filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato));
-  const getPropCol = pid => workflow[pid] || "mandato";
+  const getPropCol = pid => { const p = proprieta.find(x => x.id === pid); return (p && p.fase_workflow) || "mandato"; };
+  const spostaFase = async (pid, faseId) => { await sb.patch("proprieta", pid, { fase_workflow: faseId }); if (onDataChanged) await onDataChanged(); };
   const getProgress = pid => {
     let done = 0, total = 0;
     WORKFLOW_COLUMNS.forEach(col => {
@@ -592,7 +592,7 @@ const KanbanView = ({ proprieta, owners, onDataChanged }) => {
         <div style={{ overflowX: "auto", paddingBottom: 16 }}>
           <div style={{ display: "flex", gap: 10, minWidth: "max-content" }}>
             {WORKFLOW_COLUMNS.map(col => (
-              <div key={col.id} className="kcol" style={{ borderTop: `3px solid ${col.color}` }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (drag) { setWorkflow(w => ({ ...w, [drag]: col.id })); setDrag(null); } }}>
+              <div key={col.id} className="kcol" style={{ borderTop: `3px solid ${col.color}` }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (drag) { const id = drag; setDrag(null); spostaFase(id, col.id); } }}>
                 <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: col.color, marginBottom: 10 }}>{col.label} <span style={{ marginLeft: 4, background: "rgba(0,0,0,.1)", padding: "1px 5px", borderRadius: 10, fontSize: 9, color: "var(--gray)" }}>{inLancio.filter(p => getPropCol(p.id) === col.id).length}</span></div>
                 {inLancio.filter(p => getPropCol(p.id) === col.id).map(p => (
                   <div key={p.id} className="kcard" draggable onDragStart={() => setDrag(p.id)} onClick={() => setSelected(p.id)}>
@@ -623,7 +623,7 @@ const KanbanView = ({ proprieta, owners, onDataChanged }) => {
             <div style={{ marginBottom: 16 }}>
               <p style={{ fontSize: 10, fontWeight: 700, color: "var(--gold)", letterSpacing: ".1em", textTransform: "uppercase", marginBottom: 8 }}>Fase attuale</p>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {WORKFLOW_COLUMNS.map(col => <button key={col.id} onClick={() => setWorkflow(w => ({ ...w, [selProp.id]: col.id }))} style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600, border: `1.5px solid ${col.color}`, background: getPropCol(selProp.id) === col.id ? col.color : "transparent", color: getPropCol(selProp.id) === col.id ? "#fff" : col.color }}>{col.label}</button>)}
+                {WORKFLOW_COLUMNS.map(col => <button key={col.id} onClick={() => spostaFase(selProp.id, col.id)} style={{ padding: "4px 10px", fontSize: 11, fontWeight: 600, border: `1.5px solid ${col.color}`, background: getPropCol(selProp.id) === col.id ? col.color : "transparent", color: getPropCol(selProp.id) === col.id ? "#fff" : col.color }}>{col.label}</button>)}
               </div>
             </div>
             <div style={{ marginBottom: 16 }}>
