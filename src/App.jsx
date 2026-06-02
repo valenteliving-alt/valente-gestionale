@@ -685,6 +685,107 @@ const PropRow = ({ p, o, onClick }) => (
   </div>
 );
 
+function Allegati({ proprietaId, proprietarioId }) {
+  const [files, setFiles] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const fileRef = useRef(null);
+
+  const carica = useCallback(async () => {
+    setLoading(true); setErr("");
+    const target = proprietaId ? { proprieta_id: proprietaId } : { proprietario_id: proprietarioId };
+    try {
+      const r = await fetch("/.netlify/functions/allegati", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "list", ...target }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setErr(d.error || "Errore nel caricamento degli allegati."); setFiles([]); }
+      else setFiles(d.files || []);
+    } catch { setErr("Impossibile contattare il server."); setFiles([]); }
+    setLoading(false);
+  }, [proprietaId, proprietarioId]);
+
+  useEffect(() => { carica(); }, [carica]);
+
+  const onPick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setErr("");
+    if (file.size > 4 * 1024 * 1024) { setErr("Il file supera i 4 MB. Caricane uno più piccolo."); return; }
+    setBusy(true);
+    const target = proprietaId ? { proprieta_id: proprietaId } : { proprietario_id: proprietarioId };
+    try {
+      const base64 = await new Promise((res, rej) => {
+        const rd = new FileReader();
+        rd.onload = () => res(String(rd.result).split(",")[1]);
+        rd.onerror = () => rej(new Error("lettura fallita"));
+        rd.readAsDataURL(file);
+      });
+      const r = await fetch("/.netlify/functions/allegati", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "upload", nome_file: file.name, tipo: file.type, data: base64, ...target }),
+      });
+      const d = await r.json();
+      if (!r.ok) setErr(d.error || "Caricamento fallito.");
+      else await carica();
+    } catch { setErr("Caricamento fallito."); }
+    setBusy(false);
+  };
+
+  const apri = async (path) => {
+    setErr("");
+    try {
+      const r = await fetch("/.netlify/functions/allegati", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sign", path }),
+      });
+      const d = await r.json();
+      if (r.ok && d.url) window.open(d.url, "_blank");
+      else setErr(d.error || "Impossibile aprire il file.");
+    } catch { setErr("Impossibile aprire il file."); }
+  };
+
+  const elimina = async (f) => {
+    if (!confirm("Eliminare questo allegato?")) return;
+    setErr("");
+    try {
+      const r = await fetch("/.netlify/functions/allegati", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id: f.id, path: f.path }),
+      });
+      if (r.ok) await carica();
+      else { const d = await r.json(); setErr(d.error || "Eliminazione fallita."); }
+    } catch { setErr("Eliminazione fallita."); }
+  };
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)" }}>Allegati</p>
+        <button className="bg" onClick={() => fileRef.current?.click()} disabled={busy} style={{ padding: "6px 12px", fontSize: 11 }}>{busy ? "Carico…" : "+ Carica file"}</button>
+        <input ref={fileRef} type="file" style={{ display: "none" }} onChange={onPick} />
+      </div>
+      {err && <div style={{ fontSize: 12, color: "var(--red)", marginBottom: 8 }}>{err}</div>}
+      {loading ? (
+        <p style={{ fontSize: 12, color: "var(--gray)" }}>Caricamento…</p>
+      ) : files.length === 0 ? (
+        <p style={{ fontSize: 12, color: "var(--gray)" }}>Nessun allegato. Caricane uno con "+ Carica file".</p>
+      ) : (
+        files.map(f => (
+          <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--white)", border: "1px solid var(--gl)", marginBottom: 6 }}>
+            <span style={{ flex: 1, fontSize: 12, wordBreak: "break-all" }}>{f.nome_file}</span>
+            <button onClick={() => apri(f.path)} style={{ background: "none", border: "none", color: "var(--gold)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Apri</button>
+            <button onClick={() => elimina(f)} style={{ background: "none", border: "none", color: "var(--red)", fontSize: 11, cursor: "pointer" }}>Elimina</button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 // ── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [view, setView] = useState("proprieta");
@@ -704,6 +805,9 @@ export default function App() {
   const [propVista, setPropVista] = useState("griglia");
   const [propRaggr, setPropRaggr] = useState("provincia");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [leads, setLeads] = useState([]);
+  const [leadsLoading, setLeadsLoading] = useState(false);
+  const [leadsError, setLeadsError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -714,6 +818,22 @@ export default function App() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadLeads = useCallback(async () => {
+    setLeadsLoading(true); setLeadsError("");
+    try {
+      const r = await fetch("/.netlify/functions/hubspot", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "leads" }),
+      });
+      const data = await r.json();
+      if (!r.ok) { setLeadsError(data.error || "Errore nel caricamento dei lead."); setLeads([]); }
+      else setLeads(data.leads || []);
+    } catch { setLeadsError("Impossibile contattare HubSpot. Riprova."); setLeads([]); }
+    setLeadsLoading(false);
+  }, []);
+
+  useEffect(() => { if (view === "lead") loadLeads(); }, [view, loadLeads]);
 
   const saveP = async (f) => {
     setSaving(true);
@@ -739,6 +859,7 @@ export default function App() {
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length },
     { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding },
     { id: "import", label: "Importa Monday", icon: "⬇️", count: null },
+    { id: "lead", label: "Lead", icon: "🎯", count: null },
   ];
 
   return (
@@ -795,6 +916,42 @@ export default function App() {
           {loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
             view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} /> :
             view === "import" ? <ImportView proprieta={proprieta} owners={owners} onImport={load} /> :
+            view === "lead" ? (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
+                  <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Lead</h1><p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Contatti assegnati a te su HubSpot{leads.length ? ` · ${leads.length}` : ""}</p></div>
+                  <button className="bg" onClick={loadLeads} disabled={leadsLoading}>{leadsLoading ? "Aggiorno…" : "↻ Aggiorna"}</button>
+                </div>
+                <div className="gl" style={{ marginBottom: 24 }} />
+                {leadsError ? (
+                  <div style={{ padding: 20, background: "var(--white)", border: "1px solid var(--gl)", fontSize: 13 }}>
+                    <div style={{ color: "var(--red)", fontWeight: 600, marginBottom: 6 }}>{leadsError}</div>
+                    <div style={{ color: "var(--gray)", fontSize: 12 }}>Se è la prima volta, controlla che il token <strong>HUBSPOT_TOKEN</strong> sia stato aggiunto tra le variabili di Netlify.</div>
+                  </div>
+                ) : leadsLoading ? (
+                  <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento lead da HubSpot…</div>
+                ) : leads.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessun lead assegnato a te.</div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+                    {leads.map(l => (
+                      <div key={l.id} className="card fi" style={{ cursor: "default" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
+                          <h3 style={{ fontSize: 15, fontWeight: 600 }}>{l.nome}</h3>
+                          {l.stato && <span className="tag">{l.stato}</span>}
+                        </div>
+                        {l.email && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 4, wordBreak: "break-all" }}>✉ {l.email}</p>}
+                        {l.telefono && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 4 }}>📞 {l.telefono}</p>}
+                        {(l.citta || l.azienda) && <p style={{ fontSize: 12, color: "var(--gray)" }}>{[l.azienda, l.citta].filter(Boolean).join(" · ")}</p>}
+                        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--cd)" }}>
+                          <a href={`https://app.hubspot.com/contacts/25704633/record/0-1/${l.id}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Apri su HubSpot →</a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) :
             view === "proprietari" ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8 }}>
@@ -903,6 +1060,7 @@ export default function App() {
             <DR label="Catasto" val={[detP.catasto_foglio && `Foglio ${detP.catasto_foglio}`, detP.catasto_mappale && `Mapp. ${detP.catasto_mappale}`, detP.catasto_sub && `Sub ${detP.catasto_sub}`, detP.categoria_catastale].filter(Boolean).join(" · ") || null} />
             {detP.piattaforme?.length > 0 && <div style={{ padding: "8px 0", borderBottom: "1px solid var(--cd)" }}><span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", display: "block", marginBottom: 6 }}>Piattaforme</span><div style={{ display: "flex", gap: 6 }}>{detP.piattaforme.map(pp => <span key={pp} className="tag">{pp}</span>)}</div></div>}
             {detP.note && <DR label="Note" val={detP.note} />}
+            <Allegati proprietaId={detP.id} />
             <div style={{ display: "flex", gap: 10, marginTop: 28 }}>
               <button className="bp" style={{ flex: 1 }} onClick={() => { setModalP(detP); setDetP(null); }}>Modifica</button>
               <button className="bd" onClick={() => delP(detP.id)}>Elimina</button>
@@ -940,6 +1098,7 @@ export default function App() {
                 </div>
               ))}
             </div>
+            <Allegati proprietarioId={detO.id} />
             <div style={{ display: "flex", gap: 10, marginTop: 28 }}>
               <button className="bp" style={{ flex: 1 }} onClick={() => { setModalO(detO); setDetO(null); }}>Modifica</button>
               <button className="bd" onClick={() => delO(detO.id)}>Elimina</button>
