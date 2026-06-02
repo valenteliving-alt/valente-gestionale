@@ -297,7 +297,8 @@ const AiPanel = ({ onClose, proprieta, owners, onDataChanged }) => {
 
       const reply = data.content || data.analysis || data.result || data.text || data.error || "Nessun risultato dall'analisi.";
       const ext = estraiAzioneProprietario(reply);
-      setMessages(m => [...m, { role: "assistant", content: ext.testo, action: ext.action }]);
+      const action = ext.action ? { ...ext.action, file: { data: base64, name: file.name, type: file.type, size: file.size } } : null;
+      setMessages(m => [...m, { role: "assistant", content: ext.testo, action }]);
     } catch (err) {
       setMessages(m => [...m, { role: "assistant", content: `DEBUG — errore di rete: ${err.message}` }]);
     }
@@ -325,10 +326,34 @@ const AiPanel = ({ onClose, proprieta, owners, onDataChanged }) => {
         };
         const res = await sb.post("proprietari", payload);
         if (!res.ok) throw new Error("post fallita");
+        const nuovo = Array.isArray(res.data) ? res.data[0] : res.data;
+        const nuovoId = nuovo && nuovo.id;
         if (onDataChanged) await onDataChanged();
         const nomeC = (payload.nome + " " + payload.cognome).trim() || "il proprietario";
+
+        // Allega al nuovo proprietario il documento già caricato in chat (nessun secondo caricamento)
+        let allegatoMsg = "";
+        const f = msg.action.file;
+        if (nuovoId && f && f.data) {
+          if (f.size && f.size > 4 * 1024 * 1024) {
+            allegatoMsg = " Il documento supera i 4 MB, quindi non l'ho allegato in automatico: puoi caricarlo a mano dalla sua scheda.";
+          } else {
+            try {
+              const ra = await fetch("/.netlify/functions/allegati", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "upload", proprietario_id: String(nuovoId), nome_file: f.name, tipo: f.type, data: f.data }),
+              });
+              allegatoMsg = ra.ok
+                ? " Ho anche allegato il documento alla sua scheda."
+                : " Non sono riuscito ad allegare il documento (puoi farlo a mano dagli Allegati della scheda).";
+            } catch {
+              allegatoMsg = " Non sono riuscito ad allegare il documento (puoi farlo a mano dagli Allegati della scheda).";
+            }
+          }
+        }
+
         setMessages(ms => ms.map((x, i) => i === idx ? { ...x, action: { ...x.action, status: "done" } } : x)
-          .concat({ role: "assistant", content: "Fatto! Ho creato " + nomeC + ". Lo trovi nella sezione Proprietari." }));
+          .concat({ role: "assistant", content: "Fatto! Ho creato " + nomeC + " nella sezione Proprietari." + allegatoMsg }));
       }
     } catch (e) {
       setMessages(ms => ms.map((x, i) => i === idx ? { ...x, action: { ...x.action, status: "idle" } } : x)
