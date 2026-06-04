@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 
+// PASSWORD PER ENTRARE NEL GESTIONALE — cambiala qui quando vuoi
+const PASSWORD_SITO = "Living626!!";
+
 const SUPABASE_URL = "https://heabtbdmwbjlgujsisor.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
 
@@ -1028,7 +1031,7 @@ function Smistamento({ proprieta, owners, onDataChanged }) {
 }
 
 // ── App ──────────────────────────────────────────────────────────────────────
-export default function App() {
+function App() {
   const [view, setView] = useState("proprieta");
   const [proprieta, setProprieta] = useState([]);
   const [owners, setOwners] = useState([]);
@@ -1365,5 +1368,34 @@ export default function App() {
         </button>
       )}
     </>
+  );
+}
+
+// ── Schermata password (cancello d'ingresso) ─────────────────────────────────
+export default function Gate() {
+  const [ok, setOk] = useState(() => { try { return sessionStorage.getItem("vl_auth") === "1"; } catch { return false; } });
+  const [val, setVal] = useState("");
+  const [err, setErr] = useState(false);
+  if (ok) return <App />;
+  const submit = () => {
+    if (val === PASSWORD_SITO) { try { sessionStorage.setItem("vl_auth", "1"); } catch { /* ignore */ } setOk(true); }
+    else { setErr(true); }
+  };
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#FBF9F8", fontFamily: "'Poppins', sans-serif", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 340 }}>
+        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 700, color: "#000", textAlign: "center", marginBottom: 6 }}>Valente Living</h1>
+        <p style={{ fontSize: 13, color: "#777", textAlign: "center", marginBottom: 24 }}>Inserisci la password per accedere</p>
+        <input type="password" value={val} autoFocus placeholder="Password"
+          onChange={e => { setVal(e.target.value); setErr(false); }}
+          onKeyDown={e => e.key === "Enter" && submit()}
+          style={{ width: "100%", padding: "12px 14px", border: "1px solid #ddd", fontSize: 15, marginBottom: 12, boxSizing: "border-box", outline: "none" }} />
+        {err && <p style={{ color: "#c0392b", fontSize: 12, marginBottom: 12, textAlign: "center" }}>Password errata, riprova.</p>}
+        <button onClick={submit}
+          style={{ width: "100%", padding: "12px", background: "#000", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", borderRadius: 999, letterSpacing: ".05em" }}>
+          ENTRA
+        </button>
+      </div>
+    </div>
   );
 }
