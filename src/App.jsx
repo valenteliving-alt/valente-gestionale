@@ -489,8 +489,55 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading }) => {
   const [f, setF] = useState(init);
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
   const tp = p => setF(prev => ({ ...prev, piattaforme: prev.piattaforme?.includes(p) ? prev.piattaforme.filter(x => x !== p) : [...(prev.piattaforme || []), p] }));
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMsg, setAiMsg] = useState("");
+  const compilaAI = async () => {
+    if (!f.id) { setAiMsg("Salva prima l'immobile: poi potrò leggere i documenti che gli hai allegato."); return; }
+    setAiBusy(true); setAiMsg("Cerco i documenti dell'immobile…");
+    try {
+      const lr = await fetch("/.netlify/functions/allegati", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "list", proprieta_id: f.id }) });
+      const ld = await lr.json();
+      let list = ld.files || [];
+      if (!list.length) { setAiMsg("Nessun documento allegato a questo immobile. Carica un mandato o una visura e riprova."); setAiBusy(false); return; }
+      const rank = (n) => { n = (n || "").toLowerCase(); if (/mandat/.test(n)) return 0; if (/visur|catast/.test(n)) return 1; if (/cin|cir/.test(n)) return 2; if (/contratt/.test(n)) return 3; return 5; };
+      list = list.map(x => ({ ...x, _n: x.nome_file || x.path || "" })).sort((a, b) => rank(a._n) - rank(b._n)).slice(0, 3);
+      setAiMsg("Leggo i documenti con l'AI…");
+      const files = [];
+      for (const it of list) {
+        try {
+          const sr = await fetch("/.netlify/functions/allegati", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "sign", path: it.path }) });
+          const sd = await sr.json();
+          if (!sd.url) continue;
+          const blob = await (await fetch(sd.url)).blob();
+          if (blob.size > 4 * 1024 * 1024) continue;
+          const data = await new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(String(rd.result).split(",")[1]); rd.onerror = () => rej(new Error("read")); rd.readAsDataURL(blob); });
+          files.push({ nome: it._n, tipo: it.tipo || blob.type || "", data });
+        } catch { /* salto questo file */ }
+      }
+      if (!files.length) { setAiMsg("Non sono riuscito a leggere i documenti allegati."); setAiBusy(false); return; }
+      const er = await fetch("/.netlify/functions/estrai-dati", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ files }) });
+      const ed = await er.json();
+      if (!er.ok || ed.error) { setAiMsg("Errore: " + (ed.error || "estrazione non riuscita")); setAiBusy(false); return; }
+      const fields = ed.fields || {};
+      const mappa = ["indirizzo", "citta", "cap", "provincia", "cin", "cir", "catasto_foglio", "catasto_mappale", "catasto_sub", "categoria_catastale", "commissione", "posti_letto", "camere", "bagni", "mq"];
+      const empty = (v) => v === undefined || v === null || String(v).trim() === "";
+      const patch = {}; let n = 0;
+      mappa.forEach((k) => { const val = fields[k]; if (!empty(val) && empty(f[k])) { patch[k] = String(val); n++; } });
+      if (n) setF((prev) => ({ ...prev, ...patch }));
+      setAiMsg(n ? `✨ Compilati ${n} campi dai documenti. Controlla i codici (CIN, catasto) e poi Salva.` : "Non ho trovato dati nuovi: i campi sono già compilati, o i documenti non li contengono.");
+    } catch (e) { setAiMsg("Errore: " + (e && e.message ? e.message : "imprevisto")); }
+    setAiBusy(false);
+  };
   return (
     <>
+      {f.id && (
+        <div style={{ marginBottom: 18, padding: 14, background: "rgba(214,156,49,.08)", border: "1px solid rgba(214,156,49,.35)" }}>
+          <button type="button" onClick={compilaAI} disabled={aiBusy} style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, letterSpacing: ".04em", border: "none", background: aiBusy ? "#bbb" : "linear-gradient(135deg, #D69C31, #f0c84a)", color: "var(--black)", cursor: aiBusy ? "default" : "pointer", borderRadius: 999 }}>
+            {aiBusy ? "Leggo i documenti…" : "✨ Compila con AI dai documenti"}
+          </button>
+          {aiMsg && <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 10, lineHeight: 1.4 }}>{aiMsg}</p>}
+        </div>
+      )}
       <ST>Dati Proprietà</ST><FG>
         <FF label="Nome" span={2}><input value={f.nome} onChange={e => s("nome", e.target.value)} /></FF>
         <FF label="Proprietario" span={2}><select value={f.proprietario_id} onChange={e => s("proprietario_id", e.target.value)}><option value="">— Seleziona —</option>{owners.map(o => <option key={o.id} value={o.id}>{o.cognome} {o.nome}</option>)}</select></FF>
