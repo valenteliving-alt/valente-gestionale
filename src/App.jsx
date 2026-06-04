@@ -711,7 +711,7 @@ const PropRow = ({ p, o, onClick }) => (
   </div>
 );
 
-function Allegati({ proprietaId, proprietarioId, linkProprietarioId }) {
+function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaIds }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -720,20 +720,34 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId }) {
   const [progress, setProgress] = useState("");
   const fileRef = useRef(null);
 
+  const idsKey = (proprietaIds || []).join(",");
   const carica = useCallback(async () => {
     setLoading(true); setErr("");
-    const target = proprietaId ? { proprieta_id: proprietaId } : { proprietario_id: proprietarioId };
+    const ids = idsKey ? idsKey.split(",") : [];
+    // Quali "caselle" interrogare: se è un immobile solo lui; se è un proprietario, lui + tutti i suoi immobili
+    const targets = [];
+    if (proprietaId) targets.push({ proprieta_id: proprietaId });
+    else if (proprietarioId) {
+      targets.push({ proprietario_id: proprietarioId });
+      ids.forEach((pid) => targets.push({ proprieta_id: pid }));
+    }
     try {
-      const r = await fetch("/.netlify/functions/allegati", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "list", ...target }),
-      });
-      const d = await r.json();
-      if (!r.ok) { setErr(d.error || "Errore nel caricamento degli allegati."); setFiles([]); }
-      else setFiles(d.files || []);
+      const results = await Promise.all(targets.map((t) =>
+        fetch("/.netlify/functions/allegati", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "list", ...t }),
+        }).then((r) => (r.ok ? r.json() : { files: [] })).catch(() => ({ files: [] }))
+      ));
+      const merged = [];
+      const visti = new Set();
+      results.forEach((d) => (d.files || []).forEach((f) => {
+        const k = f.id || f.path;
+        if (!visti.has(k)) { visti.add(k); merged.push(f); }
+      }));
+      setFiles(merged);
     } catch { setErr("Impossibile contattare il server."); setFiles([]); }
     setLoading(false);
-  }, [proprietaId, proprietarioId]);
+  }, [proprietaId, proprietarioId, idsKey]);
 
   useEffect(() => { carica(); }, [carica]);
 
@@ -1345,7 +1359,7 @@ function App() {
                 </div>
               ))}
             </div>
-            <Allegati proprietarioId={detO.id} />
+            <Allegati proprietarioId={detO.id} proprietaIds={proprieta.filter(p => p.proprietario_id === detO.id).map(p => p.id)} />
             <div style={{ display: "flex", gap: 10, marginTop: 28 }}>
               <button className="bp" style={{ flex: 1 }} onClick={() => { setModalO(detO); setDetO(null); }}>Modifica</button>
               <button className="bd" onClick={() => delO(detO.id)}>Elimina</button>
