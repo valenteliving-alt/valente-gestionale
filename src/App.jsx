@@ -1045,6 +1045,107 @@ function Smistamento({ proprieta, owners, onDataChanged }) {
 }
 
 // ── App ──────────────────────────────────────────────────────────────────────
+// ─── Mappa Italia: coordinate città / province ──────────────────────────────
+const MAP_CITY = {
+  "pistoia":[43.93,10.92],"lucca":[43.84,10.50],"firenze":[43.77,11.25],"napoli":[40.85,14.27],
+  "bologna":[44.49,11.34],"la spezia":[44.10,9.83],"montecatini terme":[43.88,10.77],"viareggio":[43.87,10.25],
+  "borgo a buggiano":[43.88,10.74],"buggiano":[43.87,10.73],"massa":[44.04,10.14],"carrara":[44.08,10.10],
+  "pisa":[43.72,10.40],"livorno":[43.55,10.31],"prato":[43.88,11.10],"siena":[43.32,11.33],"arezzo":[43.46,11.88],
+  "grosseto":[42.76,11.11],"portoferraio":[42.81,10.31],"elba":[42.78,10.32],"isola d elba":[42.78,10.32],
+  "roma":[41.90,12.50],"rome":[41.90,12.50],"milano":[45.46,9.19],"torino":[45.07,7.69],"venezia":[45.44,12.33],
+  "verona":[45.44,10.99],"genova":[44.41,8.93],"bari":[41.12,16.87],"palermo":[38.12,13.36],"catania":[37.50,15.09],
+  "cagliari":[39.22,9.12],"rimini":[44.06,12.57],"sanremo":[43.82,7.78],"como":[45.81,9.08],"brescia":[45.54,10.22],
+  "padova":[45.41,11.88],"trieste":[45.65,13.77],"perugia":[43.11,12.39],"ancona":[43.62,13.52],"pescara":[42.46,14.21],
+  "salerno":[40.68,14.76],"sorrento":[40.63,14.37],"amalfi":[40.63,14.60],"bergamo":[45.70,9.67],"parma":[44.80,10.33],
+  "modena":[44.65,10.93],"ferrara":[44.84,11.62],"ravenna":[44.42,12.20],"forli":[44.22,12.04],"cesena":[44.14,12.24],
+  "trento":[46.07,11.12],"bolzano":[46.50,11.35],"udine":[46.06,13.24],"cuneo":[44.39,7.55],"piacenza":[45.05,9.69],
+  "pavia":[45.19,9.16],"varese":[45.82,8.83],"pesaro":[43.91,12.91],"rapallo":[44.35,9.23],"pietrasanta":[43.96,10.23]
+};
+const MAP_PROV = {
+  "pt":[43.93,10.92],"lu":[43.84,10.50],"fi":[43.77,11.25],"na":[40.85,14.27],"bo":[44.49,11.34],"sp":[44.10,9.83],
+  "ms":[44.04,10.14],"pi":[43.72,10.40],"li":[43.55,10.31],"po":[43.88,11.10],"si":[43.32,11.33],"ar":[43.46,11.88],
+  "gr":[42.76,11.11],"ge":[44.41,8.93],"rm":[41.90,12.50],"mi":[45.46,9.19],"to":[45.07,7.69],"ve":[45.44,12.33],
+  "ba":[41.12,16.87],"pa":[38.12,13.36],"ct":[37.50,15.09],"ca":[39.22,9.12],"rn":[44.06,12.57],"vr":[45.44,10.99]
+};
+function mapNorm(s) { return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim(); }
+
+function MappaItalia({ proprieta }) {
+  const PAD = 24, K = 0.743, UNIT = 60, LNG0 = 6.6, LAT1 = 47.2;
+  const px = (la, lo) => [PAD + (lo - LNG0) * K * UNIT, PAD + (LAT1 - la) * UNIT];
+  const poly = (pts) => pts.map(([la, lo]) => px(la, lo).join(",")).join(" ");
+  const MAINLAND = [[43.79,7.61],[44.41,8.93],[44.10,9.83],[43.55,10.31],[42.92,10.52],[42.09,11.79],[41.73,12.28],[41.21,13.57],[40.85,14.27],[40.68,14.76],[40.07,15.63],[39.37,16.05],[38.68,15.90],[38.11,15.65],[38.24,16.26],[39.08,17.13],[40.47,17.24],[40.05,17.99],[39.81,18.36],[40.15,18.49],[40.64,17.94],[41.13,16.87],[41.63,15.92],[41.88,16.18],[42.00,14.99],[42.46,14.21],[43.62,13.51],[44.06,12.57],[45.44,12.34],[45.65,13.77],[46.50,13.58],[46.99,11.51],[46.62,10.45],[46.17,8.70],[45.74,7.32],[44.39,7.55]];
+  const SICILIA = [[38.25,15.63],[38.13,13.37],[38.02,12.51],[37.65,12.55],[37.30,13.58],[36.92,14.53],[36.69,15.09],[37.23,15.22],[37.75,15.25]];
+  const SARDEGNA = [[41.20,9.19],[40.92,9.55],[40.30,9.69],[39.55,9.62],[39.13,9.55],[38.99,8.86],[39.20,8.39],[39.90,8.45],[40.57,8.20],[40.84,8.40],[41.05,9.05]];
+
+  const groups = {};
+  const nonMappate = [];
+  (proprieta || []).forEach((p) => {
+    const c = mapNorm(p.citta), pr = mapNorm(p.provincia);
+    const coord = MAP_CITY[c] || MAP_PROV[pr] || null;
+    if (!coord) { nonMappate.push(p); return; }
+    const key = coord.join(",");
+    (groups[key] = groups[key] || { coord, items: [] }).items.push(p);
+  });
+  const dots = [];
+  Object.values(groups).forEach((g) => {
+    const [bx, by] = px(g.coord[0], g.coord[1]);
+    const n = g.items.length;
+    g.items.forEach((p, i) => {
+      let ox = 0, oy = 0;
+      if (n > 1) { const ang = (i / n) * Math.PI * 2; const r = 7 + (i % 3) * 3.5; ox = Math.cos(ang) * r; oy = Math.sin(ang) * r; }
+      const sub = p.tipo_contratto === "sublocazione";
+      dots.push({ x: bx + ox, y: by + oy, color: sub ? "#D69C31" : "#2d6a4f", name: p.nome, citta: p.citta || "", tipo: sub ? "sublocazione" : "gestione", attivo: p.stato === "attivo" });
+    });
+  });
+  const nGest = (proprieta || []).filter((p) => p.tipo_contratto !== "sublocazione").length;
+  const nSub = (proprieta || []).filter((p) => p.tipo_contratto === "sublocazione").length;
+
+  const perCitta = {};
+  (proprieta || []).forEach((p) => { const c = (p.citta || "—").trim() || "—"; perCitta[c] = (perCitta[c] || 0) + 1; });
+  const cittaList = Object.entries(perCitta).sort((a, b) => b[1] - a[1]);
+
+  return (
+    <>
+      <div style={{ marginBottom: 8 }}>
+        <h1 style={{ fontSize: 26, fontWeight: 700 }}>Le nostre proprietà in Italia</h1>
+        <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{(proprieta || []).length} proprietà · {nGest} gestioni · {nSub} sublocazioni</p>
+      </div>
+      <div className="gl" style={{ marginBottom: 24 }} />
+      <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-start" }}>
+        <div className="card" style={{ flex: "1 1 380px", minWidth: 300, padding: 20, display: "flex", justifyContent: "center" }}>
+          <svg viewBox="0 0 600 700" style={{ width: "100%", maxWidth: 460, height: "auto" }}>
+            <polygon points={poly(MAINLAND)} fill="#f3efe9" stroke="#d8cdbb" strokeWidth="1.4" strokeLinejoin="round" />
+            <polygon points={poly(SICILIA)} fill="#f3efe9" stroke="#d8cdbb" strokeWidth="1.4" strokeLinejoin="round" />
+            <polygon points={poly(SARDEGNA)} fill="#f3efe9" stroke="#d8cdbb" strokeWidth="1.4" strokeLinejoin="round" />
+            {dots.map((d, i) => (
+              <circle key={i} cx={d.x} cy={d.y} r="5" fill={d.color} stroke="#fff" strokeWidth="1.2" opacity={d.attivo ? 1 : 0.55}>
+                <title>{d.name}{d.citta ? " — " + d.citta : ""} ({d.tipo})</title>
+              </circle>
+            ))}
+          </svg>
+        </div>
+        <div style={{ flex: "1 1 220px", minWidth: 220 }}>
+          <div className="card" style={{ padding: 18, marginBottom: 16 }}>
+            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 12 }}>Legenda</p>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><span style={{ width: 12, height: 12, borderRadius: "50%", background: "#2d6a4f", display: "inline-block" }} /><span style={{ fontSize: 13 }}>Gestione <strong>({nGest})</strong></span></div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ width: 12, height: 12, borderRadius: "50%", background: "#D69C31", display: "inline-block" }} /><span style={{ fontSize: 13 }}>Sublocazione <strong>({nSub})</strong></span></div>
+            <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 10 }}>I puntini più chiari sono immobili non ancora attivi.</p>
+          </div>
+          <div className="card" style={{ padding: 18 }}>
+            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 12 }}>Per città</p>
+            {cittaList.map(([c, n]) => (
+              <div key={c} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "4px 0", borderBottom: "1px solid var(--gl)" }}>
+                <span>{c}</span><span style={{ fontWeight: 600 }}>{n}</span>
+              </div>
+            ))}
+            {nonMappate.length > 0 && <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 10 }}>{nonMappate.length} non mostrate sulla mappa (città non riconosciuta): {nonMappate.map(p => p.citta).filter(Boolean).join(", ") || "—"}</p>}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function App() {
   const [view, setView] = useState("proprieta");
   const [proprieta, setProprieta] = useState([]);
@@ -1113,6 +1214,7 @@ function App() {
   const stats = { totale: proprieta.length, attivi: proprieta.filter(p => p.stato === "attivo").length, lancio: proprieta.filter(p => p.stato === "in lancio").length, onboarding: proprieta.filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato)).length, senzaCin: proprieta.filter(p => !p.cin && p.stato === "attivo").length };
 
   const navItems = [
+    { id: "mappa", label: "Mappa", icon: "🗺️", count: null },
     { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale },
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length },
     { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding },
@@ -1173,6 +1275,7 @@ function App() {
         {/* Main */}
         <main className="main">
           {loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
+            view === "mappa" ? <MappaItalia proprieta={proprieta} /> :
             view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} onEdit={setModalP} /> :
             view === "import" ? <ImportView proprieta={proprieta} owners={owners} onImport={load} /> :
             view === "smistamento" ? <Smistamento proprieta={proprieta} owners={owners} onDataChanged={load} /> :
