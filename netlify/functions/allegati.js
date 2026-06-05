@@ -1,5 +1,17 @@
 const SUPABASE_URL = "https://heabtbdmwbjlgujsisor.supabase.co";
 const BUCKET = "documenti";
+const SITE_URL = process.env.URL || "https://valentelivingcrm.netlify.app";
+
+// Invio notifica push (fire-and-forget: non blocca mai l'upload)
+async function notificaPush(title, body) {
+  try {
+    await fetch(`${SITE_URL}/.netlify/functions/invia-notifica`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, body, url: "/" }),
+    });
+  } catch (_) { /* ignora */ }
+}
 
 const handler = async (event) => {
   const CORS = {
@@ -57,6 +69,7 @@ const handler = async (event) => {
       });
       const rec = await ins.json();
       if (!ins.ok) return { statusCode: ins.status, headers: CORS, body: JSON.stringify({ error: rec.message || "Salvataggio fallito." }) };
+      await notificaPush("Nuovo documento caricato", nome_file);
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ file: Array.isArray(rec) ? rec[0] : rec }) };
     }
 

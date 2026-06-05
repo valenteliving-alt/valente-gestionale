@@ -6,6 +6,10 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+# Controllo nuovi lead HubSpot ogni 15 minuti → notifica push
+[functions."controlla-lead"]
+  schedule = "*/15 * * * *"
+
 [[redirects]]
   from = "/api/ai-agent"
   to = "/.netlify/functions/ai-agent"

@@ -28,6 +28,17 @@ function setupPWA() {
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 
+// Invia una notifica push a tutti i dispositivi iscritti (fire-and-forget) — aggiunto v21
+function inviaPush(title, body, url) {
+  try {
+    fetch("/.netlify/functions/invia-notifica", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, body, url: url || "/" }),
+    }).catch(() => {});
+  } catch (_) { /* ignora */ }
+}
+
 const sb = {
   async req(method, table, body, query = "") {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
@@ -1280,7 +1291,9 @@ function App() {
   const saveP = async (f) => {
     setSaving(true);
     const clean = { ...f, commissione: f.commissione ? parseFloat(f.commissione) : null, posti_letto: f.posti_letto ? parseInt(f.posti_letto) : null, camere: f.camere ? parseInt(f.camere) : null, bagni: f.bagni ? parseInt(f.bagni) : null, mq: f.mq ? parseInt(f.mq) : null };
+    const statoPrec = modalP === "new" ? null : modalP.stato;
     if (modalP === "new") await sb.post("proprieta", clean); else await sb.patch("proprieta", modalP.id, clean);
+    if (clean.stato === "in lancio" && statoPrec !== "in lancio") inviaPush("Proprietà in lancio", (clean.nome || "Una proprietà") + " è passata a in lancio", "/");
     await load(); setSaving(false); setModalP(null);
   };
   const saveO = async (f) => { setSaving(true); if (modalO === "new") await sb.post("proprietari", f); else await sb.patch("proprietari", modalO.id, f); await load(); setSaving(false); setModalO(null); };
