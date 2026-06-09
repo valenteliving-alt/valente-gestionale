@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Fragment } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 
 // PASSWORD PER ENTRARE NEL GESTIONALE — cambiala qui quando vuoi
 const PASSWORD_SITO = "Living626!!";
@@ -1226,6 +1226,695 @@ function MappaItalia({ proprieta }) {
   );
 }
 
+/* ============ SEZIONE GESTIONE: dashboard direzionale + import Krossbooking ============ */
+let _xlsxPromise = null;
+const loadXLSX = () => _xlsxPromise || (_xlsxPromise = new Promise((res, rej) => {
+  if (window.XLSX) return res(window.XLSX);
+  const s = document.createElement("script");
+  s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+  s.onload = () => res(window.XLSX);
+  s.onerror = () => { _xlsxPromise = null; rej(new Error("cdn")); };
+  document.head.appendChild(s);
+}));
+const EURO = (n) => "€ " + Math.round(n || 0).toLocaleString("it-IT");
+const DG_num = (v) => { if (v === null || v === undefined || v === "") return null; if (typeof v === "number") return v; const n = parseFloat(String(v).replace(/\./g, "").replace(",", ".")); return isNaN(n) ? null : n; };
+const DG_date = (v) => { if (!v) return null; if (v instanceof Date) return v.toISOString().slice(0, 10); const s = String(v).trim(); const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/); if (m) return `${m[3]}-${m[2]}-${m[1]}`; return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : null; };
+const DG_ts = (v) => { if (!v) return null; if (v instanceof Date) return v.toISOString(); const s = String(v).trim(); const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})[ T](\d{2}:\d{2}(:\d{2})?)/); if (m) return `${m[3]}-${m[2]}-${m[1]}T${m[4]}`; if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.replace(" ", "T"); const d = DG_date(v); return d ? d + "T00:00:00" : null; };
+const DG_map = (r) => ({
+  id: parseInt(r["ID"]), numero: r["Numero"] || null, check_in: DG_date(r["Check in"]), check_out: DG_date(r["Check-out"]),
+  notti: DG_num(r["Notti"]), n_camere: DG_num(r["N. Camere"]), camere: r["Camere"] || null, ospiti: DG_num(r["Ospiti"]),
+  email: r["Email"] || null, telefono: r["Telefono"] ? String(r["Telefono"]) : null, canale: r["Canale"] || null,
+  codice_ota: r["Codice OTA"] ? String(r["Codice OTA"]) : null, riferimento: r["Riferimento"] || null, stato: r["Stato"] || null,
+  data_inserimento: DG_ts(r["Data inserimento"]), data_cancellazione: DG_ts(r["Data cancellazione"]),
+  addebiti: DG_num(r["Addebiti"]), addebito_soggiorno: DG_num(r["Addebito soggiorno"]), tassa_soggiorno: DG_num(r["Addebito tassa di soggiorno"]),
+  altri_addebiti: DG_num(r["Altri addebiti"]), da_pagare: DG_num(r["Da pagare"]), pagato: DG_num(r["Pagato"]),
+  nazione: r["Nazione"] || null, lingua: r["Lingua"] || null, commissioni_ota: DG_num(r["Commissioni"]),
+  proprietario: r["Proprietario"] || null, quota_proprietario: DG_num(r["Quota Proprietario"]), quota_pm: DG_num(r["Quota PM"]),
+  ota_account: r["OTA account"] || null, metodo_acquisizione: r["Metodo acquisizione"] || null, inserito_da: r["Inserito da"] || null,
+  note: r["Note"] || null, updated_at: new Date().toISOString(),
+});
+
+function ImportKross({ onDone, compact }) {
+  const [rows, setRows] = useState([]); const [msg, setMsg] = useState(""); const [busy, setBusy] = useState(false);
+  const onFile = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    let XLSX; try { XLSX = await loadXLSX(); } catch (_) { setMsg("⚠️ Libreria Excel non raggiungibile: controlla la connessione e riprova."); return; }
+    const wb = XLSX.read(await f.arrayBuffer(), { cellDates: true });
+    const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null });
+    const mapped = data.map(DG_map).filter((r) => Number.isInteger(r.id));
+    setRows(mapped); setMsg(`${mapped.length} prenotazioni lette dal file — pronte per l'import.`);
+  };
+  const go = async () => {
+    setBusy(true); let ok = 0, err = 0;
+    for (let i = 0; i < rows.length; i += 400) {
+      const batch = rows.slice(i, i + 400);
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/prenotazioni?on_conflict=id`, {
+        method: "POST", body: JSON.stringify(batch),
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+      });
+      if (r.ok) ok += batch.length; else { err += batch.length; console.error(await r.text()); }
+      setMsg(`Importazione… ${Math.min(i + 400, rows.length)}/${rows.length}`);
+    }
+    setMsg(err ? `⚠️ ${ok} importate, ${err} errori (vedi console)` : `✅ ${ok} prenotazioni importate/aggiornate.`);
+    setBusy(false); setRows([]); onDone && onDone();
+  };
+  return (
+    <div style={{ background: "#fff", border: "1px solid var(--gl)", padding: compact ? 18 : 32, marginBottom: 24 }}>
+      {!compact && <h3 style={{ marginBottom: 6 }}>Importa prenotazioni Krossbooking</h3>}
+      <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 12 }}>Krossbooking → Prenotazioni → Esporta Excel, poi carica qui il file. Le prenotazioni esistenti vengono aggiornate, mai duplicate.</div>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <input type="file" accept=".xlsx" onChange={onFile} disabled={busy} style={{ width: "auto" }} />
+        {rows.length > 0 && <button className="bp" onClick={go} disabled={busy}>{busy ? "Importazione…" : `Importa ${rows.length}`}</button>}
+      </div>
+      {msg && <div style={{ marginTop: 10, fontSize: 13, fontWeight: 500 }}>{msg}</div>}
+    </div>
+  );
+}
+
+function DashboardGestione() {
+  const [rows, setRows] = useState(null); const [ov, setOv] = useState([]);
+  const [anno, setAnno] = useState("tutti"); const [regime, setRegime] = useState("tutti"); const [showImp, setShowImp] = useState(false);
+  const load = useCallback(async () => {
+    let all = [], off = 0;
+    while (true) {
+      const { data, ok } = await sb.get("v_prenotazioni_ripartizione", `?select=*&order=check_in.asc&limit=1000&offset=${off}`);
+      if (!ok || !Array.isArray(data)) break;
+      all = all.concat(data); if (data.length < 1000) break; off += 1000;
+    }
+    setRows(all);
+    const o = await sb.get("v_sovrapposizioni", "?select=*&limit=20"); setOv(Array.isArray(o.data) ? o.data : []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const att = useMemo(() => (rows || []).filter((r) => !r.is_cancellata &&
+    (anno === "tutti" || (r.check_in || "").startsWith(anno)) &&
+    (regime === "tutti" || (regime === "sub" ? r.is_sublocazione : !r.is_sublocazione))), [rows, anno, regime]);
+
+  const D = useMemo(() => {
+    if (!att.length) return null;
+    const ric = (r) => (r.addebiti || 0) - (r.tassa_soggiorno || 0);
+    const sum = (a, f) => a.reduce((s, r) => s + (f(r) || 0), 0);
+    const gest = att.filter((r) => !r.is_sublocazione), sub = att.filter((r) => r.is_sublocazione);
+    const qpm = sum(gest, (r) => r.quota_pm), notti = sum(att, (r) => r.notti);
+    const mesi = {}; att.forEach((r) => { const m = (r.check_in || "").slice(0, 7); if (!m) return; mesi[m] = mesi[m] || { g: 0, s: 0 }; mesi[m][r.is_sublocazione ? "s" : "g"] += ric(r); });
+    const apps = {}; att.forEach((r) => { const k = r.proprieta_nome || r.camere || "?"; const a = (apps[k] = apps[k] || { nome: k, citta: r.proprieta_citta || "—", sub: r.is_sublocazione, n: 0, notti: 0, ric: 0, qpm: 0, qprop: 0 }); a.n++; a.notti += r.notti || 0; a.ric += ric(r); a.qpm += r.quota_pm || 0; a.qprop += r.quota_proprietario || 0; });
+    const can = {}; (rows || []).forEach((r) => { const c = r.canale || "—"; const x = (can[c] = can[c] || { n: 0, canc: 0, ric: 0, comm: 0 }); x.n++; if (r.is_cancellata) x.canc++; else { x.ric += ric(r); x.comm += r.commissioni_ota || 0; } });
+    return {
+      nAtt: att.length, nCanc: (rows || []).filter((r) => r.is_cancellata).length,
+      ric: sum(att, ric), ricSub: sum(sub, ric), qpm, notti, adr: notti ? sum(att, ric) / notti : 0,
+      casc: { lordo: qpm, iva: qpm - qpm / 1.22, ag: sum(gest, (r) => r.quota_agente), pm: sum(gest, (r) => r.quota_pm_operativo), val: sum(gest, (r) => r.netto_valente) },
+      mesi: Object.entries(mesi).sort().map(([m, v]) => ({ m, ...v })),
+      apps: Object.values(apps).sort((a, b) => b.ric - a.ric),
+      can: Object.entries(can).map(([c, v]) => ({ c, ...v })).sort((a, b) => b.ric - a.ric),
+      nonMap: [...new Set(att.filter((r) => !r.proprieta_id && !(r.camere || "").includes(",")).map((r) => r.camere))],
+      senzaProp: [...new Set(att.filter((r) => !r.proprietario && !r.is_sublocazione && !(r.camere || "").includes(",")).map((r) => r.camere))],
+    };
+  }, [att, rows]);
+
+  const thS = (r) => ({ textAlign: r ? "right" : "left", fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "var(--gray)", fontWeight: 500, padding: 8, borderBottom: "1px solid var(--black)" });
+  const tdS = (r) => ({ padding: 8, borderBottom: "1px solid var(--gl)", textAlign: r ? "right" : "left", fontSize: 12.5 });
+  const Card = ({ children, style }) => <div style={{ background: "#fff", border: "1px solid var(--gl)", padding: 24, ...style }}>{children}</div>;
+  const H2 = ({ t, s }) => <div style={{ margin: "34px 0 14px" }}><h2 style={{ fontSize: 19 }}>{t}</h2><div style={{ fontSize: 12, color: "var(--gray)", marginTop: 3 }}>{s}</div></div>;
+  const Kpi = ({ l, v, n, gold }) => <div style={{ background: "#fff", padding: "18px 16px" }}><div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: "var(--gray)" }}>{l}</div><div style={{ fontFamily: "'Playfair Display',serif", fontSize: 24, fontWeight: 600, marginTop: 6, color: gold ? "var(--gold)" : "var(--black)" }}>{v}</div><div style={{ fontSize: 11, color: "var(--gray)", marginTop: 3 }}>{n}</div></div>;
+  const Chk = ({ ok, children }) => <div style={{ display: "flex", gap: 10, padding: "9px 0", borderBottom: "1px solid var(--gl)", fontSize: 13, alignItems: "flex-start" }}><span style={{ minWidth: 9, height: 9, borderRadius: "50%", marginTop: 5, background: ok ? "#2E7D32" : "#B26A00", display: "inline-block" }} /><div>{children}</div></div>;
+
+  if (rows === null) return <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento dati gestione…</div>;
+  if (!rows.length) return (
+    <div>
+      <h2 style={{ fontSize: 22, marginBottom: 4 }}>Gestione</h2>
+      <div style={{ fontSize: 13, color: "var(--gray)", marginBottom: 20 }}>Nessuna prenotazione nel database: importa il primo export per accendere la dashboard.</div>
+      <ImportKross onDone={load} />
+    </div>
+  );
+
+  const mx = D ? Math.max(...D.mesi.map((x) => x.g + x.s), 1) : 1;
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+        <div><h2 style={{ fontSize: 22 }}>Gestione</h2><div style={{ fontSize: 12, color: "var(--gray)", marginTop: 3 }}>{rows.length} prenotazioni in archivio · fonte Krossbooking</div></div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {[["tutti", "Tutto"], ["2025", "2025"], ["2026", "2026"]].map(([v, l]) => <button key={v} className={anno === v ? "bp" : "bg"} onClick={() => setAnno(v)}>{l}</button>)}
+          {[["tutti", "Tutti"], ["gest", "Gestioni"], ["sub", "Sublocazioni"]].map(([v, l]) => <button key={v} className={regime === v ? "bp" : "bg"} onClick={() => setRegime(v)}>{l}</button>)}
+          <button className="bg" onClick={() => setShowImp(!showImp)}>⬆ Aggiorna dati</button>
+        </div>
+      </div>
+      {showImp && <div style={{ marginTop: 16 }}><ImportKross compact onDone={() => { setShowImp(false); load(); }} /></div>}
+      {!D ? <div style={{ color: "var(--gray)", marginTop: 24 }}>Nessuna prenotazione per i filtri selezionati.</div> : <>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(165px,1fr))", gap: 1, background: "var(--gl)", border: "1px solid var(--gl)", marginTop: 20 }}>
+          <Kpi l="Ricavi totali" v={EURO(D.ric)} n="netto tassa di soggiorno" />
+          <Kpi l="Compensi gestioni" v={EURO(D.qpm)} n="Quota PM, IVA inclusa" />
+          <Kpi l="Ricavi sublocazioni" v={EURO(D.ricSub)} n="lordo costi e affitti" />
+          <Kpi l="Netto Valente" v={EURO(D.casc.val)} n="dopo IVA, agenti, PM op." gold />
+          <Kpi l="Notti · ADR" v={`${D.notti.toLocaleString("it-IT")} · € ${Math.round(D.adr)}`} n="vendute / media a notte" />
+          <Kpi l="Prenotazioni" v={D.nAtt} n={`${D.nCanc} cancellate`} />
+        </div>
+
+        <H2 t="Ripartizione compensi di gestione" s="Quota PM ÷ 1,22 (IVA) → 20% agenti → dell'80%: 40% PM operativo, 60% Valente Living" />
+        <Card>
+          {[["Quota PM lorda", D.casc.lordo, "var(--black)", 1], ["di cui IVA 22%", D.casc.iva, "#C9C2B8", 0], ["Quota agenti (20%)", D.casc.ag, "#C9C2B8", 0], ["PM operativo (40% dell'80%)", D.casc.pm, "#C9C2B8", 0], ["Netto Valente Living", D.casc.val, "var(--gold)", 1]].map(([l, v, c, b]) => (
+            <div key={l} style={{ display: "flex", alignItems: "center", gap: 14, margin: "10px 0" }}>
+              <div style={{ width: 210, fontSize: 12, fontWeight: b ? 600 : 400 }}>{l}</div>
+              <div style={{ flex: 1, height: 22, background: "var(--cd)" }}><div style={{ width: `${(v / (D.casc.lordo || 1)) * 100}%`, height: "100%", background: c }} /></div>
+              <div style={{ width: 92, textAlign: "right", fontSize: 13, fontWeight: 600 }}>{EURO(v)}</div>
+            </div>
+          ))}
+          <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 10 }}>Le sublocazioni ({EURO(D.ricSub)}) restano interamente a Valente Living: il margine reale si calcola dopo affitti e costi diretti.</div>
+        </Card>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))", gap: 24 }}>
+          <div><H2 t="Andamento mensile" s="nero gestioni · oro sublocazioni · per mese di check-in" />
+            <Card><svg viewBox="0 0 560 250" style={{ width: "100%", display: "block" }}>
+              {D.mesi.map((m, i) => { const bw = 524 / D.mesi.length, x = 30 + i * bw + 2, hg = (m.g / mx) * 200, hs = (m.s / mx) * 200; return (
+                <Fragment key={m.m}>
+                  <rect x={x} y={220 - hg - hs} width={bw - 4} height={hs} fill="var(--gold)" />
+                  <rect x={x} y={220 - hg} width={bw - 4} height={hg} fill="#0A0A0A" />
+                  <text x={x + bw / 2 - 2} y={236} fontSize="8.5" fill="#999" textAnchor="middle">{m.m.slice(5)}/{m.m.slice(2, 4)}</text>
+                  <text x={x + bw / 2 - 2} y={214 - hg - hs} fontSize="8.5" textAnchor="middle">{Math.round((m.g + m.s) / 1000)}k</text>
+                </Fragment>); })}
+            </svg></Card></div>
+          <div><H2 t="Canali di vendita" s="volume, incidenza commissioni, cancellazioni" />
+            <Card><table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr>{["Canale", "Pren.", "Ricavo", "Comm.", "% Canc."].map((h, i) => <th key={h} style={thS(i > 0)}>{h}</th>)}</tr></thead>
+              <tbody>{D.can.map((c) => <tr key={c.c}><td style={tdS()}>{c.c}</td><td style={tdS(1)}>{c.n - c.canc}</td><td style={tdS(1)}>{EURO(c.ric)}</td><td style={tdS(1)}>{c.comm ? ((c.comm / c.ric) * 100).toFixed(1) + "%" : "—"}</td><td style={tdS(1)}>{Math.round((c.canc / c.n) * 100)}%</td></tr>)}</tbody></table></Card></div>
+        </div>
+
+        <H2 t="Portafoglio appartamenti" s="ordinato per ricavo · ADR = ricavo medio a notte" />
+        <Card style={{ padding: "8px 16px", overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr>{["Appartamento", "Città", "Regime", "Pren.", "Notti", "ADR", "Ricavo", "Quota PM", "Quota propr."].map((h, i) => <th key={h} style={thS(i > 2)}>{h}</th>)}</tr></thead>
+            <tbody>{D.apps.map((a) => <tr key={a.nome}>
+              <td style={tdS()}>{a.nome}</td><td style={tdS()}>{a.citta}</td>
+              <td style={tdS()}><CT tipo={a.sub ? "sublocazione" : "gestione"} /></td>
+              <td style={tdS(1)}>{a.n}</td><td style={tdS(1)}>{a.notti}</td><td style={tdS(1)}>€ {Math.round(a.ric / Math.max(a.notti, 1))}</td>
+              <td style={{ ...tdS(1), fontWeight: 600 }}>{EURO(a.ric)}</td><td style={tdS(1)}>{a.sub ? "—" : EURO(a.qpm)}</td><td style={tdS(1)}>{a.sub ? "—" : EURO(a.qprop)}</td></tr>)}</tbody></table>
+        </Card>
+
+        <H2 t="Controlli di coerenza" s="verifiche automatiche eseguite sui dati live" />
+        <Card>
+          <Chk ok={!ov.length}>{ov.length ? <>⚠ <b>{ov.length} sovrapposizioni di date</b> (stessa unità, periodi incrociati): {ov.slice(0, 3).map((o) => `${o.camere} ${o.prenotazione_a}/${o.prenotazione_b}`).join(" · ")}</> : <><b>Nessuna sovrapposizione di date</b> tra prenotazioni attive — zero double booking.</>}</Chk>
+          <Chk ok={!D.nonMap.length}>{D.nonMap.length ? <>Unità non collegate a schede CRM: <b>{D.nonMap.join(", ")}</b></> : <>Tutte le unità sono collegate a una scheda proprietà.</>}</Chk>
+          <Chk ok={!D.senzaProp.length}>{D.senzaProp.length ? <>Gestioni senza proprietario in Krossbooking (fuori dai rendiconti): <b>{D.senzaProp.join(", ")}</b></> : <>Tutte le gestioni hanno il proprietario configurato in Krossbooking.</>}</Chk>
+        </Card>
+      </>}
+    </div>
+  );
+}
+/* ============ FINE SEZIONE GESTIONE ============ */
+
+
+/* ============ SEZIONE CONTABILITÀ: spese, fatture, rendiconti, IVA ============ */
+/* Gli incassi ospiti NON si reinseriscono qui: arrivano dalle prenotazioni Krossbooking
+   (vista v_prenotazioni_ripartizione), così non esistono doppioni tra Gestione e Contabilità. */
+const SPESE_CATEGORIE = ["pulizie", "lavanderia", "manutenzione", "utenze", "forniture", "marketing", "software", "tasse e imposte", "consulenze", "altro"];
+const METODI_PAG = ["bonifico", "carta", "contanti", "PayPal", "altro"];
+const C_oggi = () => new Date().toISOString().slice(0, 10);
+const C_num = (v) => { if (v === null || v === undefined || v === "") return 0; const n = parseFloat(String(v).replace(",", ".")); return isNaN(n) ? 0 : n; };
+const C_iva = (importo, pct) => { const p = C_num(pct); return p ? importo - importo / (1 + p / 100) : 0; };
+const C_dataIT = (d) => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—";
+const C_MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+const C_meseLabel = (ym) => { const [a, m] = (ym || "").split("-"); return m ? C_MESI[parseInt(m) - 1] + " " + a : ym; };
+const C_fineMese = (ym) => { const [a, m] = ym.split("-").map(Number); return ym + "-" + String(new Date(a, m, 0).getDate()).padStart(2, "0"); };
+const C_thS = (r) => ({ textAlign: r ? "right" : "left", fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "var(--gray)", fontWeight: 500, padding: 8, borderBottom: "1px solid var(--black)", whiteSpace: "nowrap" });
+const C_tdS = (r) => ({ padding: 8, borderBottom: "1px solid var(--gl)", textAlign: r ? "right" : "left", fontSize: 12.5 });
+const C_Card = ({ children, style }) => <div style={{ background: "#fff", border: "1px solid var(--gl)", padding: 20, ...style }}>{children}</div>;
+const C_Kpi = ({ l, v, n, gold }) => <div style={{ background: "#fff", padding: "16px 14px" }}><div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: "var(--gray)" }}>{l}</div><div style={{ fontFamily: "'Playfair Display',serif", fontSize: 22, fontWeight: 600, marginTop: 6, color: gold ? "var(--gold)" : "var(--black)" }}>{v}</div>{n && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 3 }}>{n}</div>}</div>;
+const FATT_STATI = { bozza: "#888", emessa: "#1d6fa4", incassata: "#2d6a4f", scaduta: "#c0392b", annullata: "#aaa" };
+const REND_STATI = { bozza: "#888", inviato: "#1d6fa4", liquidato: "#2d6a4f" };
+
+// ── Form Spesa ──
+const EMPTY_SPESA = { data: "", proprieta_id: "", categoria: "pulizie", descrizione: "", fornitore: "", importo: "", iva_pct: "22", addebito: "valente", metodo_pagamento: "bonifico", pagata: true, note: "" };
+const SpesaForm = ({ init, proprieta, onSave, onClose, loading }) => {
+  const [f, setF] = useState({ ...EMPTY_SPESA, data: C_oggi(), ...init });
+  const s = (k, v) => setF(p => ({ ...p, [k]: v }));
+  return (
+    <>
+      <ST>Dati spesa</ST><FG>
+        <FF label="Data"><input type="date" value={f.data || ""} onChange={e => s("data", e.target.value)} /></FF>
+        <FF label="Categoria"><select value={f.categoria} onChange={e => s("categoria", e.target.value)}>{SPESE_CATEGORIE.map(c => <option key={c}>{c}</option>)}</select></FF>
+        <FF label="Immobile (opzionale)" span={2}><select value={f.proprieta_id || ""} onChange={e => s("proprieta_id", e.target.value)}><option value="">— Spesa generale Valente —</option>{proprieta.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}</select></FF>
+        <FF label="Descrizione" span={2}><input value={f.descrizione || ""} onChange={e => s("descrizione", e.target.value)} placeholder="Es. intervento idraulico bagno" /></FF>
+        <FF label="Fornitore" span={2}><input value={f.fornitore || ""} onChange={e => s("fornitore", e.target.value)} /></FF>
+      </FG>
+      <div style={{ marginTop: 20 }}><ST>Importo e addebito</ST><FG>
+        <FF label="Importo € (IVA incl.)"><input type="number" step="0.01" value={f.importo} onChange={e => s("importo", e.target.value)} /></FF>
+        <FF label="IVA %"><input type="number" value={f.iva_pct} onChange={e => s("iva_pct", e.target.value)} /></FF>
+        <FF label="A carico di"><select value={f.addebito} onChange={e => s("addebito", e.target.value)}><option value="valente">Valente Living</option><option value="proprietario">Proprietario (in rendiconto)</option></select></FF>
+        <FF label="Pagamento"><select value={f.metodo_pagamento || ""} onChange={e => s("metodo_pagamento", e.target.value)}>{METODI_PAG.map(m => <option key={m}>{m}</option>)}</select></FF>
+        <FF label="Stato"><select value={f.pagata ? "si" : "no"} onChange={e => s("pagata", e.target.value === "si")}><option value="si">Pagata</option><option value="no">Da pagare</option></select></FF>
+      </FG></div>
+      {f.addebito === "proprietario" && !f.proprieta_id && <p style={{ fontSize: 12, color: "var(--red)", marginTop: 12 }}>Per addebitare la spesa a un proprietario devi collegarla a un immobile.</p>}
+      <div style={{ marginTop: 20 }}><ST>Note</ST><textarea value={f.note || ""} onChange={e => s("note", e.target.value)} rows={2} /></div>
+      <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
+        <button className="bg" onClick={onClose}>Annulla</button>
+        <button className="bp" onClick={() => onSave(f)} disabled={loading || !C_num(f.importo) || (f.addebito === "proprietario" && !f.proprieta_id)}>{loading ? "..." : "Salva"}</button>
+      </div>
+    </>
+  );
+};
+
+// ── Form Fattura ──
+const EMPTY_FATT = { numero: "", data: "", proprietario_id: "", proprieta_id: "", descrizione: "", imponibile: "", iva_pct: "22", stato: "emessa", data_incasso: "", metodo_incasso: "", periodo_da: "", periodo_a: "", note: "" };
+const FatturaForm = ({ init, proprieta, owners, onSave, onClose, loading }) => {
+  const [f, setF] = useState({ ...EMPTY_FATT, data: C_oggi(), ...init });
+  const s = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const totale = C_num(f.imponibile) * (1 + C_num(f.iva_pct) / 100);
+  return (
+    <>
+      <ST>Documento</ST><FG>
+        <FF label="Numero"><input value={f.numero || ""} onChange={e => s("numero", e.target.value)} placeholder="Es. 12/2026" /></FF>
+        <FF label="Data"><input type="date" value={f.data || ""} onChange={e => s("data", e.target.value)} /></FF>
+        <FF label="Cliente (proprietario)" span={2}><select value={f.proprietario_id || ""} onChange={e => s("proprietario_id", e.target.value)}><option value="">— Altro cliente —</option>{owners.map(o => <option key={o.id} value={o.id}>{o.cognome} {o.nome}</option>)}</select></FF>
+        <FF label="Immobile (opzionale)" span={2}><select value={f.proprieta_id || ""} onChange={e => s("proprieta_id", e.target.value)}><option value="">—</option>{proprieta.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}</select></FF>
+        <FF label="Descrizione" span={2}><input value={f.descrizione || ""} onChange={e => s("descrizione", e.target.value)} placeholder="Es. compensi di gestione maggio 2026" /></FF>
+        <FF label="Periodo da"><input type="date" value={f.periodo_da || ""} onChange={e => s("periodo_da", e.target.value)} /></FF>
+        <FF label="Periodo a"><input type="date" value={f.periodo_a || ""} onChange={e => s("periodo_a", e.target.value)} /></FF>
+      </FG>
+      <div style={{ marginTop: 20 }}><ST>Importi</ST><FG>
+        <FF label="Imponibile €"><input type="number" step="0.01" value={f.imponibile} onChange={e => s("imponibile", e.target.value)} /></FF>
+        <FF label="IVA %"><input type="number" value={f.iva_pct} onChange={e => s("iva_pct", e.target.value)} /></FF>
+        <FF label="Totale (auto)"><input value={totale ? totale.toFixed(2) : ""} readOnly style={{ background: "var(--cd)" }} /></FF>
+        <FF label="Stato"><select value={f.stato} onChange={e => s("stato", e.target.value)}>{Object.keys(FATT_STATI).map(x => <option key={x}>{x}</option>)}</select></FF>
+        {f.stato === "incassata" && <FF label="Data incasso"><input type="date" value={f.data_incasso || ""} onChange={e => s("data_incasso", e.target.value)} /></FF>}
+      </FG></div>
+      <div style={{ marginTop: 20 }}><ST>Note</ST><textarea value={f.note || ""} onChange={e => s("note", e.target.value)} rows={2} /></div>
+      <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
+        <button className="bg" onClick={onClose}>Annulla</button>
+        <button className="bp" onClick={() => onSave({ ...f, importo_totale: totale || null })} disabled={loading || !C_num(f.imponibile)}>{loading ? "..." : "Salva"}</button>
+      </div>
+    </>
+  );
+};
+
+function ContabilitaView({ proprieta, owners }) {
+  const [tab, setTab] = useState("spese");
+  const [spese, setSpese] = useState(null);
+  const [fatture, setFatture] = useState(null);
+  const [rendiconti, setRendiconti] = useState(null);
+  const [pren, setPren] = useState(null);
+  const [modalS, setModalS] = useState(null);   // "new" | spesa
+  const [modalF, setModalF] = useState(null);   // "new" | fattura
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const load = useCallback(async () => {
+    const [rS, rF, rR] = await Promise.all([
+      sb.get("spese", "?select=*&order=data.desc&limit=3000"),
+      sb.get("fatture", "?select=*&order=data.desc&limit=2000"),
+      sb.get("rendiconti", "?select=*&order=periodo_da.desc&limit=1000"),
+    ]);
+    setSpese(Array.isArray(rS.data) ? rS.data : []);
+    setFatture(Array.isArray(rF.data) ? rF.data : []);
+    setRendiconti(Array.isArray(rR.data) ? rR.data : []);
+    // Prenotazioni dalla stessa vista della dashboard Gestione: nessun doppione di dati
+    let all = [], off = 0;
+    while (true) {
+      const { data, ok } = await sb.get("v_prenotazioni_ripartizione", `?select=*&order=check_in.asc&limit=1000&offset=${off}`);
+      if (!ok || !Array.isArray(data)) break;
+      all = all.concat(data); if (data.length < 1000) break; off += 1000;
+    }
+    setPren(all);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const propNome = (id) => { const p = proprieta.find(x => String(x.id) === String(id)); return p ? p.nome : "—"; };
+  const ownerNome = (id) => { const o = owners.find(x => String(x.id) === String(id)); return o ? `${o.cognome || ""} ${o.nome || ""}`.trim() : "—"; };
+
+  const saveSpesa = async (f) => {
+    setSaving(true);
+    const clean = { data: f.data || C_oggi(), proprieta_id: f.proprieta_id || null, categoria: f.categoria, descrizione: f.descrizione || null, fornitore: f.fornitore || null, importo: C_num(f.importo), iva_pct: C_num(f.iva_pct), addebito: f.addebito, metodo_pagamento: f.metodo_pagamento || null, pagata: !!f.pagata, note: f.note || null };
+    if (modalS === "new") await sb.post("spese", clean); else await sb.patch("spese", modalS.id, clean);
+    await load(); setSaving(false); setModalS(null);
+  };
+  const delSpesa = async (sp) => {
+    if (sp.rendiconto_id) { alert("Questa spesa è già dentro un rendiconto: elimina prima il rendiconto."); return; }
+    if (!confirm("Eliminare questa spesa?")) return;
+    await sb.del("spese", sp.id); await load();
+  };
+  const saveFatt = async (f) => {
+    setSaving(true);
+    const clean = { numero: f.numero || null, data: f.data || C_oggi(), proprietario_id: f.proprietario_id || null, proprieta_id: f.proprieta_id || null, descrizione: f.descrizione || null, imponibile: C_num(f.imponibile), iva_pct: C_num(f.iva_pct), importo_totale: C_num(f.importo_totale) || C_num(f.imponibile) * (1 + C_num(f.iva_pct) / 100), stato: f.stato, data_incasso: f.data_incasso || null, metodo_incasso: f.metodo_incasso || null, periodo_da: f.periodo_da || null, periodo_a: f.periodo_a || null, note: f.note || null };
+    if (modalF === "new") await sb.post("fatture", clean); else await sb.patch("fatture", modalF.id, clean);
+    await load(); setSaving(false); setModalF(null);
+  };
+  const incassaFatt = async (f) => { await sb.patch("fatture", f.id, { stato: "incassata", data_incasso: C_oggi() }); await load(); };
+  const delFatt = async (f) => { if (!confirm("Eliminare questa fattura?")) return; await sb.del("fatture", f.id); await load(); };
+
+  if (spese === null || fatture === null || rendiconti === null || pren === null)
+    return <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento contabilità…</div>;
+
+  const TABS = [["spese", "Spese"], ["fatture", "Fatture & Incassi"], ["rendiconti", "Rendiconti proprietari"], ["fiscale", "Riepilogo IVA"]];
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12, marginBottom: 8 }}>
+        <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Contabilità</h1>
+          <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Incassi ospiti dalle prenotazioni Krossbooking · spese, fatture e rendiconti gestiti qui</p></div>
+      </div>
+      <div className="gl" style={{ marginBottom: 18 }} />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 22 }}>
+        {TABS.map(([id, l]) => <button key={id} className={tab === id ? "bp" : "bg"} onClick={() => { setTab(id); setMsg(""); }}>{l}</button>)}
+      </div>
+      {msg && <div style={{ marginBottom: 14, fontSize: 13, fontWeight: 500, color: "var(--gold)" }}>{msg}</div>}
+
+      {tab === "spese" && <SpeseTab spese={spese} proprieta={proprieta} propNome={propNome} onNew={() => setModalS("new")} onEdit={setModalS} onDel={delSpesa} />}
+      {tab === "fatture" && <FattureTab fatture={fatture} ownerNome={ownerNome} propNome={propNome} onNew={() => setModalF("new")} onEdit={setModalF} onDel={delFatt} onIncassa={incassaFatt} />}
+      {tab === "rendiconti" && <RendicontiTab rendiconti={rendiconti} spese={spese} pren={pren} proprieta={proprieta} owners={owners} ownerNome={ownerNome} propNome={propNome} onChanged={load} setMsg={setMsg} />}
+      {tab === "fiscale" && <FiscaleTab pren={pren} spese={spese} fatture={fatture} />}
+
+      {modalS && <Modal title={modalS === "new" ? "Nuova spesa" : "Modifica spesa"} onClose={() => setModalS(null)}>
+        <SpesaForm init={modalS === "new" ? {} : modalS} proprieta={proprieta} onSave={saveSpesa} onClose={() => setModalS(null)} loading={saving} /></Modal>}
+      {modalF && <Modal title={modalF === "new" ? "Nuova fattura" : "Modifica fattura"} onClose={() => setModalF(null)}>
+        <FatturaForm init={modalF === "new" ? {} : modalF} proprieta={proprieta} owners={owners} onSave={saveFatt} onClose={() => setModalF(null)} loading={saving} /></Modal>}
+    </div>
+  );
+}
+
+// ── Tab Spese ──
+function SpeseTab({ spese, proprieta, propNome, onNew, onEdit, onDel }) {
+  const [anno, setAnno] = useState("tutti");
+  const [mese, setMese] = useState("tutti");
+  const [fProp, setFProp] = useState("");
+  const [fCat, setFCat] = useState("");
+  const [fAdd, setFAdd] = useState("");
+  const anni = [...new Set(spese.map(s => (s.data || "").slice(0, 4)).filter(Boolean))].sort().reverse();
+  const filt = spese.filter(s =>
+    (anno === "tutti" || (s.data || "").startsWith(anno)) &&
+    (mese === "tutti" || (s.data || "").slice(5, 7) === mese) &&
+    (!fProp || String(s.proprieta_id) === fProp) &&
+    (!fCat || s.categoria === fCat) &&
+    (!fAdd || s.addebito === fAdd));
+  const tot = filt.reduce((a, s) => a + C_num(s.importo), 0);
+  const totProp = filt.filter(s => s.addebito === "proprietario").reduce((a, s) => a + C_num(s.importo), 0);
+  const ivaCred = filt.filter(s => s.addebito === "valente").reduce((a, s) => a + C_iva(C_num(s.importo), s.iva_pct), 0);
+  const daPagare = filt.filter(s => !s.pagata).reduce((a, s) => a + C_num(s.importo), 0);
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
+        <select value={anno} onChange={e => setAnno(e.target.value)} style={{ width: 110 }}><option value="tutti">Tutti gli anni</option>{anni.map(a => <option key={a}>{a}</option>)}</select>
+        <select value={mese} onChange={e => setMese(e.target.value)} style={{ width: 130 }}><option value="tutti">Tutti i mesi</option>{C_MESI.map((m, i) => <option key={m} value={String(i + 1).padStart(2, "0")}>{m}</option>)}</select>
+        <select value={fProp} onChange={e => setFProp(e.target.value)} style={{ width: 180 }}><option value="">Tutti gli immobili</option>{proprieta.map(p => <option key={p.id} value={String(p.id)}>{p.nome}</option>)}</select>
+        <select value={fCat} onChange={e => setFCat(e.target.value)} style={{ width: 150 }}><option value="">Tutte le categorie</option>{SPESE_CATEGORIE.map(c => <option key={c}>{c}</option>)}</select>
+        <select value={fAdd} onChange={e => setFAdd(e.target.value)} style={{ width: 160 }}><option value="">Tutti gli addebiti</option><option value="valente">Valente Living</option><option value="proprietario">Proprietario</option></select>
+        <button className="bp" style={{ marginLeft: "auto" }} onClick={onNew}>+ Nuova spesa</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 1, background: "var(--gl)", border: "1px solid var(--gl)", marginBottom: 20 }}>
+        <C_Kpi l="Spese nel periodo" v={EURO(tot)} n={`${filt.length} movimenti`} />
+        <C_Kpi l="A carico proprietari" v={EURO(totProp)} n="da recuperare in rendiconto" />
+        <C_Kpi l="A carico Valente" v={EURO(tot - totProp)} n="costi propri" />
+        <C_Kpi l="IVA detraibile" v={EURO(ivaCred)} n="su spese Valente" gold />
+        {daPagare > 0 && <C_Kpi l="Da pagare" v={EURO(daPagare)} n="spese non saldate" />}
+      </div>
+      {filt.length === 0 ? <div style={{ textAlign: "center", padding: 50, color: "var(--gray)" }}>Nessuna spesa registrata per i filtri scelti. Usa "+ Nuova spesa".</div> : (
+        <C_Card style={{ padding: "8px 16px", overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>{["Data", "Immobile", "Categoria", "Descrizione", "Fornitore", "A carico", "Importo", ""].map((h, i) => <th key={h || "x"} style={C_thS(i === 6)}>{h}</th>)}</tr></thead>
+            <tbody>{filt.map(s => (
+              <tr key={s.id} style={{ opacity: s.pagata ? 1 : .65 }}>
+                <td style={C_tdS()}>{C_dataIT(s.data)}</td>
+                <td style={C_tdS()}>{s.proprieta_id ? propNome(s.proprieta_id) : <span style={{ color: "var(--gray)" }}>generale</span>}</td>
+                <td style={C_tdS()}><span className="tag">{s.categoria}</span></td>
+                <td style={C_tdS()}>{s.descrizione || "—"}{!s.pagata && <span style={{ color: "var(--red)", fontSize: 10, marginLeft: 6 }}>da pagare</span>}{s.rendiconto_id && <span style={{ color: "#1d6fa4", fontSize: 10, marginLeft: 6 }}>in rendiconto</span>}</td>
+                <td style={C_tdS()}>{s.fornitore || "—"}</td>
+                <td style={C_tdS()}>{s.addebito === "proprietario" ? "Proprietario" : "Valente"}</td>
+                <td style={{ ...C_tdS(1), fontWeight: 600 }}>{EURO(C_num(s.importo))}</td>
+                <td style={C_tdS(1)}>
+                  <button onClick={() => onEdit(s)} style={{ background: "none", border: "none", color: "var(--gold)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Modifica</button>
+                  <button onClick={() => onDel(s)} style={{ background: "none", border: "none", color: "var(--red)", fontSize: 11, cursor: "pointer" }}>Elimina</button>
+                </td>
+              </tr>))}</tbody>
+          </table>
+        </C_Card>
+      )}
+    </>
+  );
+}
+
+// ── Tab Fatture & Incassi ──
+function FattureTab({ fatture, ownerNome, propNome, onNew, onEdit, onDel, onIncassa }) {
+  const [anno, setAnno] = useState("tutti");
+  const anni = [...new Set(fatture.map(f => (f.data || "").slice(0, 4)).filter(Boolean))].sort().reverse();
+  const filt = fatture.filter(f => anno === "tutti" || (f.data || "").startsWith(anno));
+  const attive = filt.filter(f => f.stato !== "annullata" && f.stato !== "bozza");
+  const emesso = attive.reduce((a, f) => a + C_num(f.importo_totale), 0);
+  const incassato = attive.filter(f => f.stato === "incassata").reduce((a, f) => a + C_num(f.importo_totale), 0);
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
+        <select value={anno} onChange={e => setAnno(e.target.value)} style={{ width: 110 }}><option value="tutti">Tutti gli anni</option>{anni.map(a => <option key={a}>{a}</option>)}</select>
+        <button className="bp" style={{ marginLeft: "auto" }} onClick={onNew}>+ Nuova fattura</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 1, background: "var(--gl)", border: "1px solid var(--gl)", marginBottom: 20 }}>
+        <C_Kpi l="Fatturato emesso" v={EURO(emesso)} n={`${attive.length} fatture`} />
+        <C_Kpi l="Incassato" v={EURO(incassato)} n="fatture saldate" gold />
+        <C_Kpi l="Da incassare" v={EURO(emesso - incassato)} n="emesse non saldate" />
+      </div>
+      <p style={{ fontSize: 11, color: "var(--gray)", marginBottom: 14 }}>Qui registri le fatture che Valente Living emette (compensi di gestione, servizi). Gli incassi dei soggiorni restano in Gestione: non vanno reinseriti.</p>
+      {filt.length === 0 ? <div style={{ textAlign: "center", padding: 50, color: "var(--gray)" }}>Nessuna fattura registrata.</div> : (
+        <C_Card style={{ padding: "8px 16px", overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>{["N.", "Data", "Cliente", "Descrizione", "Imponibile", "IVA", "Totale", "Stato", ""].map((h, i) => <th key={h || "x"} style={C_thS(i >= 4 && i <= 6)}>{h}</th>)}</tr></thead>
+            <tbody>{filt.map(f => (
+              <tr key={f.id}>
+                <td style={C_tdS()}>{f.numero || "—"}</td>
+                <td style={C_tdS()}>{C_dataIT(f.data)}</td>
+                <td style={C_tdS()}>{f.proprietario_id ? ownerNome(f.proprietario_id) : (f.proprieta_id ? propNome(f.proprieta_id) : "—")}</td>
+                <td style={C_tdS()}>{f.descrizione || "—"}</td>
+                <td style={C_tdS(1)}>{EURO(C_num(f.imponibile))}</td>
+                <td style={C_tdS(1)}>{EURO(C_num(f.importo_totale) - C_num(f.imponibile))}</td>
+                <td style={{ ...C_tdS(1), fontWeight: 600 }}>{EURO(C_num(f.importo_totale))}</td>
+                <td style={C_tdS()}><span className="pill" style={{ background: FATT_STATI[f.stato] || "#888" }}>{f.stato}</span>{f.data_incasso ? <span style={{ fontSize: 10, color: "var(--gray)", marginLeft: 6 }}>{C_dataIT(f.data_incasso)}</span> : null}</td>
+                <td style={{ ...C_tdS(1), whiteSpace: "nowrap" }}>
+                  {(f.stato === "emessa" || f.stato === "scaduta") && <button onClick={() => onIncassa(f)} style={{ background: "none", border: "none", color: "#2d6a4f", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>✓ Incassata</button>}
+                  <button onClick={() => onEdit(f)} style={{ background: "none", border: "none", color: "var(--gold)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Modifica</button>
+                  <button onClick={() => onDel(f)} style={{ background: "none", border: "none", color: "var(--red)", fontSize: 11, cursor: "pointer" }}>Elimina</button>
+                </td>
+              </tr>))}</tbody>
+          </table>
+        </C_Card>
+      )}
+    </>
+  );
+}
+
+// ── Tab Rendiconti proprietari ──
+function RendicontiTab({ rendiconti, spese, pren, proprieta, owners, ownerNome, propNome, onChanged, setMsg }) {
+  const [ownerId, setOwnerId] = useState("");
+  const [mese, setMese] = useState(() => { const d = new Date(); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 7); });
+  const [busy, setBusy] = useState(false);
+  const [anteprima, setAnteprima] = useState(null);
+
+  const genera = () => {
+    setMsg("");
+    const o = owners.find(x => String(x.id) === ownerId);
+    if (!o) return;
+    const da = mese + "-01", a = C_fineMese(mese);
+    const propIds = new Set(proprieta.filter(p => String(p.proprietario_id) === ownerId).map(p => String(p.id)));
+    if (!propIds.size) { setAnteprima({ vuoto: "Questo proprietario non ha immobili collegati nel CRM." }); return; }
+    const giaFatto = rendiconti.find(r => String(r.proprietario_id) === ownerId && r.periodo_da === da);
+    const righe = pren.filter(r => r.proprieta_id && propIds.has(String(r.proprieta_id)) && !r.is_cancellata && !r.is_sublocazione && (r.check_in || "") >= da && (r.check_in || "") <= a);
+    const speseRow = spese.filter(s => s.addebito === "proprietario" && !s.rendiconto_id && s.proprieta_id && propIds.has(String(s.proprieta_id)) && (s.data || "") <= a);
+    const ricavi = righe.reduce((x, r) => x + (C_num(r.addebiti) - C_num(r.tassa_soggiorno)), 0);
+    const tassa = righe.reduce((x, r) => x + C_num(r.tassa_soggiorno), 0);
+    const comm = righe.reduce((x, r) => x + C_num(r.quota_pm), 0);
+    const quotaProp = righe.reduce((x, r) => x + (r.quota_proprietario != null ? C_num(r.quota_proprietario) : C_num(r.addebiti) - C_num(r.tassa_soggiorno) - C_num(r.quota_pm)), 0);
+    const totSpese = speseRow.reduce((x, s) => x + C_num(s.importo), 0);
+    setAnteprima({
+      owner: o, da, a, righe, speseRow, ricavi, tassa, comm, quotaProp, totSpese,
+      netto: quotaProp - totSpese, giaFatto,
+      vuoto: righe.length === 0 && speseRow.length === 0 ? "Nessuna prenotazione né spesa da rendicontare nel periodo." : null,
+    });
+  };
+
+  const salva = async () => {
+    if (!anteprima || anteprima.vuoto || anteprima.giaFatto) return;
+    setBusy(true);
+    const a = anteprima;
+    const dettaglio = {
+      prenotazioni: a.righe.map(r => ({ id: r.id, numero: r.numero, immobile: r.proprieta_nome || r.camere, check_in: r.check_in, check_out: r.check_out, notti: r.notti, ricavo: C_num(r.addebiti) - C_num(r.tassa_soggiorno), quota_pm: C_num(r.quota_pm), quota_proprietario: r.quota_proprietario != null ? C_num(r.quota_proprietario) : null })),
+      spese: a.speseRow.map(s => ({ id: s.id, data: s.data, immobile: propNome(s.proprieta_id), categoria: s.categoria, descrizione: s.descrizione, importo: C_num(s.importo) })),
+    };
+    const res = await sb.post("rendiconti", {
+      proprietario_id: a.owner.id, periodo_da: a.da, periodo_a: a.a,
+      ricavi_lordi: a.ricavi, tassa_soggiorno: a.tassa, commissioni_pm: a.comm,
+      spese_addebitate: a.totSpese, netto_proprietario: a.netto,
+      n_prenotazioni: a.righe.length, n_notti: a.righe.reduce((x, r) => x + (r.notti || 0), 0),
+      stato: "bozza", dettaglio,
+    });
+    if (res.ok) {
+      const nuovo = Array.isArray(res.data) ? res.data[0] : res.data;
+      for (const s of a.speseRow) await sb.patch("spese", s.id, { rendiconto_id: nuovo.id });
+      setMsg("Rendiconto creato in bozza per " + (a.owner.cognome || "") + " " + (a.owner.nome || "") + " · " + C_meseLabel(mese) + ".");
+      setAnteprima(null);
+      await onChanged();
+    } else setMsg("Errore nel salvataggio: esiste già un rendiconto per questo periodo?");
+    setBusy(false);
+  };
+
+  const cambiaStato = async (r, stato) => {
+    const patch = { stato };
+    if (stato === "inviato") patch.data_invio = C_oggi();
+    if (stato === "liquidato") patch.data_pagamento = C_oggi();
+    await sb.patch("rendiconti", r.id, patch); await onChanged();
+  };
+  const elimina = async (r) => {
+    if (!confirm("Eliminare il rendiconto? Le spese collegate torneranno disponibili per un nuovo rendiconto.")) return;
+    const daLiberare = spese.filter(s => s.rendiconto_id === r.id);
+    for (const s of daLiberare) await sb.patch("spese", s.id, { rendiconto_id: null });
+    await sb.del("rendiconti", r.id); await onChanged();
+  };
+
+  return (
+    <>
+      <C_Card style={{ marginBottom: 22 }}>
+        <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 12 }}>Genera rendiconto mensile</p>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <select value={ownerId} onChange={e => { setOwnerId(e.target.value); setAnteprima(null); }} style={{ width: 220 }}>
+            <option value="">— Proprietario —</option>
+            {owners.map(o => <option key={o.id} value={String(o.id)}>{o.cognome} {o.nome}</option>)}
+          </select>
+          <input type="month" value={mese} onChange={e => { setMese(e.target.value); setAnteprima(null); }} style={{ width: 160 }} />
+          <button className="bp" onClick={genera} disabled={!ownerId || !mese}>Calcola</button>
+        </div>
+        <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 10 }}>Prenotazioni per mese di check-in (stessi criteri della dashboard Gestione) + spese a carico del proprietario non ancora rendicontate.</p>
+
+        {anteprima && (
+          <div style={{ marginTop: 18, borderTop: "1px solid var(--gl)", paddingTop: 16 }}>
+            {anteprima.vuoto ? <p style={{ fontSize: 13, color: "var(--gray)" }}>{anteprima.vuoto}</p> : (
+              <>
+                {anteprima.giaFatto && <p style={{ fontSize: 12, color: "var(--red)", marginBottom: 10 }}>Esiste già un rendiconto {C_meseLabel(mese)} per questo proprietario ({anteprima.giaFatto.stato}). Eliminalo prima di rigenerarlo.</p>}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 1, background: "var(--gl)", border: "1px solid var(--gl)", marginBottom: 14 }}>
+                  <C_Kpi l="Ricavi lordi" v={EURO(anteprima.ricavi)} n={`${anteprima.righe.length} pren. · ${anteprima.righe.reduce((x, r) => x + (r.notti || 0), 0)} notti`} />
+                  <C_Kpi l="Compenso Valente" v={EURO(anteprima.comm)} n="quota PM, IVA inclusa" />
+                  <C_Kpi l="Spese addebitate" v={EURO(anteprima.totSpese)} n={`${anteprima.speseRow.length} voci`} />
+                  <C_Kpi l="Netto al proprietario" v={EURO(anteprima.netto)} gold />
+                </div>
+                {anteprima.righe.length > 0 && (
+                  <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
+                    <thead><tr>{["Immobile", "Check-in", "Notti", "Ricavo", "Quota Valente", "Quota propr."].map((h, i) => <th key={h} style={C_thS(i > 1)}>{h}</th>)}</tr></thead>
+                    <tbody>{anteprima.righe.map(r => (
+                      <tr key={r.id}>
+                        <td style={C_tdS()}>{r.proprieta_nome || r.camere}</td>
+                        <td style={C_tdS()}>{C_dataIT(r.check_in)}</td>
+                        <td style={C_tdS(1)}>{r.notti}</td>
+                        <td style={C_tdS(1)}>{EURO(C_num(r.addebiti) - C_num(r.tassa_soggiorno))}</td>
+                        <td style={C_tdS(1)}>{EURO(C_num(r.quota_pm))}</td>
+                        <td style={C_tdS(1)}>{EURO(r.quota_proprietario != null ? C_num(r.quota_proprietario) : C_num(r.addebiti) - C_num(r.tassa_soggiorno) - C_num(r.quota_pm))}</td>
+                      </tr>))}</tbody>
+                  </table>
+                )}
+                {anteprima.speseRow.length > 0 && (
+                  <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
+                    <thead><tr>{["Spesa da addebitare", "Data", "Immobile", "Importo"].map((h, i) => <th key={h} style={C_thS(i === 3)}>{h}</th>)}</tr></thead>
+                    <tbody>{anteprima.speseRow.map(s => (
+                      <tr key={s.id}><td style={C_tdS()}>{s.categoria}{s.descrizione ? " · " + s.descrizione : ""}</td><td style={C_tdS()}>{C_dataIT(s.data)}</td><td style={C_tdS()}>{propNome(s.proprieta_id)}</td><td style={C_tdS(1)}>{EURO(C_num(s.importo))}</td></tr>))}</tbody>
+                  </table>
+                )}
+                <button className="bp" onClick={salva} disabled={busy || !!anteprima.giaFatto}>{busy ? "Salvo…" : "Salva rendiconto (bozza)"}</button>
+              </>
+            )}
+          </div>
+        )}
+      </C_Card>
+
+      <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 10 }}>Rendiconti salvati</p>
+      {rendiconti.length === 0 ? <div style={{ textAlign: "center", padding: 40, color: "var(--gray)" }}>Nessun rendiconto ancora. Generane uno qui sopra.</div> : (
+        <C_Card style={{ padding: "8px 16px", overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>{["Proprietario", "Periodo", "Ricavi", "Compensi", "Spese", "Netto", "Stato", ""].map((h, i) => <th key={h || "x"} style={C_thS(i >= 2 && i <= 5)}>{h}</th>)}</tr></thead>
+            <tbody>{rendiconti.map(r => (
+              <tr key={r.id}>
+                <td style={C_tdS()}>{ownerNome(r.proprietario_id)}</td>
+                <td style={C_tdS()}>{C_meseLabel((r.periodo_da || "").slice(0, 7))}</td>
+                <td style={C_tdS(1)}>{EURO(C_num(r.ricavi_lordi))}</td>
+                <td style={C_tdS(1)}>{EURO(C_num(r.commissioni_pm))}</td>
+                <td style={C_tdS(1)}>{EURO(C_num(r.spese_addebitate))}</td>
+                <td style={{ ...C_tdS(1), fontWeight: 600 }}>{EURO(C_num(r.netto_proprietario))}</td>
+                <td style={C_tdS()}><span className="pill" style={{ background: REND_STATI[r.stato] || "#888" }}>{r.stato}</span></td>
+                <td style={{ ...C_tdS(1), whiteSpace: "nowrap" }}>
+                  {r.stato === "bozza" && <button onClick={() => cambiaStato(r, "inviato")} style={{ background: "none", border: "none", color: "#1d6fa4", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Segna inviato</button>}
+                  {r.stato === "inviato" && <button onClick={() => cambiaStato(r, "liquidato")} style={{ background: "none", border: "none", color: "#2d6a4f", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>✓ Liquidato</button>}
+                  <button onClick={() => elimina(r)} style={{ background: "none", border: "none", color: "var(--red)", fontSize: 11, cursor: "pointer" }}>Elimina</button>
+                </td>
+              </tr>))}</tbody>
+          </table>
+        </C_Card>
+      )}
+    </>
+  );
+}
+
+// ── Tab Riepilogo IVA / fiscale ──
+function FiscaleTab({ pren, spese, fatture }) {
+  const anni = [...new Set([
+    ...pren.filter(r => !r.is_cancellata).map(r => (r.check_in || "").slice(0, 4)),
+    ...spese.map(s => (s.data || "").slice(0, 4)),
+    ...fatture.map(f => (f.data || "").slice(0, 4)),
+  ].filter(Boolean))].sort().reverse();
+  const [anno, setAnno] = useState(anni[0] || String(new Date().getFullYear()));
+
+  const inQ = (d, q) => { const m = parseInt((d || "").slice(5, 7)); return m >= q * 3 - 2 && m <= q * 3; };
+  const Y = (d) => (d || "").startsWith(anno);
+  const gest = pren.filter(r => !r.is_cancellata && !r.is_sublocazione && Y(r.check_in));
+  const sub = pren.filter(r => !r.is_cancellata && r.is_sublocazione && Y(r.check_in));
+  const fattOk = fatture.filter(f => f.stato !== "annullata" && f.stato !== "bozza" && Y(f.data));
+  const spValente = spese.filter(s => s.addebito === "valente" && Y(s.data));
+
+  const quart = [1, 2, 3, 4].map(q => {
+    const g = gest.filter(r => inQ(r.check_in, q));
+    const ivaTeor = g.reduce((x, r) => x + (r.pm_netto_iva != null ? C_num(r.quota_pm) - C_num(r.pm_netto_iva) : C_num(r.quota_pm) * (22 / 122)), 0);
+    const fq = fattOk.filter(f => inQ(f.data, q));
+    const ivaFatt = fq.reduce((x, f) => x + (C_num(f.importo_totale) - C_num(f.imponibile)), 0);
+    const sq = spValente.filter(s => inQ(s.data, q));
+    const ivaCred = sq.reduce((x, s) => x + C_iva(C_num(s.importo), s.iva_pct), 0);
+    return { q, ivaTeor, ivaFatt, nFatt: fq.length, ivaCred, saldoTeor: ivaTeor - ivaCred, saldoFatt: ivaFatt - ivaCred };
+  });
+
+  const ricaviGest = gest.reduce((x, r) => x + C_num(r.addebiti) - C_num(r.tassa_soggiorno), 0);
+  const ricaviSub = sub.reduce((x, r) => x + C_num(r.addebiti) - C_num(r.tassa_soggiorno), 0);
+  const compensi = gest.reduce((x, r) => x + C_num(r.quota_pm), 0);
+  const nettoVal = gest.reduce((x, r) => x + C_num(r.netto_valente), 0);
+  const totSpese = spValente.reduce((x, s) => x + C_num(s.importo), 0);
+  const totFatt = fattOk.reduce((x, f) => x + C_num(f.importo_totale), 0);
+  const totIncassato = fattOk.filter(f => f.stato === "incassata").reduce((x, f) => x + C_num(f.importo_totale), 0);
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, marginBottom: 18, alignItems: "center" }}>
+        <select value={anno} onChange={e => setAnno(e.target.value)} style={{ width: 110 }}>{(anni.length ? anni : [anno]).map(a => <option key={a}>{a}</option>)}</select>
+        <span style={{ fontSize: 11, color: "var(--gray)" }}>Anno fiscale (prenotazioni per check-in, spese e fatture per data documento)</span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(165px,1fr))", gap: 1, background: "var(--gl)", border: "1px solid var(--gl)", marginBottom: 22 }}>
+        <C_Kpi l="Ricavi gestioni" v={EURO(ricaviGest)} n="lordo ospiti, netto tassa sogg." />
+        <C_Kpi l="Compensi Valente" v={EURO(compensi)} n="quota PM, IVA inclusa" />
+        <C_Kpi l="Ricavi sublocazioni" v={EURO(ricaviSub)} n="lordo costi e affitti" />
+        <C_Kpi l="Fatturato emesso" v={EURO(totFatt)} n={`incassato ${EURO(totIncassato)}`} />
+        <C_Kpi l="Spese Valente" v={EURO(totSpese)} n="IVA inclusa" />
+        <C_Kpi l="Margine stimato" v={EURO(nettoVal + ricaviSub - totSpese)} n="netto Valente + sub − spese" gold />
+      </div>
+
+      <C_Card>
+        <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 12 }}>IVA per trimestre · {anno}</p>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>{["Trimestre", "IVA teorica (da prenotazioni)", "IVA da fatture emesse", "IVA detraibile (spese)", "Saldo teorico", "Saldo da fatture"].map((h, i) => <th key={h} style={C_thS(i > 0)}>{h}</th>)}</tr></thead>
+            <tbody>{quart.map(x => (
+              <tr key={x.q}>
+                <td style={C_tdS()}>Q{x.q} · {C_MESI[(x.q - 1) * 3].slice(0, 3)}–{C_MESI[x.q * 3 - 1].slice(0, 3)}</td>
+                <td style={C_tdS(1)}>{EURO(x.ivaTeor)}</td>
+                <td style={C_tdS(1)}>{x.nFatt ? EURO(x.ivaFatt) : "—"}</td>
+                <td style={C_tdS(1)}>{EURO(x.ivaCred)}</td>
+                <td style={{ ...C_tdS(1), fontWeight: 600 }}>{EURO(x.saldoTeor)}</td>
+                <td style={{ ...C_tdS(1), fontWeight: 600 }}>{x.nFatt ? EURO(x.saldoFatt) : "—"}</td>
+              </tr>))}</tbody>
+          </table>
+        </div>
+        <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 12, lineHeight: 1.5 }}>
+          L'IVA teorica è calcolata sui compensi di gestione delle prenotazioni (quota PM ÷ 1,22), come nella dashboard Gestione. Quando registri le fatture emesse, la colonna "da fatture" diventa il riferimento reale. Sono valori indicativi per il monitoraggio: per le liquidazioni fa fede il commercialista.
+        </p>
+      </C_Card>
+    </>
+  );
+}
+/* ============ FINE SEZIONE CONTABILITÀ ============ */
+
+
 function App() {
   const [view, setView] = useState("proprieta");
   const [proprieta, setProprieta] = useState([]);
@@ -1340,6 +2029,8 @@ function App() {
 
   const navItems = [
     { id: "mappa", label: "Mappa", icon: "🗺️", count: null },
+    { id: "gestione", label: "Gestione", icon: "📊", count: null },
+    { id: "contabilita", label: "Contabilità", icon: "💶", count: null },
     { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale },
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length },
     { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding },
@@ -1408,6 +2099,8 @@ function App() {
         {/* Main */}
         <main className="main">
           {loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
+            view === "gestione" ? <DashboardGestione /> :
+            view === "contabilita" ? <ContabilitaView proprieta={proprieta} owners={owners} /> :
             view === "mappa" ? <MappaItalia proprieta={proprieta} /> :
             view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} onEdit={setModalP} /> :
             view === "import" ? <ImportView proprieta={proprieta} owners={owners} onImport={load} /> :
