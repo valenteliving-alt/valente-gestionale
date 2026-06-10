@@ -1509,20 +1509,23 @@ function ContabilitaView({ proprieta, owners }) {
   const [fatture, setFatture] = useState(null);
   const [rendiconti, setRendiconti] = useState(null);
   const [pren, setPren] = useState(null);
+  const [trans, setTrans] = useState(null);
   const [modalS, setModalS] = useState(null);   // "new" | spesa
   const [modalF, setModalF] = useState(null);   // "new" | fattura
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
   const load = useCallback(async () => {
-    const [rS, rF, rR] = await Promise.all([
+    const [rS, rF, rR, rT] = await Promise.all([
       sb.get("spese", "?select=*&order=data.desc&limit=3000"),
       sb.get("fatture", "?select=*&order=data.desc&limit=2000"),
       sb.get("rendiconti", "?select=*&order=periodo_da.desc&limit=1000"),
+      sb.get("transazioni_cdg", "?select=*&order=data.desc&limit=5000"),
     ]);
     setSpese(Array.isArray(rS.data) ? rS.data : []);
     setFatture(Array.isArray(rF.data) ? rF.data : []);
     setRendiconti(Array.isArray(rR.data) ? rR.data : []);
+    setTrans(Array.isArray(rT.data) ? rT.data : []);
     // Prenotazioni dalla stessa vista della dashboard Gestione: nessun doppione di dati
     let all = [], off = 0;
     while (true) {
@@ -1557,10 +1560,10 @@ function ContabilitaView({ proprieta, owners }) {
   const incassaFatt = async (f) => { await sb.patch("fatture", f.id, { stato: "incassata", data_incasso: C_oggi() }); await load(); };
   const delFatt = async (f) => { if (!confirm("Eliminare questa fattura?")) return; await sb.del("fatture", f.id); await load(); };
 
-  if (spese === null || fatture === null || rendiconti === null || pren === null)
+  if (spese === null || fatture === null || rendiconti === null || pren === null || trans === null)
     return <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento contabilità…</div>;
 
-  const TABS = [["spese", "Spese"], ["fatture", "Fatture & Incassi"], ["rendiconti", "Rendiconti proprietari"], ["fiscale", "Riepilogo IVA"]];
+  const TABS = [["spese", "Spese"], ["fatture", "Fatture & Incassi"], ["rendiconti", "Rendiconti proprietari"], ["banca", "Banca"], ["fiscale", "Riepilogo IVA"]];
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12, marginBottom: 8 }}>
@@ -1576,6 +1579,7 @@ function ContabilitaView({ proprieta, owners }) {
       {tab === "spese" && <SpeseTab spese={spese} proprieta={proprieta} propNome={propNome} onNew={() => setModalS("new")} onEdit={setModalS} onDel={delSpesa} />}
       {tab === "fatture" && <FattureTab fatture={fatture} ownerNome={ownerNome} propNome={propNome} onNew={() => setModalF("new")} onEdit={setModalF} onDel={delFatt} onIncassa={incassaFatt} />}
       {tab === "rendiconti" && <RendicontiTab rendiconti={rendiconti} spese={spese} pren={pren} proprieta={proprieta} owners={owners} ownerNome={ownerNome} propNome={propNome} onChanged={load} setMsg={setMsg} />}
+      {tab === "banca" && <BancaTab trans={trans} />}
       {tab === "fiscale" && <FiscaleTab pren={pren} spese={spese} fatture={fatture} />}
 
       {modalS && <Modal title={modalS === "new" ? "Nuova spesa" : "Modifica spesa"} onClose={() => setModalS(null)}>
@@ -1912,6 +1916,63 @@ function FiscaleTab({ pren, spese, fatture }) {
     </>
   );
 }
+// ── Tab Banca: transazioni Qonto dal foglio "Controllo di gestione" (sync automatica) ──
+function BancaTab({ trans }) {
+  const [mese, setMese] = useState("tutti");
+  const [fConto, setFConto] = useState("");
+  const [fMacro, setFMacro] = useState("");
+  const [fSede, setFSede] = useState("");
+  const mesi = [...new Set(trans.map(t => (t.data || "").slice(0, 7)).filter(Boolean))].sort().reverse();
+  const conti = [...new Set(trans.map(t => t.conto).filter(Boolean))].sort();
+  const macros = [...new Set(trans.map(t => t.macro).filter(Boolean))].sort();
+  const sedi = [...new Set(trans.map(t => t.sede).filter(Boolean))].sort();
+  const filt = trans.filter(t =>
+    (mese === "tutti" || (t.data || "").startsWith(mese)) &&
+    (!fConto || t.conto === fConto) &&
+    (!fMacro || t.macro === fMacro) &&
+    (!fSede || t.sede === fSede));
+  const entrate = filt.filter(t => C_num(t.importo) > 0).reduce((a, t) => a + C_num(t.importo), 0);
+  const uscite = filt.filter(t => C_num(t.importo) < 0).reduce((a, t) => a + C_num(t.importo), 0);
+  const daClass = filt.filter(t => t.macro === "DIMMI TU" || t.categoria === "Non trovato").length;
+  const ultimaSync = trans.length ? trans.reduce((m, t) => (t.synced_at || "") > m ? t.synced_at : m, "") : null;
+  return (
+    <>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
+        <select value={mese} onChange={e => setMese(e.target.value)} style={{ width: 150 }}><option value="tutti">Tutti i mesi</option>{mesi.map(m => <option key={m} value={m}>{C_meseLabel(m)}</option>)}</select>
+        <select value={fConto} onChange={e => setFConto(e.target.value)} style={{ width: 140 }}><option value="">Tutti i conti</option>{conti.map(c => <option key={c}>{c}</option>)}</select>
+        <select value={fMacro} onChange={e => setFMacro(e.target.value)} style={{ width: 190 }}><option value="">Tutte le macro</option>{macros.map(m => <option key={m}>{m}</option>)}</select>
+        <select value={fSede} onChange={e => setFSede(e.target.value)} style={{ width: 190 }}><option value="">Tutte le proprietà</option>{sedi.map(s => <option key={s}>{s}</option>)}</select>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 1, background: "var(--gl)", border: "1px solid var(--gl)", marginBottom: 14 }}>
+        <C_Kpi l="Entrate" v={EURO(entrate)} n={`${filt.filter(t => C_num(t.importo) > 0).length} movimenti`} />
+        <C_Kpi l="Uscite" v={EURO(Math.abs(uscite))} n={`${filt.filter(t => C_num(t.importo) < 0).length} movimenti`} />
+        <C_Kpi l="Saldo periodo" v={EURO(entrate + uscite)} gold />
+        <C_Kpi l="Da classificare" v={daClass} n='macro "DIMMI TU" nel foglio' />
+      </div>
+      <p style={{ fontSize: 11, color: "var(--gray)", marginBottom: 14 }}>
+        Fonte: foglio "Controllo di gestione Valente Living" (Qonto, aggiornato ogni notte da Pachino e sincronizzato qui in automatico{ultimaSync ? " · ultima sync " + C_dataIT(ultimaSync) : ""}). Sola lettura: per correggere classificazioni o note si lavora sul foglio. Le spese registrate a mano nella scheda Spese sono un'altra cosa: lì decidi tu cosa addebitare ai proprietari.
+      </p>
+      {filt.length === 0 ? <div style={{ textAlign: "center", padding: 50, color: "var(--gray)" }}>Nessuna transazione per i filtri scelti.</div> : (
+        <C_Card style={{ padding: "8px 16px", overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>{["Data", "Descrizione", "Macro", "Categoria", "Proprietà", "Conto", "Importo"].map((h, i) => <th key={h} style={C_thS(i === 6)}>{h}</th>)}</tr></thead>
+            <tbody>{filt.map(t => (
+              <tr key={t.transaction_id}>
+                <td style={C_tdS()}>{C_dataIT(t.data)}</td>
+                <td style={{ ...C_tdS(), maxWidth: 380, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={t.descrizione}>{t.descrizione}</td>
+                <td style={C_tdS()}>{t.macro === "DIMMI TU" ? <span className="tag" style={{ color: "var(--red)", borderColor: "var(--red)" }}>da classificare</span> : <span className="tag">{t.macro || "—"}</span>}</td>
+                <td style={C_tdS()}>{t.categoria || "—"}</td>
+                <td style={C_tdS()}>{t.sede || "—"}</td>
+                <td style={C_tdS()}>{t.conto || "—"}</td>
+                <td style={{ ...C_tdS(1), fontWeight: 600, color: C_num(t.importo) >= 0 ? "#2d6a4f" : "var(--red)", whiteSpace: "nowrap" }}>{(C_num(t.importo) >= 0 ? "+" : "−") + " " + EURO(Math.abs(C_num(t.importo))).replace("€ ", "€ ")}</td>
+              </tr>))}</tbody>
+          </table>
+        </C_Card>
+      )}
+    </>
+  );
+}
+
 /* ============ FINE SEZIONE CONTABILITÀ ============ */
 
 
