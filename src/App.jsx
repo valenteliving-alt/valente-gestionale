@@ -2040,7 +2040,7 @@ function App() {
 
   const saveP = async (f) => {
     setSaving(true);
-    const clean = { ...f, commissione: f.commissione ? parseFloat(f.commissione) : null, posti_letto: f.posti_letto ? parseInt(f.posti_letto) : null, camere: f.camere ? parseInt(f.camere) : null, bagni: f.bagni ? parseInt(f.bagni) : null, mq: f.mq ? parseInt(f.mq) : null };
+    const clean = { ...f, provincia: f.provincia ? String(f.provincia).trim().toUpperCase() : null, citta: f.citta ? String(f.citta).trim() : null, commissione: f.commissione ? parseFloat(f.commissione) : null, posti_letto: f.posti_letto ? parseInt(f.posti_letto) : null, camere: f.camere ? parseInt(f.camere) : null, bagni: f.bagni ? parseInt(f.bagni) : null, mq: f.mq ? parseInt(f.mq) : null };
     const statoPrec = modalP === "new" ? null : modalP.stato;
     if (modalP === "new") await sb.post("proprieta", clean); else await sb.patch("proprieta", modalP.id, clean);
     if (clean.stato === "in lancio" && statoPrec !== "in lancio") inviaPush("Proprietà in lancio", (clean.nome || "Una proprietà") + " è passata a in lancio", "/");
@@ -2258,7 +2258,7 @@ function App() {
                     groups = [{ key: "__all__", label: null, items: filtP }];
                   } else {
                     const map = {};
-                    filtP.forEach(p => { const k = (propRaggr === "citta" ? (p.citta || "") : (p.provincia || "")) || "—"; (map[k] = map[k] || []).push(p); });
+                    filtP.forEach(p => { const k = (propRaggr === "citta" ? (p.citta || "").trim() : (p.provincia || "").trim().toUpperCase()) || "—"; (map[k] = map[k] || []).push(p); });
                     groups = Object.keys(map).sort((a, b) => map[b].length - map[a].length).map(k => ({ key: k, label: areaLabel(k, propRaggr), items: map[k] }));
                   }
                   return groups.map(g => (
