@@ -1975,6 +1975,120 @@ function BancaTab({ trans }) {
 
 /* ============ FINE SEZIONE CONTABILITÀ ============ */
 
+/* ============ SEZIONE NOTIFICHE: posta Gmail classificata per priorità ============ */
+/* I dati arrivano dalla tabella email_notifiche, alimentata ogni ora dalla sync Gmail (Cowork). */
+const PRIO_INFO = { 3: { label: "Alta", color: "#c0392b" }, 2: { label: "Media", color: "#d69c31" }, 1: { label: "Bassa", color: "#8a8a8a" } };
+const N_quando = (d) => {
+  if (!d) return "—";
+  const t = new Date(d), ore = (Date.now() - t.getTime()) / 36e5;
+  if (ore < 1) return Math.max(1, Math.round(ore * 60)) + " min fa";
+  if (ore < 24) return Math.round(ore) + " h fa";
+  return t.toLocaleDateString("it-IT", { day: "2-digit", month: "short" }) + " " + t.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+};
+
+function NotificheView() {
+  const [rows, setRows] = useState(null);
+  const [fPrio, setFPrio] = useState("");
+  const [fCat, setFCat] = useState("");
+  const [mostraGestite, setMostraGestite] = useState(false);
+  const [busy, setBusy] = useState(null);
+
+  const load = useCallback(async () => {
+    const r = await sb.get("email_notifiche", "?select=*&order=priorita.desc,data.desc&limit=500");
+    setRows(Array.isArray(r.data) ? r.data : []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const segnaGestita = async (n, val) => {
+    setBusy(n.thread_id);
+    await sb.req("PATCH", "email_notifiche", { gestita: val }, `?thread_id=eq.${n.thread_id}`);
+    await load(); setBusy(null);
+  };
+
+  if (rows === null) return <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento notifiche…</div>;
+
+  const cats = [...new Set(rows.map(r => r.categoria).filter(Boolean))].sort();
+  const filt = rows.filter(r =>
+    (mostraGestite || !r.gestita) &&
+    (!fPrio || String(r.priorita) === fPrio) &&
+    (!fCat || r.categoria === fCat));
+  const aperte = rows.filter(r => !r.gestita);
+  const nAlta = aperte.filter(r => r.priorita === 3).length;
+  const ultimaSync = rows.length ? rows.reduce((m, r) => (r.synced_at || "") > m ? r.synced_at : m, "") : null;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12, marginBottom: 8 }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 700 }}>Notifiche</h1>
+          <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>
+            Posta valenteliving@gmail.com classificata per priorità · aggiornata ogni ora{ultimaSync ? " · ultima sync " + N_quando(ultimaSync) : ""}
+          </p>
+        </div>
+        <button className="bg" onClick={load}>↻ Aggiorna</button>
+      </div>
+      <div className="gl" style={{ marginBottom: 18 }} />
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 1, background: "var(--gl)", border: "1px solid var(--gl)", marginBottom: 18 }}>
+        <C_Kpi l="Da gestire" v={aperte.length} n="notifiche aperte" />
+        <C_Kpi l="Priorità alta" v={nAlta} n="adempimenti, PEC, urgenze" gold={nAlta > 0} />
+        <C_Kpi l="Non lette su Gmail" v={aperte.filter(r => !r.letto).length} n="tra le aperte" />
+        <C_Kpi l="Gestite" v={rows.length - aperte.length} n="archiviate" />
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
+        <select value={fPrio} onChange={e => setFPrio(e.target.value)} style={{ width: 140 }}>
+          <option value="">Tutte le priorità</option><option value="3">Alta</option><option value="2">Media</option><option value="1">Bassa</option>
+        </select>
+        <select value={fCat} onChange={e => setFCat(e.target.value)} style={{ width: 160 }}>
+          <option value="">Tutte le categorie</option>{cats.map(c => <option key={c}>{c}</option>)}
+        </select>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--gray)", cursor: "pointer" }}>
+          <input type="checkbox" checked={mostraGestite} onChange={e => setMostraGestite(e.target.checked)} style={{ width: 14, height: 14, accentColor: "var(--gold)" }} />
+          mostra anche gestite
+        </label>
+      </div>
+
+      {filt.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessuna notifica da gestire. 🎉</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filt.map(n => {
+            const pi = PRIO_INFO[n.priorita] || PRIO_INFO[1];
+            return (
+              <div key={n.thread_id} className="fi" style={{ display: "flex", gap: 12, padding: "12px 16px", background: "var(--white)", border: "1px solid var(--gl)", borderLeft: `4px solid ${pi.color}`, opacity: n.gestita ? .55 : 1, alignItems: "flex-start" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 3 }}>
+                    <span style={{ fontSize: 13, fontWeight: n.letto ? 500 : 700 }}>{n.oggetto}</span>
+                    {!n.letto && <span className="tag" style={{ fontSize: 9, color: "#1d6fa4", borderColor: "#1d6fa4" }}>non letta</span>}
+                    {n.categoria && <span className="tag" style={{ fontSize: 9 }}>{n.categoria}</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.anteprima}</div>
+                  <div style={{ fontSize: 11, color: "var(--gray)" }}>
+                    <strong style={{ color: "var(--black)" }}>{n.mittente}</strong> · {N_quando(n.data)}{n.motivo ? " · " + n.motivo : ""}
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end", flexShrink: 0 }}>
+                  <span className="pill" style={{ background: pi.color }}>{pi.label}</span>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <a href={`https://mail.google.com/mail/u/0/#all/${n.thread_id}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Apri in Gmail →</a>
+                    <button onClick={() => segnaGestita(n, !n.gestita)} disabled={busy === n.thread_id}
+                      style={{ background: "none", border: "none", color: n.gestita ? "var(--gray)" : "#2d6a4f", fontSize: 11, fontWeight: 600, cursor: "pointer", padding: 0 }}>
+                      {busy === n.thread_id ? "…" : n.gestita ? "↩ Riapri" : "✓ Gestita"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+/* ============ FINE SEZIONE NOTIFICHE ============ */
+
+
 
 function App() {
   const [view, setView] = useState("proprieta");
@@ -2092,6 +2206,7 @@ function App() {
     { id: "mappa", label: "Mappa", icon: "🗺️", count: null },
     { id: "gestione", label: "Gestione", icon: "📊", count: null },
     { id: "contabilita", label: "Contabilità", icon: "💶", count: null },
+    { id: "notifiche", label: "Notifiche", icon: "🔔", count: null },
     { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale },
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length },
     { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding },
@@ -2162,6 +2277,7 @@ function App() {
           {loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
             view === "gestione" ? <DashboardGestione /> :
             view === "contabilita" ? <ContabilitaView proprieta={proprieta} owners={owners} /> :
+            view === "notifiche" ? <NotificheView /> :
             view === "mappa" ? <MappaItalia proprieta={proprieta} /> :
             view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} onEdit={setModalP} /> :
             view === "import" ? <ImportView proprieta={proprieta} owners={owners} onImport={load} /> :
