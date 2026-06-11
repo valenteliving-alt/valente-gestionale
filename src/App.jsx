@@ -1992,6 +1992,7 @@ function BancaTab({ trans }) {
 }
 
 // ── Tab Fatture in entrata: fatture passive rilevate dalle email (sync giornaliera) ──
+const C_valuta = (n, v) => v && v !== "EUR" ? (v === "USD" ? "$ " : v + " ") + Number(n || 0).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : EURO(n);
 function EntrataTab({ proprieta, onChanged, setMsg }) {
   const [rows, setRows] = useState(null);
   const [fStato, setFStato] = useState("da_registrare");
@@ -2005,21 +2006,32 @@ function EntrataTab({ proprieta, onChanged, setMsg }) {
 
   const filt = rows.filter(r => !fStato || r.stato === fStato);
   const daReg = rows.filter(r => r.stato === "da_registrare");
-  const totDaReg = daReg.reduce((a, r) => a + C_num(r.importo_totale), 0);
+  const totDaReg = daReg.filter(r => !r.valuta || r.valuta === "EUR").reduce((a, r) => a + C_num(r.importo_totale), 0);
+  const nEstere = daReg.filter(r => r.valuta && r.valuta !== "EUR").length;
 
   const registra = async (f) => {
+    let importoEur = C_num(f.importo_totale);
+    let notaValuta = "";
+    if (f.valuta && f.valuta !== "EUR") {
+      const risp = prompt("Fattura in " + f.valuta + " (" + C_valuta(importoEur, f.valuta) + ").\nInserisci l'importo EFFETTIVO addebitato in EUR sul conto (lo trovi nella scheda Banca):", "");
+      if (risp === null) return;
+      const v = C_num(risp);
+      if (!v) { alert("Importo non valido: registrazione annullata."); return; }
+      notaValuta = " · originale " + C_valuta(C_num(f.importo_totale), f.valuta);
+      importoEur = v;
+    }
     setBusy(f.thread_id);
     const res = await sb.post("spese", {
       data: f.data || C_oggi(), categoria: f.categoria && SPESE_CATEGORIE.includes(f.categoria) ? f.categoria : "altro",
       descrizione: ((f.numero_fattura ? "Fatt. " + f.numero_fattura + " · " : "") + (f.oggetto || "")).slice(0, 200) || null,
-      fornitore: f.fornitore || null, importo: C_num(f.importo_totale), iva_pct: 22,
+      fornitore: f.fornitore || null, importo: importoEur, iva_pct: 22,
       addebito: "valente", metodo_pagamento: "bonifico", pagata: false,
-      note: "Da fattura ricevuta via email",
+      note: "Da fattura ricevuta via email" + notaValuta,
     });
     if (res.ok) {
       const nuova = Array.isArray(res.data) ? res.data[0] : res.data;
       await sb.req("PATCH", "fatture_ricevute", { stato: "registrata", spesa_id: nuova && nuova.id }, `?thread_id=eq.${f.thread_id}`);
-      setMsg("Registrata in Spese (da pagare): " + (f.fornitore || "") + " " + EURO(C_num(f.importo_totale)));
+      setMsg("Registrata in Spese (da pagare): " + (f.fornitore || "") + " " + EURO(importoEur));
       await load(); if (onChanged) onChanged();
     } else setMsg("Errore nella registrazione.");
     setBusy(null);
@@ -2033,7 +2045,7 @@ function EntrataTab({ proprieta, onChanged, setMsg }) {
   return (
     <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 1, background: "var(--gl)", border: "1px solid var(--gl)", marginBottom: 16 }}>
-        <C_Kpi l="Da registrare" v={daReg.length} n={EURO(totDaReg) + " totali"} gold={daReg.length > 0} />
+        <C_Kpi l="Da registrare" v={daReg.length} n={EURO(totDaReg) + " in EUR" + (nEstere ? " + " + nEstere + " in valuta estera" : "")} gold={daReg.length > 0} />
         <C_Kpi l="Registrate" v={rows.filter(r => r.stato === "registrata").length} n="già in Spese" />
         <C_Kpi l="Ignorate" v={rows.filter(r => r.stato === "ignorata").length} />
       </div>
@@ -2054,7 +2066,7 @@ function EntrataTab({ proprieta, onChanged, setMsg }) {
                 <td style={{ ...C_tdS(), maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.oggetto}>{f.oggetto || "—"}</td>
                 <td style={C_tdS()}>{f.numero_fattura || "—"}</td>
                 <td style={C_tdS()}><span className="tag">{f.categoria || "altro"}</span></td>
-                <td style={{ ...C_tdS(1), fontWeight: 600, whiteSpace: "nowrap" }}>{f.importo_totale != null ? EURO(C_num(f.importo_totale)) : "—"}</td>
+                <td style={{ ...C_tdS(1), fontWeight: 600, whiteSpace: "nowrap" }}>{f.importo_totale != null ? C_valuta(C_num(f.importo_totale), f.valuta) : "—"}{f.valuta && f.valuta !== "EUR" && <span className="tag" style={{ marginLeft: 6, fontSize: 9, color: "#b8860b", borderColor: "#d69c31" }}>{f.valuta}</span>}</td>
                 <td style={C_tdS()}><span className="pill" style={{ background: f.stato === "registrata" ? "#2d6a4f" : f.stato === "ignorata" ? "#888" : "#d69c31" }}>{f.stato.replace("_", " ")}</span></td>
                 <td style={{ ...C_tdS(1), whiteSpace: "nowrap" }}>
                   <a href={`https://mail.google.com/mail/u/0/#all/${f.thread_id}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none", marginRight: 8 }}>Email →</a>
