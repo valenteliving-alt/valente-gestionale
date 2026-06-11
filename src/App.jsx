@@ -1986,7 +1986,7 @@ const N_quando = (d) => {
   return t.toLocaleDateString("it-IT", { day: "2-digit", month: "short" }) + " " + t.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
 };
 
-function NotificheView() {
+function NotificheView({ onDataChanged }) {
   const [rows, setRows] = useState(null);
   const [fPrio, setFPrio] = useState("");
   const [fCat, setFCat] = useState("");
@@ -2003,6 +2003,7 @@ function NotificheView() {
     setBusy(n.thread_id);
     await sb.req("PATCH", "email_notifiche", { gestita: val }, `?thread_id=eq.${n.thread_id}`);
     await load(); setBusy(null);
+    if (onDataChanged) onDataChanged();
   };
 
   if (rows === null) return <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento notifiche…</div>;
@@ -2112,12 +2113,14 @@ function App() {
   const [leadsLoading, setLeadsLoading] = useState(false);
   const [leadsError, setLeadsError] = useState("");
   const [notifStato, setNotifStato] = useState("idle"); // idle|loading|on|denied|unsupported (v20)
+  const [notifCount, setNotifCount] = useState(0); // notifiche email non gestite
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [rP, rO] = await Promise.all([sb.get("proprieta", "?select=*&order=created_at.desc"), sb.get("proprietari", "?select=*&order=created_at.desc")]);
+    const [rP, rO, rN] = await Promise.all([sb.get("proprieta", "?select=*&order=created_at.desc"), sb.get("proprietari", "?select=*&order=created_at.desc"), sb.get("email_notifiche", "?select=thread_id&gestita=is.false&limit=999")]);
     if (rP.data) setProprieta(rP.data);
     if (rO.data) setOwners(rO.data);
+    if (Array.isArray(rN.data)) setNotifCount(rN.data.length);
     setLoading(false);
   }, []);
 
@@ -2203,10 +2206,10 @@ function App() {
   const stats = { totale: proprieta.length, attivi: proprieta.filter(p => p.stato === "attivo").length, lancio: proprieta.filter(p => p.stato === "in lancio").length, onboarding: proprieta.filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato)).length, senzaCin: proprieta.filter(p => !p.cin && p.stato === "attivo").length };
 
   const navItems = [
+    { id: "notifiche", label: "Notifiche", icon: "🔔", count: notifCount, alert: true },
     { id: "mappa", label: "Mappa", icon: "🗺️", count: null },
     { id: "gestione", label: "Gestione", icon: "📊", count: null },
     { id: "contabilita", label: "Contabilità", icon: "💶", count: null },
-    { id: "notifiche", label: "Notifiche", icon: "🔔", count: null },
     { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale },
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length },
     { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding },
@@ -2250,7 +2253,7 @@ function App() {
             {navItems.map(item => (
               <button key={item.id} onClick={() => { setView(item.id); setSearch(""); setFStato(""); setFContratto(""); setFGestore(""); setSidebarOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", background: view === item.id ? "rgba(214,156,49,.15)" : "transparent", border: view === item.id ? "1px solid rgba(214,156,49,.3)" : "1px solid transparent", color: view === item.id ? "var(--gold)" : "rgba(255,255,255,.6)", fontSize: 13, fontWeight: view === item.id ? 600 : 400, marginBottom: 4, transition: "all .2s", textAlign: "left" }}>
                 <span>{item.icon}</span><span style={{ flex: 1 }}>{item.label}</span>
-                {item.count !== null && <span style={{ fontSize: 10, background: "rgba(255,255,255,.1)", padding: "1px 6px", borderRadius: 10 }}>{item.count}</span>}
+                {item.count !== null && <span style={{ fontSize: 10, background: item.alert && item.count > 0 ? "var(--red)" : "rgba(255,255,255,.1)", color: item.alert && item.count > 0 ? "#fff" : undefined, fontWeight: item.alert && item.count > 0 ? 700 : undefined, padding: "1px 6px", borderRadius: 10 }}>{item.count}</span>}
               </button>
             ))}
           </nav>
@@ -2277,7 +2280,7 @@ function App() {
           {loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
             view === "gestione" ? <DashboardGestione /> :
             view === "contabilita" ? <ContabilitaView proprieta={proprieta} owners={owners} /> :
-            view === "notifiche" ? <NotificheView /> :
+            view === "notifiche" ? <NotificheView onDataChanged={load} /> :
             view === "mappa" ? <MappaItalia proprieta={proprieta} /> :
             view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} onEdit={setModalP} /> :
             view === "import" ? <ImportView proprieta={proprieta} owners={owners} onImport={load} /> :
