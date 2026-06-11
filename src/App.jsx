@@ -795,6 +795,19 @@ const PropRow = ({ p, o, onClick }) => (
   </div>
 );
 
+const OwnerRow = ({ o, pc, onClick }) => (
+  <div className="fi" onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 14px", background: "var(--white)", border: "1px solid var(--gl)", cursor: "pointer" }}
+    onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--gold)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--gl)"; }}>
+    <div style={{ width: 30, height: 30, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: "Playfair Display", fontSize: 11, fontWeight: 700, color: "var(--gold)" }}>{o.cognome?.[0]}{o.nome?.[0]}</span></div>
+    <div style={{ flex: "1.4 1 0", minWidth: 0, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.cognome} {o.nome}</div>
+    <div style={{ flex: "1 1 0", minWidth: 0, fontSize: 11, fontFamily: "monospace", letterSpacing: ".04em", color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.codice_fiscale || "—"}</div>
+    <div style={{ flex: "1.3 1 0", minWidth: 0, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.email || "—"}</div>
+    <div style={{ width: 125, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>{o.telefono || "—"}</div>
+    <div style={{ width: 110, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>{o.citta || "—"}</div>
+    <span className="tag" style={{ flexShrink: 0 }}>{pc} prop.</span>
+  </div>
+);
+
 function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaIds }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -2110,7 +2123,8 @@ function App() {
   const [detP, setDetP] = useState(null);
   const [detO, setDetO] = useState(null);
   const [aiOpen, setAiOpen] = useState(false);
-  const [propVista, setPropVista] = useState("griglia");
+  const [propVista, setPropVista] = useState("elenco");
+  const [ownVista, setOwnVista] = useState("elenco");
   const [propRaggr, setPropRaggr] = useState("provincia");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [leads, setLeads] = useState([]);
@@ -2339,7 +2353,19 @@ function App() {
                   <button className="bp" onClick={() => setModalO("new")}>+ Nuovo Proprietario</button>
                 </div>
                 <div className="gl" style={{ marginBottom: 24 }} />
-                <input placeholder="Cerca per nome, CF..." value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 300, marginBottom: 24 }} />
+                <div style={{ display: "flex", gap: 10, marginBottom: 24, flexWrap: "wrap", alignItems: "center" }}>
+                  <input placeholder="Cerca per nome, CF..." value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 300, flex: 1 }} />
+                  <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+                    <button onClick={() => setOwnVista("elenco")} style={{ padding: "8px 14px", border: "1px solid var(--gl)", background: ownVista === "elenco" ? "var(--black)" : "var(--white)", color: ownVista === "elenco" ? "var(--white)" : "var(--gray)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Elenco</button>
+                    <button onClick={() => setOwnVista("griglia")} style={{ padding: "8px 14px", border: "1px solid var(--gl)", background: ownVista === "griglia" ? "var(--black)" : "var(--white)", color: ownVista === "griglia" ? "var(--white)" : "var(--gray)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Griglia</button>
+                  </div>
+                </div>
+                {ownVista === "elenco" ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {filtO.map(o => <OwnerRow key={o.id} o={o} pc={proprieta.filter(p => p.proprietario_id === o.id).length} onClick={() => setDetO(o)} />)}
+                    {filtO.length === 0 && <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessun proprietario trovato.</div>}
+                  </div>
+                ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
                   {filtO.map(o => {
                     const pc = proprieta.filter(p => p.proprietario_id === o.id).length;
@@ -2358,6 +2384,7 @@ function App() {
                   })}
                   {filtO.length === 0 && <div style={{ gridColumn: "1/-1", textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessun proprietario trovato.</div>}
                 </div>
+                )}
               </>
             ) : (
               <>

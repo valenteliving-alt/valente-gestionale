@@ -52,28 +52,66 @@ Formato esatto della risposta:
     ? { type: "document", source: { type: "base64", media_type: "application/pdf", data } }
     : { type: "image", source: { type: "base64", media_type: mediaType || "image/jpeg", data } };
 
-  try {
+  const analizza = async (extra) => {
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 1024,
-        messages: [{ role: "user", content: [docBlock, { type: "text", text: istruzioni }] }],
+        messages: [{ role: "user", content: [docBlock, { type: "text", text: istruzioni + extra }] }],
       }),
     });
     const j = await resp.json();
-    if (!resp.ok) return { statusCode: resp.status, headers: CORS, body: JSON.stringify({ error: (j.error && j.error.message) || "Errore durante l'analisi." }) };
-
+    if (!resp.ok) throw new Error((j.error && j.error.message) || "Errore durante l'analisi.");
     let text = "";
     if (Array.isArray(j.content)) text = j.content.filter(b => b.type === "text").map(b => b.text).join("\n");
     text = (text || "").trim().replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
+    try { return JSON.parse(text); } catch { return null; }
+  };
 
-    let parsed;
-    try { parsed = JSON.parse(text); }
-    catch { return { statusCode: 200, headers: CORS, body: JSON.stringify({ tipo_destinazione: "sconosciuto", categoria: "Altro", confidenza: "bassa", motivo: "L'AI non ha restituito un risultato leggibile, scegli la destinazione a mano." }) }; }
+  try {
+    // Doppia estrazione indipendente: la seconda con istruzione di verifica carattere per carattere
+    const [p1, p2] = await Promise.all([
+      analizza(""),
+      analizza("\n\nIMPORTANTE: questa è una verifica indipendente. Rileggi il documento con la massima attenzione e controlla i codici (codice fiscale, CIN, indirizzi) carattere per carattere prima di rispondere."),
+    ]);
+    let out = p1 || p2;
+    if (!out) return { statusCode: 200, headers: CORS, body: JSON.stringify({ tipo_destinazione: "sconosciuto", categoria: "Altro", confidenza: "bassa", motivo: "L'AI non ha restituito un risultato leggibile, scegli la destinazione a mano." }) };
 
-    return { statusCode: 200, headers: CORS, body: JSON.stringify(parsed) };
+    const verifiche = [];
+    if (p1 && p2) {
+      const stessa = p1.tipo_destinazione === p2.tipo_destinazione && String(p1.id_destinazione || "") === String(p2.id_destinazione || "");
+      if (stessa) verifiche.push("doppia lettura concorde");
+      else { out = { ...p1, confidenza: "bassa" }; verifiche.push("le due letture NON concordano (" + (p1.nome_destinazione || p1.tipo_destinazione) + " vs " + (p2.nome_destinazione || p2.tipo_destinazione) + "): controlla a mano"); }
+    } else {
+      verifiche.push("una delle due letture non è andata a buon fine");
+      if (out.confidenza === "alta") out.confidenza = "media";
+    }
+
+    // Cross-check col database: CF del nuovo proprietario già in archivio?
+    if (out.tipo_destinazione === "nuovo_proprietario" && out.proprietario_nuovo && out.proprietario_nuovo.codice_fiscale) {
+      const cf = String(out.proprietario_nuovo.codice_fiscale).trim().toUpperCase();
+      const ex = proprietari.find(o => String(o.codice_fiscale || "").trim().toUpperCase() === cf);
+      if (ex) {
+        out.tipo_destinazione = "proprietario"; out.id_destinazione = String(ex.id);
+        out.nome_destinazione = ((ex.cognome || "") + " " + (ex.nome || "")).trim();
+        if (out.confidenza !== "bassa") out.confidenza = "alta";
+        verifiche.push("CF " + cf + " già in archivio: smistato sul proprietario esistente");
+      } else verifiche.push("CF non presente in archivio: ok creare nuovo proprietario");
+    }
+    // Gli id proposti devono esistere davvero
+    if (out.tipo_destinazione === "proprieta" && out.id_destinazione && !proprieta.find(pp => String(pp.id) === String(out.id_destinazione))) {
+      out.tipo_destinazione = "sconosciuto"; out.id_destinazione = null; out.confidenza = "bassa";
+      verifiche.push("l'id proprietà proposto non esiste nel database");
+    }
+    if (out.tipo_destinazione === "proprietario" && out.id_destinazione && !proprietari.find(oo => String(oo.id) === String(out.id_destinazione))) {
+      out.tipo_destinazione = "sconosciuto"; out.id_destinazione = null; out.confidenza = "bassa";
+      verifiche.push("l'id proprietario proposto non esiste nel database");
+    }
+
+    if (verifiche.length) out.motivo = ((out.motivo || "").trim() + " · Verifiche: " + verifiche.join("; ")).trim();
+    return { statusCode: 200, headers: CORS, body: JSON.stringify(out) };
   } catch (err) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: err.message }) };
   }
