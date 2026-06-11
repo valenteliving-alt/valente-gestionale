@@ -182,6 +182,9 @@ button{font-family:'Poppins',sans-serif;cursor:pointer}
 .topbar{display:none}
 .backdrop{display:none}
 .fg{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px}
+.notif-top{position:fixed;top:12px;left:calc(50% + 120px);transform:translateX(-50%);z-index:450;display:flex;align-items:center;gap:8px;background:var(--black);color:#fff;border:1px solid var(--gold);border-radius:999px;padding:8px 18px;font-size:12.5px;font-weight:600;letter-spacing:.03em;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.25);transition:transform .15s}
+.notif-top:hover{transform:translateX(-50%) scale(1.04)}
+.notif-top .nbadge{background:var(--red);color:#fff;font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px}
 @media (max-width:768px){
   .sidebar{transform:translateX(-100%);transition:transform .25s ease;width:min(82vw,300px);box-shadow:0 0 40px rgba(0,0,0,.45)}
   .sidebar.open{transform:translateX(0)}
@@ -191,6 +194,7 @@ button{font-family:'Poppins',sans-serif;cursor:pointer}
   .ai-panel{width:100%;right:0}
   .ai-btn{bottom:18px;right:18px;width:50px;height:50px;font-size:20px}
   .fg{grid-template-columns:1fr}
+  .notif-top{top:62px;left:50%}
 }
 `;
 
@@ -2274,6 +2278,13 @@ function App() {
             <p style={{ fontSize: 9, color: "rgba(255,255,255,.3)", textAlign: "center" }}>v3.0 · Valente Living SRL</p>
           </div>
         </aside>
+
+        {/* Campanella notifiche in alto al centro */}
+        {view !== "notifiche" && notifCount > 0 && (
+          <button className="notif-top" onClick={() => { setView("notifiche"); setSidebarOpen(false); }} title="Apri le notifiche">
+            🔔 Notifiche <span className="nbadge">{notifCount}</span>
+          </button>
+        )}
 
         {/* Main */}
         <main className="main">
