@@ -1580,7 +1580,7 @@ function ContabilitaView({ proprieta, owners }) {
   if (spese === null || fatture === null || rendiconti === null || pren === null || trans === null)
     return <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento contabilità…</div>;
 
-  const TABS = [["spese", "Spese"], ["fatture", "Fatture & Incassi"], ["rendiconti", "Rendiconti proprietari"], ["banca", "Banca"], ["fiscale", "Riepilogo IVA"]];
+  const TABS = [["spese", "Spese"], ["entrata", "Fatture in entrata"], ["fatture", "Fatture & Incassi"], ["rendiconti", "Rendiconti proprietari"], ["banca", "Banca"], ["fiscale", "Riepilogo IVA"]];
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12, marginBottom: 8 }}>
@@ -1596,6 +1596,7 @@ function ContabilitaView({ proprieta, owners }) {
       {tab === "spese" && <SpeseTab spese={spese} proprieta={proprieta} propNome={propNome} onNew={() => setModalS("new")} onEdit={setModalS} onDel={delSpesa} />}
       {tab === "fatture" && <FattureTab fatture={fatture} ownerNome={ownerNome} propNome={propNome} onNew={() => setModalF("new")} onEdit={setModalF} onDel={delFatt} onIncassa={incassaFatt} />}
       {tab === "rendiconti" && <RendicontiTab rendiconti={rendiconti} spese={spese} pren={pren} proprieta={proprieta} owners={owners} ownerNome={ownerNome} propNome={propNome} onChanged={load} setMsg={setMsg} />}
+      {tab === "entrata" && <EntrataTab proprieta={proprieta} onChanged={load} setMsg={setMsg} />}
       {tab === "banca" && <BancaTab trans={trans} />}
       {tab === "fiscale" && <FiscaleTab pren={pren} spese={spese} fatture={fatture} />}
 
@@ -1982,6 +1983,87 @@ function BancaTab({ trans }) {
                 <td style={C_tdS()}>{t.sede || "—"}</td>
                 <td style={C_tdS()}>{t.conto || "—"}</td>
                 <td style={{ ...C_tdS(1), fontWeight: 600, color: C_num(t.importo) >= 0 ? "#2d6a4f" : "var(--red)", whiteSpace: "nowrap" }}>{(C_num(t.importo) >= 0 ? "+" : "−") + " " + EURO(Math.abs(C_num(t.importo))).replace("€ ", "€ ")}</td>
+              </tr>))}</tbody>
+          </table>
+        </C_Card>
+      )}
+    </>
+  );
+}
+
+// ── Tab Fatture in entrata: fatture passive rilevate dalle email (sync giornaliera) ──
+function EntrataTab({ proprieta, onChanged, setMsg }) {
+  const [rows, setRows] = useState(null);
+  const [fStato, setFStato] = useState("da_registrare");
+  const [busy, setBusy] = useState(null);
+  const load = useCallback(async () => {
+    const r = await sb.get("fatture_ricevute", "?select=*&order=data.desc&limit=500");
+    setRows(Array.isArray(r.data) ? r.data : []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  if (rows === null) return <div style={{ textAlign: "center", padding: 50, color: "var(--gray)" }}>Caricamento…</div>;
+
+  const filt = rows.filter(r => !fStato || r.stato === fStato);
+  const daReg = rows.filter(r => r.stato === "da_registrare");
+  const totDaReg = daReg.reduce((a, r) => a + C_num(r.importo_totale), 0);
+
+  const registra = async (f) => {
+    setBusy(f.thread_id);
+    const res = await sb.post("spese", {
+      data: f.data || C_oggi(), categoria: f.categoria && SPESE_CATEGORIE.includes(f.categoria) ? f.categoria : "altro",
+      descrizione: ((f.numero_fattura ? "Fatt. " + f.numero_fattura + " · " : "") + (f.oggetto || "")).slice(0, 200) || null,
+      fornitore: f.fornitore || null, importo: C_num(f.importo_totale), iva_pct: 22,
+      addebito: "valente", metodo_pagamento: "bonifico", pagata: false,
+      note: "Da fattura ricevuta via email",
+    });
+    if (res.ok) {
+      const nuova = Array.isArray(res.data) ? res.data[0] : res.data;
+      await sb.req("PATCH", "fatture_ricevute", { stato: "registrata", spesa_id: nuova && nuova.id }, `?thread_id=eq.${f.thread_id}`);
+      setMsg("Registrata in Spese (da pagare): " + (f.fornitore || "") + " " + EURO(C_num(f.importo_totale)));
+      await load(); if (onChanged) onChanged();
+    } else setMsg("Errore nella registrazione.");
+    setBusy(null);
+  };
+  const ignora = async (f, val) => {
+    setBusy(f.thread_id);
+    await sb.req("PATCH", "fatture_ricevute", { stato: val }, `?thread_id=eq.${f.thread_id}`);
+    await load(); setBusy(null);
+  };
+
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 1, background: "var(--gl)", border: "1px solid var(--gl)", marginBottom: 16 }}>
+        <C_Kpi l="Da registrare" v={daReg.length} n={EURO(totDaReg) + " totali"} gold={daReg.length > 0} />
+        <C_Kpi l="Registrate" v={rows.filter(r => r.stato === "registrata").length} n="già in Spese" />
+        <C_Kpi l="Ignorate" v={rows.filter(r => r.stato === "ignorata").length} />
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center" }}>
+        <select value={fStato} onChange={e => setFStato(e.target.value)} style={{ width: 170 }}>
+          <option value="da_registrare">Da registrare</option><option value="registrata">Registrate</option><option value="ignorata">Ignorate</option><option value="">Tutte</option>
+        </select>
+        <span style={{ fontSize: 11, color: "var(--gray)" }}>Rilevate automaticamente dalla posta ogni mattina · "Registra" le inserisce in Spese come "da pagare" senza doppioni</span>
+      </div>
+      {filt.length === 0 ? <div style={{ textAlign: "center", padding: 50, color: "var(--gray)" }}>Nessuna fattura {fStato === "da_registrare" ? "da registrare" : ""}.</div> : (
+        <C_Card style={{ padding: "8px 16px", overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>{["Data", "Fornitore", "Oggetto", "N. fattura", "Categoria", "Importo", "Stato", ""].map((h, i) => <th key={h || "x"} style={C_thS(i === 5)}>{h}</th>)}</tr></thead>
+            <tbody>{filt.map(f => (
+              <tr key={f.thread_id}>
+                <td style={C_tdS()}>{C_dataIT(f.data)}</td>
+                <td style={{ ...C_tdS(), fontWeight: 600 }}>{f.fornitore || "—"}</td>
+                <td style={{ ...C_tdS(), maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.oggetto}>{f.oggetto || "—"}</td>
+                <td style={C_tdS()}>{f.numero_fattura || "—"}</td>
+                <td style={C_tdS()}><span className="tag">{f.categoria || "altro"}</span></td>
+                <td style={{ ...C_tdS(1), fontWeight: 600, whiteSpace: "nowrap" }}>{f.importo_totale != null ? EURO(C_num(f.importo_totale)) : "—"}</td>
+                <td style={C_tdS()}><span className="pill" style={{ background: f.stato === "registrata" ? "#2d6a4f" : f.stato === "ignorata" ? "#888" : "#d69c31" }}>{f.stato.replace("_", " ")}</span></td>
+                <td style={{ ...C_tdS(1), whiteSpace: "nowrap" }}>
+                  <a href={`https://mail.google.com/mail/u/0/#all/${f.thread_id}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none", marginRight: 8 }}>Email →</a>
+                  {f.stato === "da_registrare" && <>
+                    <button onClick={() => registra(f)} disabled={busy === f.thread_id} style={{ background: "none", border: "none", color: "#2d6a4f", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{busy === f.thread_id ? "…" : "✓ Registra"}</button>
+                    <button onClick={() => ignora(f, "ignorata")} disabled={busy === f.thread_id} style={{ background: "none", border: "none", color: "var(--red)", fontSize: 11, cursor: "pointer" }}>Ignora</button>
+                  </>}
+                  {f.stato === "ignorata" && <button onClick={() => ignora(f, "da_registrare")} disabled={busy === f.thread_id} style={{ background: "none", border: "none", color: "var(--gray)", fontSize: 11, cursor: "pointer" }}>↩ Riapri</button>}
+                </td>
               </tr>))}</tbody>
           </table>
         </C_Card>
