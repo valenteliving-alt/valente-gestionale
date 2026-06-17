@@ -2364,8 +2364,8 @@ function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
   const obiettivi = [
     inArrivo.length ? { t: `Lanciare ${inArrivo.length} immobili in pipeline`, s: "in onboarding (mandato/lancio)", c: "#d69c31", go: "lancio" } : null,
     stats.senzaCin ? { t: `Ottenere il CIN per ${stats.senzaCin} immobili attivi`, s: "CIN mancante", c: "#e07b39", go: "proprieta" } : null,
-    { t: `Raggiungere ${milestoneNext} immobili`, s: `mancano ${milestoneNext - totale} immobili`, c: "#1d6fa4", go: "mappa" },
-    { t: `Obiettivo finale: ${OBIETTIVO_IMMOBILI} immobili`, s: `mancano ${mancanti}`, c: "#2d6a4f", go: "mappa" },
+    { t: `Raggiungere ${milestoneNext} immobili`, s: `mancano ${milestoneNext - totale} immobili`, c: "#1d6fa4", go: "proprieta" },
+    { t: `Obiettivo finale: ${OBIETTIVO_IMMOBILI} immobili`, s: `mancano ${mancanti}`, c: "#2d6a4f", go: "proprieta" },
   ].filter(Boolean);
 
   return (
@@ -2404,7 +2404,7 @@ function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start" }} className="home-grid">
-        <MappaItalia proprieta={proprieta} compact onApri={() => onVai("mappa")} />
+        <MappaItalia proprieta={proprieta} compact />
 
         <div className="card" style={{ cursor: "default", padding: 20 }}>
           <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 14 }}>Prossimi obiettivi</p>
@@ -2573,7 +2573,6 @@ function App() {
   const navItems = [
     { id: "home", label: "Home", icon: "🏛️", count: null },
     { id: "notifiche", label: "Notifiche", icon: "🔔", count: notifCount, alert: true },
-    { id: "mappa", label: "Mappa", icon: "🗺️", count: null },
     { id: "attivita", label: "Attività & Ticket", icon: "✅", count: null },
     { id: "gestione", label: "Gestione", icon: "📊", count: null },
     { id: "contabilita", label: "Contabilità", icon: "💶", count: null },
@@ -2657,7 +2656,6 @@ function App() {
             view === "gestione" ? <DashboardGestione /> :
             view === "contabilita" ? <ContabilitaView proprieta={proprieta} owners={owners} /> :
             view === "notifiche" ? <NotificheView onDataChanged={load} /> :
-            view === "mappa" ? <MappaItalia proprieta={proprieta} /> :
             view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} onEdit={setModalP} /> :
             view === "import" ? <ImportView proprieta={proprieta} owners={owners} onImport={load} /> :
             view === "smistamento" ? <Smistamento proprieta={proprieta} owners={owners} onDataChanged={load} /> :
