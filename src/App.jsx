@@ -195,6 +195,7 @@ button{font-family:'Poppins',sans-serif;cursor:pointer}
   .ai-btn{bottom:18px;right:18px;width:50px;height:50px;font-size:20px}
   .fg{grid-template-columns:1fr}
   .notif-top{top:62px;left:50%}
+  .home-grid{grid-template-columns:1fr !important}
 }
 `;
 
@@ -808,6 +809,23 @@ const OwnerRow = ({ o, pc, onClick }) => (
   </div>
 );
 
+// Macro-categorie documenti: qualificano gli allegati in base al nome file
+const DOC_CATEGORIE = [
+  { id: "cu", label: "Certificazioni Uniche", icon: "📄", color: "#2d6a4f", match: /\b(cu|certificazione\s*unica|certificazioni\s*uniche)\b|_cu_|cu20\d\d/i },
+  { id: "cin", label: "CIN / CIR / Codici", icon: "🔢", color: "#8b5cf6", match: /\b(cin|cir|ross\s*1000|geis|codice\s*identificativo)\b/i },
+  { id: "mandato", label: "Mandati / Incarichi", icon: "✍️", color: "#1d6fa4", match: /\b(mandat|incaric|contratt|procura)\w*/i },
+  { id: "planimetria", label: "Planimetrie", icon: "📐", color: "#0891b2", match: /\b(planimetr|piantina|disegno|layout)\w*/i },
+  { id: "catasto", label: "Visure / Catasto", icon: "🗂️", color: "#e07b39", match: /\b(visur|catast|atto|rogito|ape|certificazione\s*energetica)\w*/i },
+  { id: "anagrafica", label: "Documenti d'identità / Anagrafica", icon: "🪪", color: "#b8860b", match: /\b(carta\s*identit|ci\b|passaport|patente|codice\s*fiscale|cf\b|tessera|anagraf)\w*/i },
+  { id: "scia", label: "SCIA / Comune", icon: "🏛️", color: "#d69c31", match: /\b(scia|suap|comune|protocoll|asseverazione)\w*/i },
+  { id: "altro", label: "Altri documenti", icon: "📎", color: "#888", match: /.*/ },
+];
+function categoriaDoc(nome) {
+  const n = (nome || "").toLowerCase();
+  for (const c of DOC_CATEGORIE) { if (c.id !== "altro" && c.match.test(n)) return c; }
+  return DOC_CATEGORIE[DOC_CATEGORIE.length - 1];
+}
+
 function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaIds }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -928,13 +946,27 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
       ) : files.length === 0 ? (
         <p style={{ fontSize: 12, color: "var(--gray)" }}>Nessun allegato. Trascina qui i file (anche più di uno) oppure usa "+ Carica file".</p>
       ) : (
-        files.map(f => (
-          <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--white)", border: "1px solid var(--gl)", marginBottom: 6 }}>
-            <span style={{ flex: 1, fontSize: 12, wordBreak: "break-all" }}>{f.nome_file}</span>
-            <button onClick={() => apri(f.path)} style={{ background: "none", border: "none", color: "var(--gold)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Apri</button>
-            <button onClick={() => elimina(f)} style={{ background: "none", border: "none", color: "var(--red)", fontSize: 11, cursor: "pointer" }}>Elimina</button>
-          </div>
-        ))
+        DOC_CATEGORIE.map(cat => {
+          const elenco = files.filter(f => categoriaDoc(f.nome_file).id === cat.id);
+          if (elenco.length === 0) return null;
+          return (
+            <div key={cat.id} style={{ marginBottom: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                <span style={{ fontSize: 12 }}>{cat.icon}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: cat.color }}>{cat.label}</span>
+                <span style={{ fontSize: 10, color: "var(--gray)", background: "var(--cd)", padding: "0 6px", borderRadius: 10 }}>{elenco.length}</span>
+                <div style={{ flex: 1, height: 1, background: "var(--gl)" }} />
+              </div>
+              {elenco.map(f => (
+                <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--white)", border: "1px solid var(--gl)", borderLeft: `3px solid ${cat.color}`, marginBottom: 6 }}>
+                  <span style={{ flex: 1, fontSize: 12, wordBreak: "break-all" }}>{f.nome_file}</span>
+                  <button onClick={() => apri(f.path)} style={{ background: "none", border: "none", color: "var(--gold)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Apri</button>
+                  <button onClick={() => elimina(f)} style={{ background: "none", border: "none", color: "var(--red)", fontSize: 11, cursor: "pointer" }}>Elimina</button>
+                </div>
+              ))}
+            </div>
+          );
+        })
       )}
     </div>
   );
@@ -1168,7 +1200,7 @@ function mapNorm(s) { return (s || "").toLowerCase().normalize("NFD").replace(/[
 
 const ITALY_VB="0 0 611 782";
 const ITALY=[{n:"Piemonte",d:"M40 132L39 129L43 124L38 121L40 117L41 119L44 120L47 117L52 117L57 113L69 115L74 112L78 112L79 109L78 106L79 103L76 99L76 87L82 86L84 83L84 79L90 76L90 74L86 69L98 61L97 58L104 55L105 62L103 66L104 69L108 71L112 78L117 79L118 84L110 92L111 96L110 100L114 104L114 107L116 107L116 109L115 109L117 111L117 117L121 119L124 125L118 126L120 128L116 131L113 128L109 127L107 132L110 135L108 135L109 137L108 138L111 137L109 139L112 142L115 149L117 148L120 150L123 147L126 147L127 151L129 151L131 156L134 158L135 162L139 163L142 167L141 177L138 178L135 175L133 176L132 172L128 172L126 174L127 179L123 179L121 184L117 178L113 177L111 182L103 182L100 185L95 181L92 184L93 188L92 189L90 190L87 196L85 196L87 198L86 201L87 204L86 206L81 207L83 209L71 206L69 207L69 210L71 210L69 212L66 207L66 204L54 208L47 206L43 202L34 200L33 197L28 192L28 188L31 188L26 181L32 175L32 171L37 170L34 164L34 161L27 160L21 157L21 150L18 149L15 144L22 140L28 142L28 140L31 139L32 137L38 136L40 132Z"},{n:"Valle d'Aosta/Vallée d'Aoste",d:"M69 90L76 91L76 99L79 103L78 106L79 109L78 112L74 112L69 115L57 113L52 117L47 117L44 120L41 119L40 117L39 120L36 120L36 118L34 118L32 112L34 109L29 108L24 103L25 96L31 95L35 91L39 95L41 93L43 95L48 91L52 92L61 86L66 87L69 90Z"},{n:"Lombardia",d:"M114 104L109 99L111 96L110 92L118 84L117 80L119 78L124 81L121 86L126 88L129 94L127 97L133 97L136 92L131 87L133 86L132 83L135 81L135 78L143 70L146 64L143 57L145 53L149 52L151 55L154 53L154 61L158 66L166 67L167 63L169 64L178 61L180 63L180 67L183 68L182 71L186 71L189 69L185 63L188 59L182 57L182 51L185 46L192 44L192 48L195 50L201 50L203 53L211 56L210 61L205 63L208 64L209 70L207 73L208 75L207 78L202 86L205 90L204 93L205 97L207 97L206 99L211 98L214 96L221 96L211 111L212 121L211 122L215 124L214 128L216 132L218 130L222 134L226 135L229 138L229 141L231 141L231 143L239 143L238 147L242 147L242 149L249 153L250 153L250 154L236 155L233 153L224 156L216 154L216 151L211 155L206 156L200 152L198 153L190 148L183 148L179 142L176 144L176 142L174 142L175 145L172 144L172 147L168 143L166 147L162 145L162 142L160 144L158 142L157 145L156 144L151 145L147 154L145 155L145 157L148 159L149 162L145 165L148 168L147 171L144 171L143 169L143 171L141 171L142 167L139 163L135 162L134 158L131 156L129 151L127 151L126 147L120 150L117 148L115 149L112 142L109 139L111 137L109 138L108 138L109 137L108 135L110 135L107 132L109 127L113 128L116 131L120 128L118 126L124 125L121 119L117 117L117 111L115 109L116 109L116 107L114 107L114 104Z"},{n:"Trentino-Alto Adige/Südtirol",d:"M279 50L269 53L272 57L271 57L270 62L267 62L270 64L270 68L274 69L273 71L276 73L275 74L272 78L263 79L264 83L262 83L262 88L254 85L247 87L246 91L242 91L236 105L230 104L226 107L221 104L224 98L221 96L212 96L212 98L208 100L205 97L205 90L202 86L207 78L208 75L207 73L209 70L208 64L205 63L211 59L209 55L203 52L204 46L199 43L200 38L202 37L201 34L203 30L207 31L213 29L217 32L216 34L230 36L233 32L234 26L237 24L237 23L245 21L249 23L252 20L255 22L260 20L266 23L277 17L289 15L288 19L284 20L286 25L285 26L288 29L291 28L293 31L292 35L295 35L297 39L301 41L297 45L291 45L287 47L287 45L281 42L279 50Z"},{n:"Veneto",d:"M212 121L211 111L221 96L224 98L221 104L226 107L230 104L235 106L238 103L237 99L239 100L238 98L242 91L246 91L247 87L254 85L262 88L262 83L264 83L263 79L273 78L276 73L273 71L274 69L272 67L270 68L270 64L267 62L270 62L271 57L272 57L269 54L271 52L278 51L280 47L281 42L287 45L287 47L291 45L297 45L301 41L314 44L308 50L310 55L304 55L301 61L295 65L294 68L302 76L302 79L297 83L299 88L303 91L305 97L309 97L311 99L316 95L317 97L320 95L323 97L325 95L327 103L328 103L330 108L332 109L322 111L295 125L292 135L294 145L305 153L297 164L292 160L292 154L285 155L280 152L268 152L259 158L255 155L250 155L250 153L242 149L242 147L238 147L239 143L233 144L230 143L231 141L229 141L229 138L226 135L222 134L218 130L216 132L214 128L215 127L215 123L211 122L212 121Z"},{n:"Friuli-Venezia Giulia",d:"M356 57L348 62L348 65L345 66L347 72L353 71L359 74L351 82L350 85L353 88L358 87L355 96L356 98L366 102L372 109L368 112L362 112L366 111L363 109L364 108L364 109L364 108L364 106L360 103L358 101L354 100L353 98L352 102L354 103L346 107L336 104L332 109L330 108L328 103L327 103L325 95L323 97L320 95L317 97L316 95L311 99L307 96L305 97L303 91L299 89L297 83L302 79L302 76L294 68L295 65L301 61L304 55L310 55L309 49L315 43L319 46L331 46L338 50L345 48L362 51L360 57L356 57Z"},{n:"Liguria",d:"M61 222L61 219L65 217L66 214L71 210L69 209L69 207L83 209L82 206L86 206L87 204L85 199L86 198L87 198L85 196L87 196L90 190L93 189L92 184L93 182L95 181L100 185L103 182L111 182L113 177L118 178L121 184L123 179L127 179L126 174L128 172L132 172L133 176L135 175L138 178L143 175L155 179L156 184L154 184L153 188L161 187L163 189L164 192L173 198L174 204L176 202L177 203L175 205L179 205L179 209L181 208L184 209L179 213L173 208L173 209L172 208L171 209L172 212L143 193L142 196L139 195L138 192L128 189L127 190L123 188L119 188L107 194L104 197L103 203L96 206L93 213L90 216L91 218L86 223L66 230L59 230L58 225L61 222Z"},{n:"Emilia-Romagna",d:"M148 168L145 165L149 162L148 159L145 157L145 155L147 154L151 145L156 144L157 145L158 142L160 144L162 142L162 145L166 147L168 143L172 147L172 144L175 145L174 142L176 142L176 144L179 142L185 149L190 148L208 156L216 151L216 154L224 156L229 153L236 155L244 153L255 155L259 158L268 152L280 152L285 155L291 154L292 160L297 164L296 165L294 164L293 164L297 164L292 161L290 169L295 198L303 209L315 218L314 224L309 227L307 223L302 224L303 216L298 218L298 222L300 223L298 224L297 227L292 229L292 231L287 233L286 231L282 232L277 231L264 223L264 221L261 216L266 208L258 208L259 205L254 205L250 200L243 205L239 206L242 208L241 209L231 210L229 208L229 206L225 211L217 205L212 205L209 208L204 201L195 197L193 198L187 193L181 190L179 185L171 185L168 190L164 192L161 187L153 188L154 184L156 184L155 179L151 176L148 178L141 176L141 171L143 171L143 169L144 171L147 171L148 168Z"},{n:"Toscana",d:"M175 205L177 203L175 202L174 204L173 198L165 192L168 190L171 185L179 185L181 190L187 193L193 198L195 197L204 201L209 208L211 205L217 205L224 211L229 206L229 208L231 210L241 209L242 208L239 206L243 205L250 200L254 205L259 205L258 208L266 208L261 216L264 221L265 224L281 232L286 231L287 233L292 231L296 234L293 236L293 233L292 236L287 239L288 241L285 246L282 247L285 250L279 253L284 257L284 261L289 261L282 265L280 264L279 268L274 271L274 276L277 277L275 286L276 289L269 292L268 294L267 292L266 293L269 297L267 300L269 303L260 309L257 309L256 312L259 314L259 317L253 317L251 321L241 318L236 322L233 318L234 316L235 317L236 317L238 317L238 310L235 309L227 298L216 293L218 291L218 286L212 284L204 285L204 281L205 281L206 275L206 265L195 245L196 243L195 244L192 224L187 217L181 213L183 208L181 208L180 209L179 205L175 205ZM184 305L184 309L182 308L184 305ZM195 296L187 298L185 294L189 293L192 294L193 292L197 294L200 289L202 290L201 295L199 296L201 299L200 299L199 299L197 296L196 298L195 296ZM172 276L172 279L170 280L170 277L172 276ZM196 325L195 325L194 323L196 323L196 325ZM288 230L286 228L289 228L289 229L288 230ZM223 320L225 322L225 325L223 323L222 322L223 320Z"},{n:"Umbria",d:"M334 303L321 306L322 309L313 313L314 315L311 317L308 315L307 319L304 322L303 319L300 320L301 318L298 318L298 313L295 315L292 314L291 309L290 308L290 305L288 303L286 302L279 304L275 301L274 299L277 296L274 295L273 291L276 289L275 286L277 277L275 277L274 272L279 268L280 264L282 265L289 261L284 261L284 257L279 254L285 250L283 246L285 246L288 241L293 242L295 240L296 243L293 245L294 246L302 247L308 253L316 251L314 256L317 259L316 262L320 267L318 271L322 274L322 283L326 285L326 289L329 286L335 291L339 290L339 296L336 296L334 303Z"},{n:"Marche",d:"M302 247L294 246L293 245L296 243L296 241L291 242L287 239L292 236L293 233L293 236L296 234L292 231L292 229L297 227L298 224L301 222L304 224L307 223L308 227L311 227L314 224L315 218L322 221L341 236L349 241L352 240L357 245L357 248L367 270L372 287L362 290L359 293L353 292L351 298L346 301L341 297L336 298L340 293L338 289L335 291L329 286L326 289L326 285L322 283L322 274L318 271L320 267L316 262L317 259L314 256L316 251L308 253L302 247Z"},{n:"Lazio",d:"M269 293L271 291L273 291L277 296L274 300L279 304L286 302L288 303L290 305L290 308L291 309L292 314L298 313L298 318L301 318L300 320L303 319L304 322L307 319L308 315L311 317L314 315L313 313L322 309L321 306L334 303L336 298L342 299L345 303L347 304L346 307L336 307L334 310L335 314L332 317L336 320L334 322L345 334L339 337L331 334L331 336L328 338L328 342L330 345L332 344L345 350L345 357L347 356L355 361L359 358L362 359L364 362L372 364L375 368L377 376L374 378L375 380L369 383L370 391L364 396L357 394L355 395L355 397L341 391L330 396L322 385L311 381L308 382L299 369L295 365L292 363L290 363L289 362L290 362L289 362L285 351L274 343L270 343L261 328L251 321L253 317L259 317L259 314L256 312L257 309L260 309L268 304L267 300L269 297L265 294L267 292L269 293ZM327 415L325 417L324 418L324 416L327 415Z"},{n:"Abruzzo",d:"M373 366L370 363L364 362L362 359L358 358L355 361L347 356L345 357L345 350L332 344L330 345L328 341L331 334L339 337L345 334L334 322L336 320L332 317L335 314L334 310L336 307L345 308L347 304L344 302L344 300L351 298L353 292L359 293L361 290L370 287L372 287L375 299L382 310L388 317L395 321L401 329L410 334L411 339L414 341L413 343L414 343L400 361L398 361L397 356L394 353L392 354L390 351L383 357L385 362L382 362L381 365L379 363L377 366L373 366Z"},{n:"Molise",d:"M405 387L382 378L379 381L381 385L378 385L374 378L377 376L376 371L373 366L377 366L379 363L381 365L382 362L385 362L383 357L390 351L392 354L394 353L397 356L398 361L400 361L414 344L414 341L431 350L429 361L432 364L426 370L423 369L421 370L421 376L425 379L417 383L414 381L413 383L405 387Z"},{n:"Campania",d:"M382 378L384 379L384 378L389 379L405 387L413 383L414 381L417 383L425 379L429 383L429 385L427 386L428 389L438 394L436 395L437 398L435 400L437 404L442 405L444 404L451 407L452 411L450 416L447 419L442 418L443 421L441 421L443 424L443 428L449 432L446 436L451 439L451 444L459 451L460 455L464 458L463 461L460 463L459 468L456 470L458 472L450 471L445 476L440 473L438 474L438 471L431 464L426 464L420 460L424 450L419 439L415 433L412 431L409 434L406 433L404 436L399 435L396 436L391 439L392 435L399 430L398 427L395 426L391 422L391 421L389 421L387 422L386 422L387 422L386 423L385 424L384 424L384 423L381 421L379 422L380 425L378 424L376 415L364 396L370 391L369 383L374 380L378 385L381 385L379 381L382 378ZM373 430L369 430L369 426L373 427L373 430Z"},{n:"Puglia",d:"M429 385L429 382L421 376L421 370L423 369L426 370L432 364L429 361L431 350L444 352L477 349L482 353L483 359L469 370L469 375L471 380L502 397L525 405L536 412L546 422L563 431L570 432L568 434L571 433L575 441L583 446L592 456L597 469L595 470L594 473L592 474L591 477L589 489L581 486L571 477L572 473L570 472L572 468L568 464L567 459L564 457L547 456L532 449L534 445L528 442L522 443L515 449L513 446L509 444L509 431L507 430L509 429L506 427L505 428L501 426L501 428L500 427L500 428L498 426L493 430L486 422L483 416L481 415L479 417L472 413L475 408L467 401L463 405L453 404L451 407L444 404L439 404L435 400L438 394L428 389L427 386L429 385Z"},{n:"Basilicata",d:"M446 436L449 432L443 428L443 424L441 421L443 421L442 418L447 419L450 416L452 412L451 406L452 405L462 405L467 401L475 408L472 413L479 417L481 415L483 416L486 422L493 430L498 426L500 428L500 427L501 428L502 426L509 429L507 430L509 431L509 444L513 446L516 450L505 468L494 466L493 474L490 480L491 482L486 480L484 480L484 482L481 481L476 482L474 478L475 476L468 477L466 475L461 480L457 474L456 473L458 472L456 470L459 468L459 464L463 461L464 458L460 455L459 451L451 444L451 439L446 436Z"},{n:"Calabria",d:"M472 510L467 505L464 496L462 486L463 485L461 480L462 478L465 475L474 476L474 478L476 482L481 481L484 482L484 480L486 480L490 482L490 480L493 474L494 466L504 467L505 468L503 473L504 478L497 489L499 493L499 497L504 500L511 500L516 505L530 514L528 521L527 524L529 527L527 534L529 537L532 539L527 547L520 545L503 552L499 559L502 573L501 578L487 589L481 597L480 603L476 610L462 611L456 605L457 603L455 591L464 586L469 575L470 570L465 565L465 564L473 559L480 559L483 556L484 551L484 545L481 544L478 538L476 521L472 510Z"},{n:"Sicilia",d:"M322 604L331 600L329 596L332 593L336 594L342 591L345 594L346 598L353 598L354 603L363 607L377 603L390 605L401 603L407 601L412 595L414 596L420 593L429 598L435 593L436 588L436 591L439 592L451 586L456 588L453 590L449 601L435 621L433 633L429 638L429 650L435 651L437 655L435 656L435 654L434 655L434 658L436 661L435 661L436 663L439 664L438 668L441 670L438 670L432 676L429 684L431 690L431 691L428 693L425 690L422 690L418 688L414 690L400 684L394 673L388 666L379 663L370 664L367 661L359 658L354 652L349 651L342 647L335 639L328 638L323 633L311 634L308 629L301 625L301 622L299 618L302 614L300 611L303 605L302 604L309 600L310 598L313 598L314 593L315 594L318 600L322 604ZM293 609L296 611L296 612L294 611L292 611L293 609ZM276 681L280 684L280 687L278 688L276 686L274 683L276 681ZM418 571L415 569L415 568L418 568L418 571ZM423 577L424 580L425 581L422 580L422 579L423 577ZM423 572L424 574L422 577L419 574L420 572L423 572ZM303 767L309 767L309 768L307 768L306 767L303 767Z"},{n:"Sardegna",d:"M102 449L97 437L92 438L93 436L92 435L90 439L90 438L89 435L92 431L89 428L93 418L91 415L92 412L97 420L107 422L117 416L121 416L132 402L139 400L139 396L138 394L139 395L143 394L143 395L145 396L145 398L145 396L147 398L149 397L149 399L152 399L151 400L153 404L157 400L159 403L156 410L159 408L158 410L160 409L164 411L161 410L160 412L159 415L157 415L156 415L156 416L160 417L163 416L161 418L164 420L164 419L165 420L167 421L165 421L164 424L168 431L168 436L170 440L172 441L169 450L162 459L162 464L167 470L165 477L166 480L165 482L163 511L161 518L162 521L160 523L160 529L157 534L156 532L153 533L146 527L142 526L139 529L136 527L132 533L134 537L132 540L124 548L118 545L114 549L114 547L112 547L113 545L111 543L110 538L107 536L105 537L104 542L102 543L100 534L103 533L105 537L106 535L100 526L104 522L101 516L103 513L101 510L105 502L104 491L107 494L110 484L106 481L104 485L102 482L103 474L101 473L107 470L105 464L106 458L105 455L101 453L102 449ZM154 395L155 399L153 399L154 397L153 397L153 396L154 396L154 395ZM152 394L153 397L152 396L150 397L152 394ZM96 404L100 405L99 407L95 407L94 409L95 411L93 411L93 408L96 406L96 404ZM97 529L97 534L93 531L96 529L97 529Z"}];
-function MappaItalia({ proprieta }) {
+function MappaItalia({ proprieta, compact = false, onApri }) {
   const PAD = 14, K = 0.7518, UNIT = 65, LNG0 = 6.6, LAT1 = 47.1;
   const px = (la, lo) => [PAD + (lo - LNG0) * K * UNIT, PAD + (LAT1 - la) * UNIT];
 
@@ -1198,6 +1230,31 @@ function MappaItalia({ proprieta }) {
   const perCitta = {};
   (proprieta || []).forEach((p) => { const c = (p.citta || "—").trim() || "—"; perCitta[c] = (perCitta[c] || 0) + 1; });
   const cittaList = Object.entries(perCitta).sort((a, b) => b[1] - a[1]);
+
+  if (compact) {
+    return (
+      <div className="card" onClick={onApri} style={{ padding: 16, cursor: onApri ? "pointer" : "default" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)" }}>Mappa portfolio</p>
+          <span style={{ fontSize: 11, color: "var(--gray)" }}>{(proprieta || []).length} immobili</span>
+        </div>
+        <svg viewBox={ITALY_VB} style={{ width: "100%", height: "auto", maxHeight: 320 }}>
+          {ITALY.map((r) => (
+            <path key={r.n} d={r.d} fill="#f4f0e9" stroke="#cdbfa6" strokeWidth="0.8" strokeLinejoin="round"><title>{r.n}</title></path>
+          ))}
+          {dots.map((d, i) => (
+            <circle key={i} cx={d.x} cy={d.y} r="5" fill={d.color} stroke="#fff" strokeWidth="1.2" opacity={d.attivo ? 1 : 0.55}>
+              <title>{d.name}{d.citta ? " — " + d.citta : ""} ({d.tipo})</title>
+            </circle>
+          ))}
+        </svg>
+        <div style={{ display: "flex", gap: 16, marginTop: 8, justifyContent: "center" }}>
+          <span style={{ fontSize: 11, color: "var(--gray)", display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: "50%", background: "#2d6a4f" }} />Gestione {nGest}</span>
+          <span style={{ fontSize: 11, color: "var(--gray)", display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: "50%", background: "#D69C31" }} />Subloc. {nSub}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -2202,8 +2259,204 @@ function NotificheView({ onDataChanged }) {
 
 
 
+// ── Foglio Google "Controllo di gestione" (ticket) — letto in tempo reale ─────
+const TICKET_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTOVM-nXRUikGSR32-5EnyAK9NonBHGRnldrbbLIdD2Z7g1oPw6hRbqFyvzA4AvzIgYSOZjVL8y0Ch_/pub?output=csv";
+const SYNC_MS = 12 * 60 * 60 * 1000; // sincronizza 2 volte al giorno
+function parseCSV(t) {
+  const rows = []; let f = "", row = [], q = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) { if (c === '"') { if (t[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else { if (c === '"') q = true; else if (c === ",") { row.push(f); f = ""; } else if (c === "\n") { row.push(f); rows.push(row); row = []; f = ""; } else if (c !== "\r") f += c; }
+  }
+  if (f.length || row.length) { row.push(f); rows.push(row); }
+  return rows;
+}
+const TICKET_STATO_COLOR = { "completata": "#2d6a4f", "in corso": "#1d6fa4", "in attesa": "#e07b39", "da fare": "#d69c31", "aperto": "#d69c31", "annullata": "#888" };
+
+function AttivitaView() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [updated, setUpdated] = useState(null);
+
+  const carica = useCallback(async () => {
+    setLoading(true); setErr("");
+    try {
+      const txt = await (await fetch(TICKET_CSV, { cache: "no-store" })).text();
+      const raw = parseCSV(txt);
+      const hi = raw.findIndex(r => r.join("|").toLowerCase().includes("attività") && r.join("|").toLowerCase().includes("stato"));
+      const header = hi >= 0 ? raw[hi] : [];
+      const idx = (name) => header.findIndex(h => (h || "").toLowerCase().includes(name));
+      const iA = idx("attività"), iS = idx("stato"), iMit = idx("mittente"), iDest = idx("destinatario"), iScad = idx("scadenza"), iNoteM = header.findIndex(h => /note\s*mittente/i.test(h || "")), iNoteD = header.findIndex(h => /note\s*destinatario/i.test(h || "")), iId = idx("ticket id");
+      const data = raw.slice(hi + 1).map(r => ({
+        attivita: r[iA] || "", stato: (r[iS] || "").trim(), mittente: r[iMit] || "", destinatario: r[iDest] || "",
+        scadenza: r[iScad] || "", noteM: r[iNoteM] || "", noteD: r[iNoteD] || "", id: r[iId] || "",
+      })).filter(t => t.attivita && t.attivita.toLowerCase() !== "attività");
+      setRows(data); setUpdated(new Date());
+    } catch { setErr("Impossibile leggere il foglio dei ticket. Verifica la connessione."); }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { carica(); const t = setInterval(carica, SYNC_MS); return () => clearInterval(t); }, [carica]);
+
+  const aperti = rows.filter(t => !/complet|annull/i.test(t.stato)).length;
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 700 }}>Attività &amp; Ticket</h1>
+          <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>
+            Controllo di gestione · {rows.length} ticket{aperti ? ` · ${aperti} aperti` : ""}
+            {updated && <> · sincronizzato {updated.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</>}
+          </p>
+        </div>
+        <button className="bg" onClick={carica} disabled={loading}>{loading ? "Sincronizzo…" : "↻ Sincronizza"}</button>
+      </div>
+      <div className="gl" style={{ marginBottom: 12 }} />
+      <p style={{ fontSize: 11, color: "var(--gray)", marginBottom: 20 }}>🔄 Si sincronizza in automatico 2 volte al giorno dal foglio Google condiviso con i proprietari.</p>
+      {err && <div style={{ fontSize: 13, color: "var(--red)", marginBottom: 12 }}>{err}</div>}
+      {loading && rows.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Sincronizzazione in corso…</div>
+      ) : rows.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessun ticket presente sul foglio.</div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
+          {rows.map((t, i) => {
+            const col = TICKET_STATO_COLOR[t.stato.toLowerCase()] || "#888";
+            return (
+              <div key={i} className="card fi" style={{ cursor: "default", borderTop: `3px solid ${col}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 600 }}>{t.attivita}</h3>
+                  {t.stato && <span className="pill" style={{ background: col, flexShrink: 0 }}>{t.stato}</span>}
+                </div>
+                {t.destinatario && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 3 }}>👤 {t.destinatario}</p>}
+                {t.scadenza && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 3 }}>📅 {t.scadenza}</p>}
+                {(t.noteM || t.noteD) && <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--cd)" }}>{[t.noteM, t.noteD].filter(Boolean).join(" · ")}</p>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Home / Dashboard: roadmap a 100, mappa, timeline, prossimi obiettivi ──────
+const OBIETTIVO_IMMOBILI = 100;
+function fmtData(d) {
+  if (!d) return null;
+  const dt = new Date(d);
+  if (isNaN(dt)) return String(d);
+  return dt.toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" });
+}
+function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
+  const totale = stats.totale;
+  const pct = Math.min(100, Math.round((totale / OBIETTIVO_IMMOBILI) * 100));
+  const mancanti = Math.max(0, OBIETTIVO_IMMOBILI - totale);
+
+  const conData = (proprieta || []).map(p => ({ p, d: p.data_inizio || p.created_at || null }))
+    .filter(x => x.d).sort((a, b) => new Date(a.d) - new Date(b.d));
+  const inArrivo = (proprieta || []).filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato));
+  const eventi = [...conData.slice(-8)];
+
+  const milestoneNext = [25, 40, 50, 75, 100].find(m => m > totale) || 100;
+  const obiettivi = [
+    inArrivo.length ? { t: `Lanciare ${inArrivo.length} immobili in pipeline`, s: "in onboarding (mandato/lancio)", c: "#d69c31", go: "lancio" } : null,
+    stats.senzaCin ? { t: `Ottenere il CIN per ${stats.senzaCin} immobili attivi`, s: "CIN mancante", c: "#e07b39", go: "proprieta" } : null,
+    { t: `Raggiungere ${milestoneNext} immobili`, s: `mancano ${milestoneNext - totale} immobili`, c: "#1d6fa4", go: "mappa" },
+    { t: `Obiettivo finale: ${OBIETTIVO_IMMOBILI} immobili`, s: `mancano ${mancanti}`, c: "#2d6a4f", go: "mappa" },
+  ].filter(Boolean);
+
+  return (
+    <>
+      <div style={{ marginBottom: 8 }}>
+        <h1 style={{ fontSize: 26, fontWeight: 700 }}>Valente Living · Dashboard</h1>
+        <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Dove siamo e dove stiamo andando</p>
+      </div>
+      <div className="gl" style={{ marginBottom: 24 }} />
+
+      <div className="card" style={{ cursor: "default", padding: 24, marginBottom: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+          <div>
+            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 6 }}>Roadmap verso {OBIETTIVO_IMMOBILI} immobili</p>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+              <span style={{ fontFamily: "Playfair Display", fontSize: 44, fontWeight: 700, lineHeight: 1 }}>{totale}</span>
+              <span style={{ fontSize: 16, color: "var(--gray)" }}>/ {OBIETTIVO_IMMOBILI}</span>
+            </div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <span style={{ fontFamily: "Playfair Display", fontSize: 40, fontWeight: 700, color: "var(--gold)" }}>{pct}%</span>
+            <p style={{ fontSize: 11, color: "var(--gray)" }}>mancano {mancanti} immobili</p>
+          </div>
+        </div>
+        <div style={{ height: 16, background: "var(--cd)", borderRadius: 999, overflow: "hidden" }}>
+          <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg, #2d6a4f, var(--gold))", borderRadius: 999, transition: "width .6s ease" }} />
+        </div>
+        <div style={{ display: "flex", gap: 16, marginTop: 16, flexWrap: "wrap" }}>
+          {[{ n: stats.attivi, l: "attivi", c: "#2d6a4f" }, { n: stats.onboarding, l: "in lancio", c: "#d69c31" }, { n: owners.length, l: "proprietari", c: "#1d6fa4" }, { n: stats.senzaCin, l: "senza CIN", c: "#e07b39" }].map((k, i) => (
+            <div key={i} style={{ flex: "1 1 90px", background: "var(--cream)", border: "1px solid var(--gl)", padding: "10px 12px" }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: k.c, fontFamily: "Playfair Display" }}>{k.n}</div>
+              <div style={{ fontSize: 10, color: "var(--gray)", textTransform: "uppercase", letterSpacing: ".06em" }}>{k.l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start" }} className="home-grid">
+        <MappaItalia proprieta={proprieta} compact onApri={() => onVai("mappa")} />
+
+        <div className="card" style={{ cursor: "default", padding: 20 }}>
+          <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 14 }}>Prossimi obiettivi</p>
+          {obiettivi.map((o, i) => (
+            <div key={i} onClick={() => onVai(o.go)} style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 0", borderBottom: i < obiettivi.length - 1 ? "1px solid var(--cd)" : "none", cursor: "pointer" }}>
+              <span style={{ width: 10, height: 10, borderRadius: "50%", background: o.c, flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 13, fontWeight: 600 }}>{o.t}</p>
+                <p style={{ fontSize: 11, color: "var(--gray)" }}>{o.s}</p>
+              </div>
+              <span style={{ color: "var(--gray)", fontSize: 16 }}>›</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="card" style={{ cursor: "default", padding: 20, marginTop: 24 }}>
+        <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 16 }}>Timeline crescita</p>
+        {eventi.length === 0 ? (
+          <p style={{ fontSize: 12, color: "var(--gray)" }}>Aggiungi la "Data inizio" agli immobili per popolare la timeline cronologica.</p>
+        ) : (
+          <div style={{ position: "relative", paddingLeft: 18 }}>
+            <div style={{ position: "absolute", left: 4, top: 4, bottom: 4, width: 2, background: "var(--gl)" }} />
+            {eventi.map(({ p, d }, i) => (
+              <div key={p.id || i} onClick={() => onApriProp(p)} style={{ position: "relative", paddingBottom: 16, cursor: "pointer" }}>
+                <span style={{ position: "absolute", left: -18, top: 2, width: 10, height: 10, borderRadius: "50%", background: STATI_COLOR[p.stato] || "#888", border: "2px solid var(--cream)" }} />
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 600 }}>{p.nome}</p>
+                    <p style={{ fontSize: 11, color: "var(--gray)" }}>{p.citta || ""}{p.provincia ? ` (${p.provincia})` : ""}</p>
+                  </div>
+                  <span style={{ fontSize: 11, color: "var(--gray)", whiteSpace: "nowrap" }}>{fmtData(d)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {inArrivo.length > 0 && (
+          <div style={{ marginTop: 8, paddingTop: 14, borderTop: "1px solid var(--cd)" }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: "var(--gray)", marginBottom: 8 }}>In arrivo ({inArrivo.length})</p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {inArrivo.map(p => <span key={p.id} onClick={() => onApriProp(p)} className="tag" style={{ cursor: "pointer", borderColor: STATI_COLOR[p.stato] }}>{p.nome}</span>)}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 function App() {
-  const [view, setView] = useState("proprieta");
+  const [view, setView] = useState("home");
   const [proprieta, setProprieta] = useState([]);
   const [owners, setOwners] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2318,8 +2571,10 @@ function App() {
   const stats = { totale: proprieta.length, attivi: proprieta.filter(p => p.stato === "attivo").length, lancio: proprieta.filter(p => p.stato === "in lancio").length, onboarding: proprieta.filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato)).length, senzaCin: proprieta.filter(p => !p.cin && p.stato === "attivo").length };
 
   const navItems = [
+    { id: "home", label: "Home", icon: "🏛️", count: null },
     { id: "notifiche", label: "Notifiche", icon: "🔔", count: notifCount, alert: true },
     { id: "mappa", label: "Mappa", icon: "🗺️", count: null },
+    { id: "attivita", label: "Attività & Ticket", icon: "✅", count: null },
     { id: "gestione", label: "Gestione", icon: "📊", count: null },
     { id: "contabilita", label: "Contabilità", icon: "💶", count: null },
     { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale },
@@ -2397,6 +2652,8 @@ function App() {
         {/* Main */}
         <main className="main">
           {loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
+            view === "home" ? <HomeView proprieta={proprieta} owners={owners} stats={stats} onVai={(v) => setView(v)} onApriProp={setDetP} /> :
+            view === "attivita" ? <AttivitaView /> :
             view === "gestione" ? <DashboardGestione /> :
             view === "contabilita" ? <ContabilitaView proprieta={proprieta} owners={owners} /> :
             view === "notifiche" ? <NotificheView onDataChanged={load} /> :
