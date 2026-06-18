@@ -1,3 +1,4 @@
+// v2 — scope runtime
 // Ponte sicuro CRM <-> Apps Script del foglio "Controllo di gestione".
 // URL e token stanno nelle variabili d'ambiente Netlify (non nel browser, non nel repo).
 const SCRIPT_URL = process.env.APPS_SCRIPT_URL;
