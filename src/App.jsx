@@ -2342,6 +2342,100 @@ function AttivitaView() {
   );
 }
 
+// ── Workbook "Controllo di gestione Valente Living" — tutti i fogli, live ─────
+const CDG_PUB = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTOVM-nXRUikGSR32-5EnyAK9NonBHGRnldrbbLIdD2Z7g1oPw6hRbqFyvzA4AvzIgYSOZjVL8y0Ch_/pub";
+const CDG_FOGLI = [
+  { nome: "Tickets", gid: "1944759845" },
+  { nome: "Transazioni 2026", gid: "940145677" },
+  { nome: "Proprietà", gid: "579946916" },
+  { nome: "Property Managers", gid: "1447853709" },
+  { nome: "Distinte di pagamento + F24", gid: "1939873154" },
+  { nome: "Scadenzario in Uscita", gid: "750917577" },
+  { nome: "Scadenzario in Entrata", gid: "863375586" },
+  { nome: "Fatture Valente Living", gid: "662136451" },
+  { nome: "Lista Fornitori", gid: "1167038705" },
+  { nome: "Configurazione gestione", gid: "1292179885" },
+  { nome: "Fatture dei fornitori", gid: "2131643750" },
+  { nome: "Via ruga degli Orlandi", gid: "570047146" },
+  { nome: "Crediti e debiti", gid: "1357534243" },
+];
+const CDG_MAX_RIGHE = 600;
+function ControlloGestioneView() {
+  const [sel, setSel] = useState(CDG_FOGLI[0]);
+  const [cache, setCache] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  const carica = useCallback(async (foglio, force) => {
+    if (!force && cache[foglio.gid]) return;
+    setLoading(true); setErr("");
+    try {
+      const txt = await (await fetch(`${CDG_PUB}?gid=${foglio.gid}&single=true&output=csv`, { cache: "no-store" })).text();
+      const raw = parseCSV(txt);
+      const maxc = raw.reduce((m, r) => Math.max(m, r.length), 0);
+      const keep = [];
+      for (let c = 0; c < maxc; c++) if (raw.some((r) => (r[c] || "").trim() !== "")) keep.push(c);
+      const rows = raw.map((r) => keep.map((c) => (r[c] || "").trim())).filter((r) => r.some((v) => v !== ""));
+      setCache((p) => ({ ...p, [foglio.gid]: { rows, troncato: rows.length > CDG_MAX_RIGHE } }));
+    } catch { setErr("Impossibile leggere il foglio. Verifica la connessione."); }
+    setLoading(false);
+  }, [cache]);
+
+  useEffect(() => { carica(sel); }, [sel, carica]);
+
+  const dati = cache[sel.gid] || null;
+  const rows = dati ? dati.rows.slice(0, CDG_MAX_RIGHE) : null;
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 700 }}>Controllo di gestione</h1>
+          <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Tutti i fogli del file Google · lettura in tempo reale</p>
+        </div>
+        <button className="bg" onClick={() => carica(sel, true)} disabled={loading}>{loading ? "Sincronizzo…" : "↻ Aggiorna"}</button>
+      </div>
+      <div className="gl" style={{ marginBottom: 14 }} />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
+        {CDG_FOGLI.map((f) => (
+          <button key={f.gid} className={sel.gid === f.gid ? "bp" : "bg"} onClick={() => setSel(f)} style={{ fontSize: 12 }}>{f.nome}</button>
+        ))}
+      </div>
+      {err && <div style={{ fontSize: 13, color: "var(--red)", marginBottom: 12 }}>{err}</div>}
+      {rows === null ? (
+        <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento «{sel.nome}»…</div>
+      ) : rows.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Foglio vuoto.</div>
+      ) : (
+        <>
+          <div style={{ overflow: "auto", maxHeight: "70vh", border: "1px solid var(--gl)", background: "#fff" }}>
+            <table style={{ borderCollapse: "collapse", fontSize: 12.5, width: "max-content", minWidth: "100%" }}>
+              <tbody>
+                {rows.map((r, ri) => (
+                  <tr key={ri}>
+                    {r.map((v, ci) => (
+                      <td key={ci} style={{
+                        padding: "7px 10px", borderBottom: "1px solid var(--gl)", borderRight: "1px solid var(--gl)",
+                        whiteSpace: "nowrap", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis",
+                        fontWeight: ri === 0 ? 600 : 400,
+                        background: ri === 0 ? "#faf8f4" : "#fff",
+                        position: ri === 0 ? "sticky" : undefined, top: ri === 0 ? 0 : undefined, zIndex: ri === 0 ? 1 : undefined,
+                      }} title={v}>{v}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 12 }}>
+            {dati.troncato ? `Mostrate le prime ${CDG_MAX_RIGHE} righe di ${dati.rows.length}. ` : ""}
+            Fonte: file Google «Controllo di gestione Valente Living». Aggiornamento automatico; usa ↻ Aggiorna per forzare.
+          </p>
+        </>
+      )}
+    </>
+  );
+}
+
 // ── Home / Dashboard: roadmap a 100, mappa, timeline, prossimi obiettivi ──────
 const OBIETTIVO_IMMOBILI = 100;
 function fmtData(d) {
@@ -2576,6 +2670,7 @@ function App() {
     { id: "attivita", label: "Attività & Ticket", icon: "✅", count: null },
     { id: "gestione", label: "Gestione", icon: "📊", count: null },
     { id: "contabilita", label: "Contabilità", icon: "💶", count: null },
+    { id: "controllo", label: "Controllo di gestione", icon: "📑", count: null },
     { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale },
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length },
     { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding },
@@ -2655,6 +2750,7 @@ function App() {
             view === "attivita" ? <AttivitaView /> :
             view === "gestione" ? <DashboardGestione /> :
             view === "contabilita" ? <ContabilitaView proprieta={proprieta} owners={owners} /> :
+            view === "controllo" ? <ControlloGestioneView /> :
             view === "notifiche" ? <NotificheView onDataChanged={load} /> :
             view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} onEdit={setModalP} /> :
             view === "import" ? <ImportView proprieta={proprieta} owners={owners} onImport={load} /> :
