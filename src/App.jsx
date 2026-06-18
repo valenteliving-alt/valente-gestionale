@@ -1578,7 +1578,7 @@ const FatturaForm = ({ init, proprieta, owners, onSave, onClose, loading }) => {
 };
 
 function ContabilitaView({ proprieta, owners }) {
-  const [tab, setTab] = useState("spese");
+  const [tab, setTab] = useState("panoramica");
   const [spese, setSpese] = useState(null);
   const [fatture, setFatture] = useState(null);
   const [rendiconti, setRendiconti] = useState(null);
@@ -1641,21 +1641,34 @@ function ContabilitaView({ proprieta, owners }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12, marginBottom: 8 }}>
-        <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Contabilità</h1>
-          <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Incassi ospiti dalle prenotazioni Krossbooking · spese, fatture e rendiconti gestiti qui</p></div>
+        <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Gestione</h1>
+          <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Dashboard prenotazioni, contabilità e fogli di controllo di gestione — tutto in un'unica vista</p></div>
       </div>
       <div className="gl" style={{ marginBottom: 18 }} />
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 22 }}>
-        {TABS.map(([id, l]) => <button key={id} className={tab === id ? "bp" : "bg"} onClick={() => { setTab(id); setMsg(""); }}>{l}</button>)}
+      <div style={{ marginBottom: 22 }}>
+        <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "var(--gray)", marginBottom: 6 }}>Panoramica</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+          <button className={tab === "panoramica" ? "bp" : "bg"} onClick={() => { setTab("panoramica"); setMsg(""); }}>📊 Dashboard prenotazioni</button>
+        </div>
+        <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "var(--gray)", marginBottom: 6 }}>Contabilità interna</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+          {TABS.map(([id, l]) => <button key={id} className={tab === id ? "bp" : "bg"} onClick={() => { setTab(id); setMsg(""); }}>{l}</button>)}
+        </div>
+        <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "var(--gray)", marginBottom: 6 }}>File Google · Controllo di gestione</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {CDG_FOGLI.map((f) => { const gid = "g:" + f.gid; return <button key={gid} className={tab === gid ? "bp" : "bg"} style={{ fontSize: 12 }} onClick={() => { setTab(gid); setMsg(""); }}>{f.nome}</button>; })}
+        </div>
       </div>
       {msg && <div style={{ marginBottom: 14, fontSize: 13, fontWeight: 500, color: "var(--gold)" }}>{msg}</div>}
 
+      {tab === "panoramica" && <DashboardGestione />}
       {tab === "spese" && <SpeseTab spese={spese} proprieta={proprieta} propNome={propNome} onNew={() => setModalS("new")} onEdit={setModalS} onDel={delSpesa} />}
       {tab === "fatture" && <FattureTab fatture={fatture} ownerNome={ownerNome} propNome={propNome} onNew={() => setModalF("new")} onEdit={setModalF} onDel={delFatt} onIncassa={incassaFatt} />}
       {tab === "rendiconti" && <RendicontiTab rendiconti={rendiconti} spese={spese} pren={pren} proprieta={proprieta} owners={owners} ownerNome={ownerNome} propNome={propNome} onChanged={load} setMsg={setMsg} />}
       {tab === "entrata" && <EntrataTab proprieta={proprieta} onChanged={load} setMsg={setMsg} />}
       {tab === "banca" && <BancaTab trans={trans} />}
       {tab === "fiscale" && <FiscaleTab pren={pren} spese={spese} fatture={fatture} />}
+      {tab.startsWith("g:") && (() => { const f = CDG_FOGLI.find((x) => "g:" + x.gid === tab); return f ? <FoglioGoogleTab key={f.gid} foglio={f} /> : null; })()}
 
       {modalS && <Modal title={modalS === "new" ? "Nuova spesa" : "Modifica spesa"} onClose={() => setModalS(null)}>
         <SpesaForm init={modalS === "new" ? {} : modalS} proprieta={proprieta} onSave={saveSpesa} onClose={() => setModalS(null)} loading={saving} /></Modal>}
@@ -2359,83 +2372,88 @@ const CDG_FOGLI = [
   { nome: "Via ruga degli Orlandi", gid: "570047146" },
   { nome: "Crediti e debiti", gid: "1357534243" },
 ];
-const CDG_MAX_RIGHE = 600;
-function ControlloGestioneView() {
-  const [sel, setSel] = useState(CDG_FOGLI[0]);
-  const [cache, setCache] = useState({});
+const CDG_NUM_RE = /^[€$\s]*-?\d{1,3}(?:[.\s]\d{3})*(?:,\d+)?\s*%?$|^[€$\s]*-?\d+(?:[.,]\d+)?\s*%?$/;
+const cdgNum = (v) => parseFloat(String(v).replace(/[^0-9,.-]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."));
+function FoglioGoogleTab({ foglio }) {
+  const [raw, setRaw] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState({ col: null, dir: 1 });
 
-  const carica = useCallback(async (foglio, force) => {
-    if (!force && cache[foglio.gid]) return;
-    setLoading(true); setErr("");
+  const carica = useCallback(async () => {
+    setLoading(true); setErr(""); setQ(""); setSort({ col: null, dir: 1 });
     try {
       const txt = await (await fetch(`${CDG_PUB}?gid=${foglio.gid}&single=true&output=csv`, { cache: "no-store" })).text();
-      const raw = parseCSV(txt);
-      const maxc = raw.reduce((m, r) => Math.max(m, r.length), 0);
+      const r0 = parseCSV(txt);
+      const maxc = r0.reduce((m, r) => Math.max(m, r.length), 0);
       const keep = [];
-      for (let c = 0; c < maxc; c++) if (raw.some((r) => (r[c] || "").trim() !== "")) keep.push(c);
-      const rows = raw.map((r) => keep.map((c) => (r[c] || "").trim())).filter((r) => r.some((v) => v !== ""));
-      setCache((p) => ({ ...p, [foglio.gid]: { rows, troncato: rows.length > CDG_MAX_RIGHE } }));
+      for (let c = 0; c < maxc; c++) if (r0.some((r) => (r[c] || "").trim() !== "")) keep.push(c);
+      setRaw(r0.map((r) => keep.map((c) => (r[c] || "").trim())).filter((r) => r.some((v) => v !== "")));
     } catch { setErr("Impossibile leggere il foglio. Verifica la connessione."); }
     setLoading(false);
-  }, [cache]);
+  }, [foglio.gid]);
+  useEffect(() => { carica(); }, [carica]);
 
-  useEffect(() => { carica(sel); }, [sel, carica]);
+  const { intro, header, body } = useMemo(() => {
+    if (!raw || !raw.length) return { intro: [], header: [], body: [] };
+    let hi = 0, best = -1;
+    for (let i = 0; i < Math.min(8, raw.length); i++) { const c = raw[i].filter((v) => v !== "").length; if (c > best) { best = c; hi = i; } }
+    return { intro: raw.slice(0, hi), header: raw[hi] || [], body: raw.slice(hi + 1) };
+  }, [raw]);
 
-  const dati = cache[sel.gid] || null;
-  const rows = dati ? dati.rows.slice(0, CDG_MAX_RIGHE) : null;
+  const view = useMemo(() => {
+    let rows = body;
+    if (q.trim()) { const s = q.toLowerCase(); rows = rows.filter((r) => r.some((v) => v.toLowerCase().includes(s))); }
+    if (sort.col !== null) {
+      rows = [...rows].sort((a, b) => {
+        const x = a[sort.col] || "", y = b[sort.col] || "";
+        const numeric = CDG_NUM_RE.test(x) && CDG_NUM_RE.test(y);
+        let c = numeric ? (cdgNum(x) - cdgNum(y)) : x.localeCompare(y, "it", { numeric: true });
+        if (Number.isNaN(c)) c = 0;
+        return c * sort.dir;
+      });
+    }
+    return rows;
+  }, [body, q, sort]);
+
+  const clickSort = (ci) => setSort((s) => (s.col === ci ? { col: ci, dir: -s.dir } : { col: ci, dir: 1 }));
+
+  if (raw === null) return <div style={{ textAlign: "center", padding: 50, color: "var(--gray)" }}>Caricamento «{foglio.nome}»…</div>;
   return (
-    <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <h1 style={{ fontSize: 26, fontWeight: 700 }}>Controllo di gestione</h1>
-          <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Tutti i fogli del file Google · lettura in tempo reale</p>
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Cerca in ${foglio.nome}…`} style={{ flex: 1, minWidth: 220, maxWidth: 360, padding: "9px 12px", border: "1px solid var(--gl)", fontSize: 13 }} />
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <span style={{ fontSize: 12, color: "var(--gray)" }}>{view.length} righe{q ? ` su ${body.length}` : ""}</span>
+          <button className="bg" onClick={carica} disabled={loading}>{loading ? "…" : "↻ Aggiorna"}</button>
         </div>
-        <button className="bg" onClick={() => carica(sel, true)} disabled={loading}>{loading ? "Sincronizzo…" : "↻ Aggiorna"}</button>
-      </div>
-      <div className="gl" style={{ marginBottom: 14 }} />
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
-        {CDG_FOGLI.map((f) => (
-          <button key={f.gid} className={sel.gid === f.gid ? "bp" : "bg"} onClick={() => setSel(f)} style={{ fontSize: 12 }}>{f.nome}</button>
-        ))}
       </div>
       {err && <div style={{ fontSize: 13, color: "var(--red)", marginBottom: 12 }}>{err}</div>}
-      {rows === null ? (
-        <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento «{sel.nome}»…</div>
-      ) : rows.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Foglio vuoto.</div>
-      ) : (
-        <>
-          <div style={{ overflow: "auto", maxHeight: "70vh", border: "1px solid var(--gl)", background: "#fff" }}>
-            <table style={{ borderCollapse: "collapse", fontSize: 12.5, width: "max-content", minWidth: "100%" }}>
-              <tbody>
-                {rows.map((r, ri) => (
-                  <tr key={ri}>
-                    {r.map((v, ci) => (
-                      <td key={ci} style={{
-                        padding: "7px 10px", borderBottom: "1px solid var(--gl)", borderRight: "1px solid var(--gl)",
-                        whiteSpace: "nowrap", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis",
-                        fontWeight: ri === 0 ? 600 : 400,
-                        background: ri === 0 ? "#faf8f4" : "#fff",
-                        position: ri === 0 ? "sticky" : undefined, top: ri === 0 ? 0 : undefined, zIndex: ri === 0 ? 1 : undefined,
-                      }} title={v}>{v}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 12 }}>
-            {dati.troncato ? `Mostrate le prime ${CDG_MAX_RIGHE} righe di ${dati.rows.length}. ` : ""}
-            Fonte: file Google «Controllo di gestione Valente Living». Aggiornamento automatico; usa ↻ Aggiorna per forzare.
-          </p>
-        </>
+      {intro.length > 0 && <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 10, lineHeight: 1.5 }}>{intro.map((r, i) => <div key={i}>{r.filter(Boolean).join(" · ")}</div>)}</div>}
+      {body.length === 0 ? <div style={{ textAlign: "center", padding: 50, color: "var(--gray)" }}>Foglio vuoto.</div> : (
+        <div style={{ overflow: "auto", maxHeight: "64vh", border: "1px solid var(--gl)", background: "#fff" }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 12.5, width: "max-content", minWidth: "100%" }}>
+            <thead>
+              <tr>{header.map((h, ci) => (
+                <th key={ci} onClick={() => clickSort(ci)} title="Ordina" style={{ position: "sticky", top: 0, zIndex: 1, cursor: "pointer", padding: "8px 10px", borderBottom: "2px solid var(--black)", borderRight: "1px solid var(--gl)", textAlign: "left", fontSize: 10.5, letterSpacing: .5, textTransform: "uppercase", color: "var(--gray)", fontWeight: 600, background: "#faf8f4", whiteSpace: "nowrap", userSelect: "none" }}>
+                  {h || "—"}{sort.col === ci ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
+                </th>))}</tr>
+            </thead>
+            <tbody>
+              {view.map((r, ri) => (
+                <tr key={ri}>{header.map((_, ci) => (
+                  <td key={ci} style={{ padding: "7px 10px", borderBottom: "1px solid var(--gl)", borderRight: "1px solid var(--gl)", whiteSpace: "nowrap", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis" }} title={r[ci] || ""}>{r[ci] || ""}</td>
+                ))}</tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-    </>
+      <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 10 }}>Fonte: file Google «Controllo di gestione Valente Living» · sola lettura · clic sull'intestazione per ordinare.</p>
+    </div>
   );
 }
-
 // ── Home / Dashboard: roadmap a 100, mappa, timeline, prossimi obiettivi ──────
 const OBIETTIVO_IMMOBILI = 100;
 function fmtData(d) {
@@ -2667,14 +2685,10 @@ function App() {
   const navItems = [
     { id: "home", label: "Home", icon: "🏛️", count: null },
     { id: "notifiche", label: "Notifiche", icon: "🔔", count: notifCount, alert: true },
-    { id: "attivita", label: "Attività & Ticket", icon: "✅", count: null },
-    { id: "gestione", label: "Gestione", icon: "📊", count: null },
-    { id: "contabilita", label: "Contabilità", icon: "💶", count: null },
-    { id: "controllo", label: "Controllo di gestione", icon: "📑", count: null },
+    { id: "gestione", label: "Gestione & Contabilità", icon: "📊", count: null },
     { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale },
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length },
     { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding },
-    { id: "import", label: "Importa Monday", icon: "⬇️", count: null },
     { id: "lead", label: "Lead", icon: "🎯", count: null },
     { id: "smistamento", label: "Smistamento doc", icon: "📥", count: null },
   ];
@@ -2747,13 +2761,9 @@ function App() {
         <main className="main">
           {loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
             view === "home" ? <HomeView proprieta={proprieta} owners={owners} stats={stats} onVai={(v) => setView(v)} onApriProp={setDetP} /> :
-            view === "attivita" ? <AttivitaView /> :
-            view === "gestione" ? <DashboardGestione /> :
-            view === "contabilita" ? <ContabilitaView proprieta={proprieta} owners={owners} /> :
-            view === "controllo" ? <ControlloGestioneView /> :
+            view === "gestione" ? <ContabilitaView proprieta={proprieta} owners={owners} /> :
             view === "notifiche" ? <NotificheView onDataChanged={load} /> :
             view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} onEdit={setModalP} /> :
-            view === "import" ? <ImportView proprieta={proprieta} owners={owners} onImport={load} /> :
             view === "smistamento" ? <Smistamento proprieta={proprieta} owners={owners} onDataChanged={load} /> :
             view === "lead" ? (
               <>
