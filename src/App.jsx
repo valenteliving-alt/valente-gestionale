@@ -1668,7 +1668,7 @@ function ContabilitaView({ proprieta, owners }) {
       {tab === "entrata" && <EntrataTab proprieta={proprieta} onChanged={load} setMsg={setMsg} />}
       {tab === "banca" && <BancaTab trans={trans} />}
       {tab === "fiscale" && <FiscaleTab pren={pren} spese={spese} fatture={fatture} />}
-      {tab.startsWith("g:") && (() => { const f = CDG_FOGLI.find((x) => "g:" + x.gid === tab); return f ? <FoglioGoogleTab key={f.gid} foglio={f} /> : null; })()}
+      {tab.startsWith("g:") && (() => { const f = CDG_FOGLI.find((x) => "g:" + x.gid === tab); if (!f) return null; return f.statusCol ? <FoglioWritableTab key={f.gid} foglio={f} /> : <FoglioGoogleTab key={f.gid} foglio={f} />; })()}
 
       {modalS && <Modal title={modalS === "new" ? "Nuova spesa" : "Modifica spesa"} onClose={() => setModalS(null)}>
         <SpesaForm init={modalS === "new" ? {} : modalS} proprieta={proprieta} onSave={saveSpesa} onClose={() => setModalS(null)} loading={saving} /></Modal>}
@@ -2363,8 +2363,8 @@ const CDG_FOGLI = [
   { nome: "Proprietà", gid: "579946916" },
   { nome: "Property Managers", gid: "1447853709" },
   { nome: "Distinte di pagamento + F24", gid: "1939873154" },
-  { nome: "Scadenzario in Uscita", gid: "750917577" },
-  { nome: "Scadenzario in Entrata", gid: "863375586" },
+  { nome: "Scadenzario in Uscita", gid: "750917577", sheet: "Scadenzario in Uscita (pagamenti)", statusCol: "STATO" },
+  { nome: "Scadenzario in Entrata", gid: "863375586", sheet: "Scadenzario in Entrata (fatture da emettere)", statusCol: "STATO FATTURA" },
   { nome: "Fatture Valente Living", gid: "662136451" },
   { nome: "Lista Fornitori", gid: "1167038705" },
   { nome: "Configurazione gestione", gid: "1292179885" },
@@ -2374,6 +2374,118 @@ const CDG_FOGLI = [
 ];
 const CDG_NUM_RE = /^[€$\s]*-?\d{1,3}(?:[.\s]\d{3})*(?:,\d+)?\s*%?$|^[€$\s]*-?\d+(?:[.,]\d+)?\s*%?$/;
 const cdgNum = (v) => parseFloat(String(v).replace(/[^0-9,.-]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."));
+const CDG_BRIDGE = "/.netlify/functions/cdg-bridge";
+function FoglioWritableTab({ foglio }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState({ col: null, dir: 1 });
+  const [savingRow, setSavingRow] = useState(null);
+  const [msg, setMsg] = useState("");
+
+  const carica = useCallback(async () => {
+    setLoading(true); setErr(""); setMsg("");
+    try {
+      const r = await fetch(`${CDG_BRIDGE}?action=read&sheet=${encodeURIComponent(foglio.sheet)}`, { cache: "no-store" });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || "errore");
+      setData({ headers: j.headers, rows: j.rows, headerRow: j.headerRow });
+    } catch (e) { setErr("Impossibile leggere il foglio dal vivo."); }
+    setLoading(false);
+  }, [foglio.sheet]);
+  useEffect(() => { carica(); }, [carica]);
+
+  const colIdx = data ? data.headers.indexOf(foglio.statusCol) : -1;
+  const opzioni = useMemo(() => {
+    if (!data || colIdx < 0) return [];
+    const s = new Set();
+    data.rows.forEach((r) => { const v = (r[colIdx] || "").trim(); if (v) s.add(v); });
+    return [...s];
+  }, [data, colIdx]);
+
+  const righe = useMemo(() => {
+    if (!data) return [];
+    let idx = data.rows.map((r, i) => ({ r, i }));
+    if (q.trim()) { const s = q.toLowerCase(); idx = idx.filter((o) => o.r.some((v) => v.toLowerCase().includes(s))); }
+    if (sort.col !== null) {
+      idx = [...idx].sort((a, b) => {
+        const x = a.r[sort.col] || "", y = b.r[sort.col] || "";
+        const num = CDG_NUM_RE.test(x) && CDG_NUM_RE.test(y);
+        let c = num ? (cdgNum(x) - cdgNum(y)) : x.localeCompare(y, "it", { numeric: true });
+        if (Number.isNaN(c)) c = 0;
+        return c * sort.dir;
+      });
+    }
+    return idx;
+  }, [data, q, sort, colIdx]);
+
+  const setStato = async (rowIndex, value) => {
+    const absRow = data.headerRow + rowIndex + 2;
+    setSavingRow(rowIndex); setMsg("");
+    const prev = data.rows[rowIndex][colIdx];
+    setData((d) => { const rows = d.rows.map((r) => r.slice()); rows[rowIndex][colIdx] = value; return { ...d, rows }; });
+    try {
+      const r = await fetch(CDG_BRIDGE, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sheet: foglio.sheet, row: absRow, col: foglio.statusCol, value }) });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || "errore");
+      setMsg(`✓ Salvato sul foglio Google: ${foglio.statusCol} = "${value}"`);
+    } catch (e) {
+      setData((d) => { const rows = d.rows.map((r) => r.slice()); rows[rowIndex][colIdx] = prev; return { ...d, rows }; });
+      setMsg("⚠️ Salvataggio non riuscito, riprova.");
+    }
+    setSavingRow(null);
+  };
+
+  const onSelect = (rowIndex, e) => {
+    const v = e.target.value;
+    if (v === "__altro__") { const c = window.prompt(`Nuovo valore per ${foglio.statusCol}:`); if (c && c.trim()) setStato(rowIndex, c.trim()); return; }
+    setStato(rowIndex, v);
+  };
+
+  const clickSort = (ci) => setSort((s) => (s.col === ci ? { col: ci, dir: -s.dir } : { col: ci, dir: 1 }));
+
+  if (data === null) return <div style={{ textAlign: "center", padding: 50, color: "var(--gray)" }}>{err || `Caricamento «${foglio.nome}» dal vivo…`}</div>;
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Cerca in ${foglio.nome}…`} style={{ flex: 1, minWidth: 220, maxWidth: 360, padding: "9px 12px", border: "1px solid var(--gl)", fontSize: 13 }} />
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <span style={{ fontSize: 12, color: "var(--gray)" }}>{righe.length} righe</span>
+          <button className="bg" onClick={carica} disabled={loading}>{loading ? "…" : "↻ Aggiorna"}</button>
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: "var(--gray)", marginBottom: 8 }}>✏️ Modificabile: cambia la colonna <b>{foglio.statusCol}</b> dal menu e si aggiorna direttamente sul foglio Google.</div>
+      {msg && <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: msg[0] === "✓" ? "#2d6a4f" : "var(--red)" }}>{msg}</div>}
+      {err && <div style={{ fontSize: 13, color: "var(--red)", marginBottom: 10 }}>{err}</div>}
+      <div style={{ overflow: "auto", maxHeight: "64vh", border: "1px solid var(--gl)", background: "#fff" }}>
+        <table style={{ borderCollapse: "collapse", fontSize: 12.5, width: "max-content", minWidth: "100%" }}>
+          <thead><tr>{data.headers.map((h, ci) => (
+            <th key={ci} onClick={() => clickSort(ci)} style={{ position: "sticky", top: 0, zIndex: 1, cursor: "pointer", padding: "8px 10px", borderBottom: "2px solid var(--black)", borderRight: "1px solid var(--gl)", textAlign: "left", fontSize: 10.5, letterSpacing: .5, textTransform: "uppercase", color: ci === colIdx ? "var(--gold)" : "var(--gray)", fontWeight: 600, background: "#faf8f4", whiteSpace: "nowrap", userSelect: "none" }}>
+              {h || "—"}{sort.col === ci ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
+            </th>))}</tr></thead>
+          <tbody>
+            {righe.map(({ r, i }) => (
+              <tr key={i}>{data.headers.map((_, ci) => ci === colIdx ? (
+                <td key={ci} style={{ padding: "5px 8px", borderBottom: "1px solid var(--gl)", borderRight: "1px solid var(--gl)", background: "#fffdf6" }}>
+                  <select value={opzioni.includes(r[ci]) ? r[ci] : (r[ci] || "")} disabled={savingRow === i} onChange={(e) => onSelect(i, e)} style={{ fontSize: 12, padding: "3px 6px", border: "1px solid var(--gl)", maxWidth: 180 }}>
+                    {!opzioni.includes(r[ci]) && <option value={r[ci] || ""}>{r[ci] || "—"}</option>}
+                    {opzioni.map((o) => <option key={o} value={o}>{o}</option>)}
+                    <option value="__altro__">✎ Altro…</option>
+                  </select>
+                </td>
+              ) : (
+                <td key={ci} style={{ padding: "7px 10px", borderBottom: "1px solid var(--gl)", borderRight: "1px solid var(--gl)", whiteSpace: "nowrap", maxWidth: 340, overflow: "hidden", textOverflow: "ellipsis" }} title={r[ci] || ""}>{r[ci] || ""}</td>
+              ))}</tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 10 }}>Scrive direttamente sul foglio Google «{foglio.sheet}». Le altre colonne sono in sola lettura.</p>
+    </div>
+  );
+}
+
 function FoglioGoogleTab({ foglio }) {
   const [raw, setRaw] = useState(null);
   const [loading, setLoading] = useState(false);
