@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 import Archivio from "./Archivio";
+import Guida from "./Guida";
 
 // PASSWORD PER ENTRARE NEL GESTIONALE — cambiala qui quando vuoi
 const PASSWORD_SITO = "Living626!!";
@@ -2841,6 +2842,7 @@ function App() {
     { id: "lead", label: "Lead", icon: "🎯", count: null },
     { id: "smistamento", label: "Smistamento doc", icon: "📥", count: null },
     { id: "archivio", label: "Archivio", icon: "🗂️", count: null },
+    { id: "guida", label: "Guida", icon: "📚", count: null },
   ];
 
   return (
@@ -2916,6 +2918,7 @@ function App() {
             view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} onEdit={setModalP} /> :
             view === "smistamento" ? <Smistamento proprieta={proprieta} owners={owners} onDataChanged={load} /> :
             view === "archivio" ? <Archivio proprieta={proprieta} owners={owners} /> :
+            view === "guida" ? <Guida /> :
             view === "lead" ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
