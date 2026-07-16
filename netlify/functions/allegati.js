@@ -44,11 +44,42 @@ const handler = async (event) => {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ files: data }) };
     }
 
+    // Archivio generale: tutti i documenti del CRM, i più recenti prima
+    if (action === "list_all") {
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/documenti?select=*&order=created_at.desc&limit=2000`, { headers: sb });
+      const data = await r.json();
+      if (!r.ok) return { statusCode: r.status, headers: CORS, body: JSON.stringify({ error: data.message || "Errore lettura." }) };
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ files: data }) };
+    }
+
+    // Archivio generale: modifica categoria / tag / nota
+    if (action === "update") {
+      const { id, categoria, tags, note } = body;
+      if (!id) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Manca id." }) };
+      const patch = {};
+      if (categoria !== undefined) patch.categoria = categoria;
+      if (tags !== undefined) patch.tags = tags;
+      if (note !== undefined) patch.note = note;
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/documenti?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { ...sb, "Content-Type": "application/json", "Prefer": "return=representation" },
+        body: JSON.stringify(patch),
+      });
+      const rec = await r.json();
+      if (!r.ok) return { statusCode: r.status, headers: CORS, body: JSON.stringify({ error: rec.message || "Aggiornamento fallito." }) };
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ file: Array.isArray(rec) ? rec[0] : rec }) };
+    }
+
     if (action === "upload") {
-      const { proprieta_id, proprietario_id, nome_file, tipo, data } = body;
+      const { proprieta_id, proprietario_id, nome_file, tipo, data, categoria, tags, note } = body;
       if (!data || !nome_file) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "File mancante." }) };
       const safeName = nome_file.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const folder = proprieta_id ? ("proprieta/" + proprieta_id) : ("proprietario/" + proprietario_id);
+      const catFolder = String(categoria || "Generale").replace(/[^a-zA-Z0-9._-]/g, "_");
+      const folder = proprieta_id
+        ? ("proprieta/" + proprieta_id)
+        : proprietario_id
+          ? ("proprietario/" + proprietario_id)
+          : ("archivio/" + catFolder);
       const path = folder + "/" + Date.now() + "-" + safeName;
       const buffer = Buffer.from(data, "base64");
 
@@ -65,7 +96,14 @@ const handler = async (event) => {
       const ins = await fetch(`${SUPABASE_URL}/rest/v1/documenti`, {
         method: "POST",
         headers: { ...sb, "Content-Type": "application/json", "Prefer": "return=representation" },
-        body: JSON.stringify({ proprieta_id: proprieta_id || null, proprietario_id: proprietario_id || null, nome_file, path, tipo: tipo || "" }),
+        body: JSON.stringify({
+          proprieta_id: proprieta_id || null,
+          proprietario_id: proprietario_id || null,
+          nome_file, path, tipo: tipo || "",
+          categoria: categoria || (proprieta_id || proprietario_id ? null : "Generale"),
+          tags: tags || null,
+          note: note || null,
+        }),
       });
       const rec = await ins.json();
       if (!ins.ok) return { statusCode: ins.status, headers: CORS, body: JSON.stringify({ error: rec.message || "Salvataggio fallito." }) };
