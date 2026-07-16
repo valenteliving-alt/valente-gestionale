@@ -27,6 +27,17 @@ const handler = async (event) => {
 
   const sb = { "apikey": KEY, "Authorization": "Bearer " + KEY };
 
+  // Aggiorna una riga del documento e restituisce il record aggiornato
+  const patchDoc = async (id, patch) => {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/documenti?id=eq.${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { ...sb, "Content-Type": "application/json", "Prefer": "return=representation" },
+      body: JSON.stringify(patch),
+    });
+    const rec = await r.json().catch(() => null);
+    return Array.isArray(rec) ? rec[0] : rec;
+  };
+
   let body = {};
   try { body = JSON.parse(event.body || "{}"); } catch {}
   const action = body.action;
@@ -136,6 +147,73 @@ const handler = async (event) => {
       const r = await fetch(`${SUPABASE_URL}/rest/v1/documenti?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", headers: sb });
       if (!r.ok) { const e = await r.text(); return { statusCode: r.status, headers: CORS, body: JSON.stringify({ error: e.slice(0, 200) }) }; }
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
+    }
+
+    // Descrizione automatica: l'AI legge il documento e genera una frase + parole chiave
+    if (action === "describe") {
+      const { id, path, tipo, nome_file } = body;
+      let data = body.data;
+      if (!id) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Manca id." }) };
+
+      const nome = String(nome_file || path || "").toLowerCase();
+      const isPdf = String(tipo || "").includes("pdf") || nome.endsWith(".pdf");
+      const isImg = String(tipo || "").startsWith("image/") || /\.(jpe?g|png|webp|gif|heic)$/.test(nome);
+
+      // Formati che l'AI non può leggere direttamente (Word, Excel, zip, p7m…): li segniamo come "saltati"
+      if (!isPdf && !isImg) {
+        const file = await patchDoc(id, { ai_stato: "skip" });
+        return { statusCode: 200, headers: CORS, body: JSON.stringify({ file, skipped: true }) };
+      }
+
+      const KEY_AI = process.env.ANTHROPIC_API_KEY;
+      if (!KEY_AI) return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Manca ANTHROPIC_API_KEY su Netlify." }) };
+
+      // Se il client non ha passato i dati del file (es. backfill), lo scarichiamo dallo storage
+      if (!data) {
+        if (!path) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Manca path." }) };
+        const dl = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${encodeURI(path)}`, { headers: sb });
+        if (!dl.ok) {
+          await patchDoc(id, { ai_stato: "errore" });
+          return { statusCode: 200, headers: CORS, body: JSON.stringify({ file: await patchDoc(id, {}), error: "Download del file non riuscito." }) };
+        }
+        const ab = await dl.arrayBuffer();
+        data = Buffer.from(ab).toString("base64");
+      }
+
+      const mediaType = isPdf ? "application/pdf" : (String(tipo || "").startsWith("image/") ? tipo : "image/jpeg");
+      const blocco = isPdf
+        ? { type: "document", source: { type: "base64", media_type: "application/pdf", data } }
+        : { type: "image", source: { type: "base64", media_type: mediaType, data } };
+      const prompt = 'Guarda il documento allegato. Rispondi SOLO con un JSON valido, senza markdown e senza altro testo: {"d":"descrizione brevissima in italiano, massimo 12 parole, di che documento si tratta e a cosa o a chi si riferisce","k":["da 3 a 6 parole chiave in minuscolo"]}. Copia eventuali nomi, importi o codici in modo utile per ritrovare il documento.';
+
+      try {
+        const r = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "x-api-key": KEY_AI, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 300, messages: [{ role: "user", content: [blocco, { type: "text", text: prompt }] }] }),
+        });
+        const j = await r.json();
+        if (!r.ok) {
+          await patchDoc(id, { ai_stato: "errore" });
+          return { statusCode: r.status, headers: CORS, body: JSON.stringify({ error: (j.error && j.error.message) || "Errore AI." }) };
+        }
+        let txt = (j.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+        txt = txt.replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
+        let obj = null; try { obj = JSON.parse(txt); } catch {}
+        let descr = "";
+        if (obj && obj.d) {
+          const kw = Array.isArray(obj.k) ? obj.k.map(x => String(x || "").trim()).filter(Boolean).slice(0, 6) : [];
+          descr = String(obj.d).trim();
+          if (kw.length) descr += "  " + kw.map(k => "#" + k.replace(/\s+/g, "-")).join(" ");
+        } else {
+          descr = txt.slice(0, 240);
+        }
+        const file = await patchDoc(id, { ai_descrizione: descr, ai_stato: "ok" });
+        return { statusCode: 200, headers: CORS, body: JSON.stringify({ file }) };
+      } catch (e) {
+        await patchDoc(id, { ai_stato: "errore" });
+        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: e.message }) };
+      }
     }
 
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Azione non riconosciuta." }) };
