@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
+import Archivio from "./Archivio";
 
 // PASSWORD PER ENTRARE NEL GESTIONALE — cambiala qui quando vuoi
 const PASSWORD_SITO = "Living626!!";
@@ -2803,6 +2804,7 @@ function App() {
     { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding },
     { id: "lead", label: "Lead", icon: "🎯", count: null },
     { id: "smistamento", label: "Smistamento doc", icon: "📥", count: null },
+    { id: "archivio", label: "Archivio", icon: "🗂️", count: null },
   ];
 
   return (
@@ -2877,6 +2879,7 @@ function App() {
             view === "notifiche" ? <NotificheView onDataChanged={load} /> :
             view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} onEdit={setModalP} /> :
             view === "smistamento" ? <Smistamento proprieta={proprieta} owners={owners} onDataChanged={load} /> :
+            view === "archivio" ? <Archivio proprieta={proprieta} owners={owners} /> :
             view === "lead" ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
