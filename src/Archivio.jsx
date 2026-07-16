@@ -63,7 +63,9 @@ export default function Archivio({ proprieta = [], owners = [] }) {
   const [noteNuove, setNoteNuove] = useState("");
   const [editId, setEditId] = useState(null);
   const [editVal, setEditVal] = useState({ categoria: "", tags: "", note: "" });
+  const [descrivendo, setDescrivendo] = useState(null); // { fatti, totale } durante la descrizione automatica
   const fileRef = useRef(null);
+  const backfillFatto = useRef(false);
 
   const mappaProp = useMemo(() => Object.fromEntries(proprieta.map(p => [String(p.id), p.nome])), [proprieta]);
   const mappaOwn = useMemo(() => Object.fromEntries(owners.map(o => [String(o.id), `${o.nome || ""} ${o.cognome || ""}`.trim()])), [owners]);
@@ -78,6 +80,41 @@ export default function Archivio({ proprieta = [], owners = [] }) {
   }, []);
 
   useEffect(() => { carica(); }, [carica]);
+
+  // Un documento è descrivibile dall'AI solo se è PDF o immagine
+  const descrivibile = (d) => {
+    const n = (d.nome_file || "").toLowerCase(); const t = (d.tipo || "").toLowerCase();
+    return t.includes("pdf") || n.endsWith(".pdf") || t.startsWith("image/") || /\.(jpe?g|png|webp|gif|heic)$/.test(n);
+  };
+
+  // Genera la descrizione AI di un singolo documento e aggiorna la lista
+  const descrivi = useCallback(async (d, data) => {
+    try {
+      const res = await fnAllegati({ action: "describe", id: d.id, path: d.path, tipo: d.tipo, nome_file: d.nome_file, data });
+      if (res && res.file) setDocs(ds => ds.map(x => x.id === d.id ? { ...x, ...res.file } : x));
+    } catch { /* silenzioso: non blocca l'uso dell'archivio */ }
+  }, []);
+
+  // Elabora in sequenza i documenti ancora senza descrizione
+  const descriviMancanti = useCallback(async (lista, includiErrori = false) => {
+    const daFare = lista.filter(d => includiErrori ? (d.ai_stato !== "ok" && d.ai_stato !== "skip") : !d.ai_stato);
+    if (!daFare.length) return;
+    setDescrivendo({ fatti: 0, totale: daFare.length });
+    for (let i = 0; i < daFare.length; i++) {
+      await descrivi(daFare[i]);
+      setDescrivendo({ fatti: i + 1, totale: daFare.length });
+    }
+    setDescrivendo(null);
+  }, [descrivi]);
+
+  // Backfill automatico una volta per sessione: descrive i documenti già presenti
+  useEffect(() => {
+    if (caricando || backfillFatto.current || descrivendo) return;
+    if (docs.some(d => !d.ai_stato)) {
+      backfillFatto.current = true;
+      descriviMancanti(docs, false);
+    }
+  }, [docs, caricando, descrivendo, descriviMancanti]);
 
   const aggiungiFiles = async (fileList) => {
     const tutti = Array.from(fileList || []);
@@ -96,7 +133,7 @@ export default function Archivio({ proprieta = [], owners = [] }) {
           rd.onerror = () => rej(new Error("Lettura file non riuscita"));
           rd.readAsDataURL(file);
         });
-        await fnAllegati({
+        const up = await fnAllegati({
           action: "upload",
           nome_file: file.name,
           tipo: file.type || "application/octet-stream",
@@ -105,6 +142,8 @@ export default function Archivio({ proprieta = [], owners = [] }) {
           tags: tagsNuovi,
           note: noteNuove,
         });
+        // Descrizione automatica subito dopo il caricamento (riusa i dati già in memoria)
+        if (up && up.file) { await descrivi(up.file, data); }
       } catch (e) {
         setErrore(prev => (prev ? prev + " · " : "") + `${file.name}: ${e.message}`);
       }
@@ -151,7 +190,7 @@ export default function Archivio({ proprieta = [], owners = [] }) {
       if (fCat && (d.categoria || "Generale") !== fCat) return false;
       if (!q) return true;
       const c = collegamento(d);
-      const blob = [d.nome_file, d.categoria, d.tags, d.note, c && c.label].filter(Boolean).join(" ").toLowerCase();
+      const blob = [d.nome_file, d.categoria, d.tags, d.note, d.ai_descrizione, c && c.label].filter(Boolean).join(" ").toLowerCase();
       return blob.includes(q);
     });
   }, [docs, search, fCat, fAmbito, mappaProp, mappaOwn]);
@@ -244,6 +283,15 @@ export default function Archivio({ proprieta = [], owners = [] }) {
           ))}
         </div>
         <button className="bg" onClick={carica}>↻ Aggiorna</button>
+        {descrivendo ? (
+          <span style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600 }}>
+            ✨ Descrivo i documenti… {descrivendo.fatti}/{descrivendo.totale}
+          </span>
+        ) : (() => {
+          const mancanti = docs.filter(d => descrivibile(d) && d.ai_stato !== "ok" && d.ai_stato !== "skip").length;
+          if (!mancanti) return null;
+          return <button className="bg" onClick={() => descriviMancanti(docs, true)} title="Genera la descrizione AI per i documenti che ancora non ce l'hanno">✨ Descrivi i mancanti ({mancanti})</button>;
+        })()}
       </div>
 
       {/* Lista */}
@@ -273,6 +321,8 @@ export default function Archivio({ proprieta = [], owners = [] }) {
                       {c && <span className="tag" style={{ background: "rgba(214,156,49,.15)", color: "var(--gold)", borderColor: "rgba(214,156,49,.3)" }}>{c.tipo === "prop" ? "🏠" : "👤"} {c.label}</span>}
                       {(d.tags || "").split(",").map(t => t.trim()).filter(Boolean).map(t => <span key={t} className="tag">#{t}</span>)}
                     </div>
+                    {d.ai_descrizione && <div style={{ fontSize: 11, color: "var(--black)", marginTop: 4 }}><span title="Descrizione generata dall'AI" style={{ color: "var(--gold)" }}>✨</span> {d.ai_descrizione}</div>}
+                    {d.ai_stato === "errore" && !d.ai_descrizione && <div style={{ fontSize: 10, color: "var(--gray)", marginTop: 4 }}>Descrizione automatica non riuscita — riprova con "Descrivi i mancanti".</div>}
                     {d.note && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 4, fontStyle: "italic" }}>{d.note}</div>}
                   </div>
                   <div style={{ display: "flex", gap: 6 }}>

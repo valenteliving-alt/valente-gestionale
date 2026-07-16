@@ -834,11 +834,14 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
   const [err, setErr] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [progress, setProgress] = useState("");
+  const [descrivendo, setDescrivendo] = useState(null); // { fatti, totale } durante la descrizione automatica
   const fileRef = useRef(null);
+  const backfillFatto = useRef(false);
 
   const idsKey = (proprietaIds || []).join(",");
   const carica = useCallback(async () => {
     setLoading(true); setErr("");
+    backfillFatto.current = false; // riabilita un giro di descrizione automatica ad ogni (ri)caricamento
     const ids = idsKey ? idsKey.split(",") : [];
     // Quali "caselle" interrogare: se è un immobile solo lui; se è un proprietario, lui + tutti i suoi immobili
     const targets = [];
@@ -867,6 +870,34 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
 
   useEffect(() => { carica(); }, [carica]);
 
+  // Descrizione automatica del documento (PDF/immagine): l'AI genera una frase + parole chiave
+  const descrivi = async (f, data) => {
+    try {
+      const r = await fetch("/.netlify/functions/allegati", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "describe", id: f.id, path: f.path, tipo: f.tipo, nome_file: f.nome_file, data }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.file) setFiles(fs => fs.map(x => x.id === f.id ? { ...x, ...d.file } : x));
+    } catch { /* silenzioso */ }
+  };
+
+  // Backfill: descrive i documenti della proprietà che ancora non hanno una descrizione
+  useEffect(() => {
+    if (loading || backfillFatto.current || descrivendo) return;
+    if (!files.some(f => !f.ai_stato)) return;
+    backfillFatto.current = true;
+    (async () => {
+      const daFare = files.filter(f => !f.ai_stato);
+      setDescrivendo({ fatti: 0, totale: daFare.length });
+      for (let i = 0; i < daFare.length; i++) {
+        await descrivi(daFare[i]);
+        setDescrivendo({ fatti: i + 1, totale: daFare.length });
+      }
+      setDescrivendo(null);
+    })();
+  }, [files, loading, descrivendo]);
+
   const caricaFiles = async (fileList) => {
     const arr = Array.from(fileList || []);
     if (arr.length === 0 || busy) return;
@@ -891,6 +922,7 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
           body: JSON.stringify({ action: "upload", nome_file: file.name, tipo: file.type, data: base64, ...target }),
         });
         if (!r.ok) falliti.push(file.name);
+        else { const dd = await r.json().catch(() => ({})); if (dd.file) await descrivi(dd.file, base64); }
       } catch { falliti.push(file.name); }
     }
     setProgress("");
@@ -941,6 +973,7 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
         <input ref={fileRef} type="file" multiple style={{ display: "none" }} onChange={(e) => { caricaFiles(e.target.files); e.target.value = ""; }} />
       </div>
       {dragOver && <div style={{ fontSize: 12, color: "var(--gold)", textAlign: "center", padding: "8px 0" }}>Rilascia qui i file da caricare</div>}
+      {descrivendo && <div style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, marginBottom: 8 }}>✨ Descrivo i documenti… {descrivendo.fatti}/{descrivendo.totale}</div>}
       {err && <div style={{ fontSize: 12, color: "var(--red)", marginBottom: 8 }}>{err}</div>}
       {loading ? (
         <p style={{ fontSize: 12, color: "var(--gray)" }}>Caricamento…</p>
@@ -959,10 +992,13 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
                 <div style={{ flex: 1, height: 1, background: "var(--gl)" }} />
               </div>
               {elenco.map(f => (
-                <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--white)", border: "1px solid var(--gl)", borderLeft: `3px solid ${cat.color}`, marginBottom: 6 }}>
-                  <span style={{ flex: 1, fontSize: 12, wordBreak: "break-all" }}>{f.nome_file}</span>
-                  <button onClick={() => apri(f.path)} style={{ background: "none", border: "none", color: "var(--gold)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Apri</button>
-                  <button onClick={() => elimina(f)} style={{ background: "none", border: "none", color: "var(--red)", fontSize: 11, cursor: "pointer" }}>Elimina</button>
+                <div key={f.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 10px", background: "var(--white)", border: "1px solid var(--gl)", borderLeft: `3px solid ${cat.color}`, marginBottom: 6 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, wordBreak: "break-all" }}>{f.nome_file}</div>
+                    {f.ai_descrizione && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 2 }}><span style={{ color: "var(--gold)" }} title="Descrizione generata dall'AI">✨</span> {f.ai_descrizione}</div>}
+                  </div>
+                  <button onClick={() => apri(f.path)} style={{ background: "none", border: "none", color: "var(--gold)", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>Apri</button>
+                  <button onClick={() => elimina(f)} style={{ background: "none", border: "none", color: "var(--red)", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}>Elimina</button>
                 </div>
               ))}
             </div>
