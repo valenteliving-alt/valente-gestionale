@@ -156,12 +156,12 @@ export default function Guida() {
       <div className="gl" style={{ marginBottom: 20 }} />
 
       {/* Avviso */}
-      <div style={{ background: "rgba(214,156,49,.08)", border: "1px solid rgba(214,156,49,.3)", padding: "10px 14px", marginBottom: 20, fontSize: 12, color: "var(--black)" }}>
+      <div style={{ background: "rgba(214,156,49,.08)", border: "1px solid rgba(214,156,49,.3)", padding: "10px 14px", marginBottom: 20, fontSize: 12, color: "var(--black)", borderRadius: 12 }}>
         ⚠️ I dati sono <strong>indicativi</strong> e possono cambiare: prima di ogni adempimento fiscale <strong>verifica sempre sul portale ufficiale del comune</strong> (link in ogni scheda). Le tariffe segnate "da confermare/verificare" vanno controllate all'ufficio Tributi.
       </div>
 
       {/* Assistente AI */}
-      <div style={{ background: "var(--white)", border: "1px solid var(--gl)", padding: 16, marginBottom: 20 }}>
+      <div style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 16, marginBottom: 20 }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 8 }}>✦ Chiedi alla guida</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input
@@ -172,7 +172,7 @@ export default function Guida() {
           />
           <button className="bp" onClick={chiedi} disabled={chiedendo}>{chiedendo ? "Penso…" : "Chiedi"}</button>
         </div>
-        {risposta && <div style={{ marginTop: 12, fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", background: "var(--cream)", padding: 12, border: "1px solid var(--gl)" }}>{risposta}</div>}
+        {risposta && <div style={{ marginTop: 12, fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", background: "var(--cream)", padding: 12, border: "1px solid var(--gl)", borderRadius: 10 }}>{risposta}</div>}
       </div>
 
       {/* Guide procedurali */}
@@ -182,7 +182,7 @@ export default function Guida() {
           {GUIDE.map(g => {
             const aperta = guidaAperta === g.id;
             return (
-              <div key={g.id} style={{ background: "var(--white)", border: "1px solid var(--gl)" }}>
+              <div key={g.id} style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)" }}>
                 <button onClick={() => setGuidaAperta(aperta ? null : g.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
                   <span style={{ fontSize: 18 }}>{g.icona}</span>
                   <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{g.titolo}</span>
@@ -210,7 +210,7 @@ export default function Guida() {
 
       {/* Form nuovo/modifica */}
       {editId && (
-        <div style={{ background: "var(--white)", border: "1px solid var(--gold)", padding: 16, marginBottom: 16 }}>
+        <div style={{ background: "var(--white)", border: "1px solid var(--gold)", padding: 16, marginBottom: 16, borderRadius: 12, boxShadow: "var(--shadow)" }}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>{editId === "nuovo" ? "Nuovo comune" : "Modifica " + (form.comune || "")}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
             {F("comune", "Comune")}
@@ -250,13 +250,13 @@ export default function Guida() {
       {caricando ? (
         <div style={{ padding: 40, textAlign: "center", color: "var(--gray)", fontSize: 13 }}>Carico la guida…</div>
       ) : visibili.length === 0 ? (
-        <div style={{ padding: 40, textAlign: "center", background: "var(--white)", border: "1px solid var(--gl)", fontSize: 13, color: "var(--gray)" }}>
+        <div style={{ padding: 40, textAlign: "center", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", fontSize: 13, color: "var(--gray)" }}>
           Nessun comune corrisponde alla ricerca.
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
           {visibili.map(r => (
-            <div key={r.id} style={{ background: "var(--white)", border: "1px solid var(--gl)", padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div key={r.id} style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 15, fontWeight: 700 }}>{r.comune} <span style={{ fontSize: 11, color: "var(--gray)", fontWeight: 400 }}>{r.provincia}{r.regione ? " · " + r.regione : ""}</span></div>

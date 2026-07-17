@@ -218,7 +218,7 @@ export default function Archivio({ proprieta = [], owners = [] }) {
       <div className="gl" style={{ marginBottom: 20 }} />
 
       {/* Zona di caricamento */}
-      <div style={{ background: "var(--white)", border: "1px solid var(--gl)", padding: 18, marginBottom: 20 }}>
+      <div style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 18, marginBottom: 20 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
           <div>
             <label style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)" }}>Categoria</label>
@@ -241,7 +241,7 @@ export default function Archivio({ proprieta = [], owners = [] }) {
           style={{
             border: `2px dashed ${dragOver ? "var(--gold)" : "var(--gl)"}`,
             background: dragOver ? "rgba(214,156,49,.06)" : "var(--cream)",
-            padding: "34px 20px", textAlign: "center", cursor: "pointer", transition: "all .2s",
+            padding: "34px 20px", textAlign: "center", cursor: "pointer", transition: "all .2s", borderRadius: 12,
           }}
         >
           <div style={{ fontSize: 30, marginBottom: 8 }}>📥</div>
@@ -298,7 +298,7 @@ export default function Archivio({ proprieta = [], owners = [] }) {
       {caricando ? (
         <div style={{ padding: 40, textAlign: "center", color: "var(--gray)", fontSize: 13 }}>Carico l'archivio…</div>
       ) : visibili.length === 0 ? (
-        <div style={{ padding: 50, textAlign: "center", background: "var(--white)", border: "1px solid var(--gl)" }}>
+        <div style={{ padding: 50, textAlign: "center", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)" }}>
           <div style={{ fontSize: 26, marginBottom: 8 }}>🗂️</div>
           <div style={{ fontSize: 13, color: "var(--gray)" }}>
             {search || fCat ? "Nessun documento corrisponde ai filtri." : "L'archivio è vuoto. Trascina il primo file qui sopra."}
@@ -310,7 +310,7 @@ export default function Archivio({ proprieta = [], owners = [] }) {
             const c = collegamento(d);
             const inEdit = editId === d.id;
             return (
-              <div key={d.id} style={{ background: "var(--white)", border: "1px solid var(--gl)", padding: "12px 14px" }}>
+              <div key={d.id} style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", padding: "12px 14px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                   <div style={{ fontSize: 20 }}>{icona(d.nome_file, d.tipo)}</div>
                   <div style={{ flex: "1 1 220px", minWidth: 0 }}>

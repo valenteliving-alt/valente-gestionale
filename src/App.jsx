@@ -141,48 +141,67 @@ const QUICK_PROMPTS = [
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Poppins:wght@300;400;500;600&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--cream:#FBF9F8;--cd:#F0EAE2;--black:#0A0A0A;--gold:#D69C31;--white:#fff;--gray:#6b6b6b;--gl:#e4ddd8;--red:#c0392b;--sw:240px}
-body{font-family:'Poppins',sans-serif;background:var(--cream);color:var(--black);min-height:100vh}
+:root{--cream:#FBF9F8;--cd:#F0EAE2;--black:#0A0A0A;--gold:#D69C31;--white:#fff;--gray:#6b6b6b;--gl:#e4ddd8;--red:#c0392b;--sw:240px;--r:12px;--shadow:0 1px 2px rgba(20,14,4,.04),0 4px 14px rgba(20,14,4,.05);--shadow-lg:0 8px 30px rgba(20,14,4,.12)}
+html{scroll-behavior:smooth}
+body{font-family:'Poppins',sans-serif;background:var(--cream);color:var(--black);min-height:100vh;-webkit-font-smoothing:antialiased}
 h1,h2,h3{font-family:'Playfair Display',serif}
-input,select,textarea{font-family:'Poppins',sans-serif;font-size:13px;background:var(--white);border:1px solid var(--gl);color:var(--black);padding:8px 12px;width:100%;outline:none;transition:border-color .2s}
-input:focus,select:focus,textarea:focus{border-color:var(--gold)}
-button{font-family:'Poppins',sans-serif;cursor:pointer}
-::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--gold)}
+input,select,textarea{font-family:'Poppins',sans-serif;font-size:13px;background:var(--white);border:1px solid var(--gl);color:var(--black);padding:10px 13px;width:100%;outline:none;border-radius:10px;transition:border-color .15s,box-shadow .15s}
+input:hover,select:hover,textarea:hover{border-color:#d0c6be}
+input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(214,156,49,.15)}
+input::placeholder,textarea::placeholder{color:#b3aca4}
+select{cursor:pointer}
+button{font-family:'Poppins',sans-serif;cursor:pointer;border-radius:10px;transition:transform .12s,box-shadow .15s,background .15s,color .15s,border-color .15s}
+button:active{transform:scale(.97)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#d8cfc6;border-radius:99px}
+::-webkit-scrollbar-thumb:hover{background:var(--gold)}
 .pill{display:inline-block;padding:3px 10px;font-size:11px;font-weight:500;border-radius:20px;text-transform:uppercase;letter-spacing:.04em;color:#fff}
-.tag{display:inline-block;padding:2px 8px;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;background:var(--cd);color:var(--gray);border:1px solid var(--gl)}
-.bp{background:var(--black);color:var(--white);border:none;padding:10px 24px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;transition:background .2s}
-.bp:hover{background:var(--gold);color:var(--black)}
-.bg{background:transparent;color:var(--gray);border:1px solid var(--gl);padding:8px 16px;font-size:12px;font-weight:500;transition:all .2s}
-.bg:hover{border-color:var(--black);color:var(--black)}
-.bd{background:transparent;color:var(--red);border:1px solid #e8c4c0;padding:8px 16px;font-size:12px;font-weight:500;transition:all .2s}
-.bd:hover{background:var(--red);color:#fff}
-.gl{height:2px;background:linear-gradient(90deg,var(--gold),transparent)}
+.tag{display:inline-block;padding:2px 9px;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;background:var(--cd);color:var(--gray);border:1px solid var(--gl);border-radius:6px}
+.bp{background:var(--black);color:var(--white);border:none;padding:10px 24px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;box-shadow:0 2px 8px rgba(10,10,10,.18)}
+.bp:hover{background:var(--gold);color:var(--black);box-shadow:0 4px 14px rgba(214,156,49,.35)}
+.bp:disabled{opacity:.55;cursor:default;box-shadow:none}
+.bg{background:var(--white);color:var(--gray);border:1px solid var(--gl);padding:8px 16px;font-size:12px;font-weight:500}
+.bg:hover{border-color:var(--black);color:var(--black);box-shadow:var(--shadow)}
+.bd{background:transparent;color:var(--red);border:1px solid #e8c4c0;padding:8px 16px;font-size:12px;font-weight:500}
+.bd:hover{background:var(--red);color:#fff;border-color:var(--red)}
+.gl{height:2px;background:linear-gradient(90deg,var(--gold),transparent);border-radius:2px}
 .fi{animation:fi .3s ease}
 @keyframes fi{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-.card{background:var(--white);border:1px solid var(--gl);padding:18px 20px;cursor:pointer;transition:box-shadow .2s,border-color .2s;position:relative;overflow:hidden}
-.card:hover{box-shadow:0 4px 20px rgba(0,0,0,.08);border-color:var(--gold)}
-.kcard{background:var(--white);border:1px solid var(--gl);padding:14px;margin-bottom:10px;cursor:pointer;transition:all .2s;border-radius:2px}
-.kcard:hover{border-color:var(--gold);box-shadow:0 2px 10px rgba(0,0,0,.06)}
-.kcol{background:var(--cd);padding:12px;min-height:200px;flex:1;min-width:170px}
-.check{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:12px;cursor:pointer;border-bottom:1px solid var(--cd)}
-.check input[type=checkbox]{width:14px;height:14px;accent-color:var(--gold);cursor:pointer;flex-shrink:0}
+.card{background:var(--white);border:1px solid var(--gl);padding:18px 20px;cursor:pointer;transition:box-shadow .2s,border-color .2s,transform .2s;position:relative;overflow:hidden;border-radius:var(--r);box-shadow:var(--shadow)}
+.card:hover{box-shadow:var(--shadow-lg);border-color:var(--gold);transform:translateY(-2px)}
+.kcard{background:var(--white);border:1px solid var(--gl);padding:14px;margin-bottom:10px;cursor:pointer;transition:all .2s;border-radius:10px;box-shadow:var(--shadow)}
+.kcard:hover{border-color:var(--gold);box-shadow:var(--shadow-lg);transform:translateY(-1px)}
+.kcol{background:var(--cd);padding:12px;min-height:200px;flex:1;min-width:170px;border-radius:var(--r)}
+.check{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:12px;cursor:pointer;border-bottom:1px solid var(--cd)}
+.check:hover{background:rgba(214,156,49,.04)}
+.check input[type=checkbox]{width:15px;height:15px;accent-color:var(--gold);cursor:pointer;flex-shrink:0}
 .check.done span{text-decoration:line-through;color:var(--gray)}
-.msg-user{background:var(--black);color:var(--white);padding:12px 16px;max-width:80%;margin-left:auto;font-size:13px;line-height:1.5}
-.msg-ai{background:var(--white);border:1px solid var(--gl);padding:12px 16px;max-width:90%;font-size:13px;line-height:1.6;white-space:pre-wrap}
+.msg-user{background:var(--black);color:var(--white);padding:12px 16px;max-width:80%;margin-left:auto;font-size:13px;line-height:1.5;border-radius:14px 14px 4px 14px}
+.msg-ai{background:var(--white);border:1px solid var(--gl);padding:12px 16px;max-width:90%;font-size:13px;line-height:1.6;white-space:pre-wrap;border-radius:14px 14px 14px 4px;box-shadow:var(--shadow)}
 .msg-ai strong{font-weight:600;color:var(--black)}
-.typing{display:flex;gap:4px;padding:12px 16px;background:var(--white);border:1px solid var(--gl);width:60px}
+.typing{display:flex;gap:4px;padding:12px 16px;background:var(--white);border:1px solid var(--gl);width:60px;border-radius:14px 14px 14px 4px}
+table{border-collapse:collapse}
+tbody tr{transition:background .12s}
+tbody tr:hover{background:rgba(214,156,49,.05)}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:bounce 1.2s infinite}
 .dot:nth-child(2){animation-delay:.2s}
 .dot:nth-child(3){animation-delay:.4s}
 @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-8px)}}
 .ai-btn{position:fixed;bottom:28px;right:28px;width:56px;height:56px;background:var(--black);border:none;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 4px 20px rgba(0,0,0,.3);transition:all .2s;z-index:500}
-.ai-btn:hover{background:var(--gold);transform:scale(1.05)}
-.ai-panel{position:fixed;bottom:0;right:0;width:420px;height:100vh;background:var(--cream);border-left:1px solid var(--gl);display:flex;flex-direction:column;z-index:600;animation:slideIn .3s ease}
+.ai-btn:hover{background:var(--gold);transform:scale(1.08)}
+.ai-panel{position:fixed;bottom:0;right:0;width:420px;height:100vh;background:var(--cream);border-left:1px solid var(--gl);display:flex;flex-direction:column;z-index:600;animation:slideIn .3s ease;box-shadow:-12px 0 40px rgba(0,0,0,.12)}
 @keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
-.sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--sw);z-index:100;background:var(--black);color:var(--white);display:flex;flex-direction:column;overflow-y:auto}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--sw);z-index:100;background:linear-gradient(180deg,#0A0A0A 0%,#151310 100%);color:var(--white);display:flex;flex-direction:column;overflow-y:auto;scrollbar-width:thin}
+.sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15)}
+.sidebar nav button{border-radius:10px}
+.sidebar nav button:not(.nav-on):hover{background:rgba(255,255,255,.06)!important;color:#fff!important}
+.nav-group{font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.32);padding:14px 12px 6px}
 .main{margin-left:var(--sw);flex:1;padding:32px;min-height:100vh;min-width:0}
 .topbar{display:none}
-.backdrop{display:none}
+.backdrop{display:none;animation:fadeIn .2s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
 .fg{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px}
 .notif-top{position:fixed;top:12px;left:calc(50% + 120px);transform:translateX(-50%);z-index:450;display:flex;align-items:center;gap:8px;background:var(--black);color:#fff;border:1px solid var(--gold);border-radius:999px;padding:8px 18px;font-size:12.5px;font-weight:600;letter-spacing:.03em;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.25);transition:transform .15s}
 .notif-top:hover{transform:translateX(-50%) scale(1.04)}
@@ -190,14 +209,18 @@ button{font-family:'Poppins',sans-serif;cursor:pointer}
 @media (max-width:768px){
   .sidebar{transform:translateX(-100%);transition:transform .25s ease;width:min(82vw,300px);box-shadow:0 0 40px rgba(0,0,0,.45)}
   .sidebar.open{transform:translateX(0)}
-  .main{margin-left:0;padding:16px;padding-top:64px}
-  .topbar{display:flex;position:fixed;top:0;left:0;right:0;height:52px;background:var(--black);color:var(--white);align-items:center;gap:14px;padding:0 16px;z-index:90}
+  .sidebar nav button{padding-top:13px!important;padding-bottom:13px!important}
+  .main{margin-left:0;padding:14px;padding-top:64px}
+  .topbar{display:flex;position:fixed;top:0;left:0;right:0;height:52px;background:rgba(10,10,10,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:var(--white);align-items:center;gap:14px;padding:0 16px;z-index:90}
   .backdrop{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:95}
   .ai-panel{width:100%;right:0}
   .ai-btn{bottom:18px;right:18px;width:50px;height:50px;font-size:20px}
   .fg{grid-template-columns:1fr}
   .notif-top{top:62px;left:50%}
   .home-grid{grid-template-columns:1fr !important}
+  input,select,textarea{font-size:16px;padding:12px 14px}
+  .bp,.bg,.bd{padding-top:11px;padding-bottom:11px}
+  table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
 }
 `;
 
@@ -224,7 +247,7 @@ const ST = ({ children }) => (
 );
 const Modal = ({ title, onClose, children }) => (
   <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={e => e.target === e.currentTarget && onClose()}>
-    <div style={{ background: "var(--cream)", width: "100%", maxWidth: 680, maxHeight: "90vh", overflow: "auto" }} className="fi">
+    <div style={{ background: "var(--cream)", width: "100%", maxWidth: 680, maxHeight: "90vh", overflow: "auto", borderRadius: 16, boxShadow: "0 24px 70px rgba(0,0,0,.28)" }} className="fi">
       <div style={{ padding: "24px 28px 16px", borderBottom: "1px solid var(--gl)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h2 style={{ fontSize: 18 }}>{title}</h2>
         <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: "var(--gray)" }}>×</button>
@@ -421,7 +444,7 @@ const AiPanel = ({ onClose, proprieta, owners, onDataChanged }) => {
         <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gray)", marginBottom: 8 }}>Domande rapide</p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {QUICK_PROMPTS.slice(0, 4).map((q, i) => (
-            <button key={i} onClick={() => send(q)} style={{ padding: "4px 10px", fontSize: 10, fontWeight: 500, background: "var(--white)", border: "1px solid var(--gl)", color: "var(--gray)", transition: "all .15s", cursor: "pointer" }}
+            <button key={i} onClick={() => send(q)} style={{ padding: "4px 10px", fontSize: 10, fontWeight: 500, background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", color: "var(--gray)", transition: "all .15s", cursor: "pointer" }}
               onMouseEnter={e => { e.target.style.borderColor = "var(--gold)"; e.target.style.color = "var(--black)"; }}
               onMouseLeave={e => { e.target.style.borderColor = "var(--gl)"; e.target.style.color = "var(--gray)"; }}>
               {q}
@@ -476,7 +499,7 @@ const AiPanel = ({ onClose, proprieta, owners, onDataChanged }) => {
       <div style={{ padding: "12px 16px", borderTop: "1px solid var(--gl)", flexShrink: 0, display: "flex", gap: 8 }}>
         <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" style={{ display: "none" }} onChange={handleFile} />
         <button onClick={() => fileRef.current?.click()} disabled={loading || analyzing} title="Allega un documento (PDF o immagine)"
-          style={{ padding: "8px 12px", background: "var(--white)", border: "1px solid var(--gl)", color: "var(--gray)", fontSize: 15, cursor: (loading || analyzing) ? "default" : "pointer" }}>
+          style={{ padding: "8px 12px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", color: "var(--gray)", fontSize: 15, cursor: (loading || analyzing) ? "default" : "pointer" }}>
           📎
         </button>
         <input
@@ -782,7 +805,7 @@ const PropTile = ({ p, o, onClick }) => (
 );
 
 const PropRow = ({ p, o, onClick }) => (
-  <div className="fi" onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "var(--white)", border: "1px solid var(--gl)", cursor: "pointer" }}
+  <div className="fi" onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", cursor: "pointer" }}
     onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--gold)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--gl)"; }}>
     <span style={{ width: 9, height: 9, borderRadius: "50%", background: STATI_COLOR[p.stato] || "#ccc", flexShrink: 0 }} />
     <div style={{ flex: 2, minWidth: 0 }}>
@@ -799,7 +822,7 @@ const PropRow = ({ p, o, onClick }) => (
 );
 
 const OwnerRow = ({ o, pc, onClick }) => (
-  <div className="fi" onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 14px", background: "var(--white)", border: "1px solid var(--gl)", cursor: "pointer" }}
+  <div className="fi" onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 14px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", cursor: "pointer" }}
     onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--gold)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--gl)"; }}>
     <div style={{ width: 30, height: 30, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: "Playfair Display", fontSize: 11, fontWeight: 700, color: "var(--gold)" }}>{o.cognome?.[0]}{o.nome?.[0]}</span></div>
     <div style={{ flex: "1.4 1 0", minWidth: 0, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.cognome} {o.nome}</div>
@@ -993,7 +1016,7 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
                 <div style={{ flex: 1, height: 1, background: "var(--gl)" }} />
               </div>
               {elenco.map(f => (
-                <div key={f.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 10px", background: "var(--white)", border: "1px solid var(--gl)", borderLeft: `3px solid ${cat.color}`, marginBottom: 6 }}>
+                <div key={f.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 10px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", borderLeft: `3px solid ${cat.color}`, marginBottom: 6 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, wordBreak: "break-all" }}>{f.nome_file}</div>
                     {f.ai_descrizione && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 2 }}><span style={{ color: "var(--gold)" }} title="Descrizione generata dall'AI">✨</span> {f.ai_descrizione}</div>}
@@ -1158,7 +1181,7 @@ function Smistamento({ proprieta, owners, onDataChanged }) {
       {rows.length > 0 && (
         <div style={{ marginTop: 24 }}>
           {rows.map(row => (
-            <div key={row.rid} style={{ background: "var(--white)", border: "1px solid var(--gl)", padding: 14, marginBottom: 10 }}>
+            <div key={row.rid} style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 14, marginBottom: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                 <span style={{ flex: 1, fontSize: 13, fontWeight: 600, wordBreak: "break-all" }}>{row.file.name}</span>
                 {row.stato === "analizzando" && <span style={{ fontSize: 11, color: "var(--gray)" }}>Analizzo…</span>}
@@ -2276,7 +2299,7 @@ function NotificheView({ onDataChanged }) {
           {filt.map(n => {
             const pi = PRIO_INFO[n.priorita] || PRIO_INFO[1];
             return (
-              <div key={n.thread_id} className="fi" style={{ display: "flex", gap: 12, padding: "12px 16px", background: "var(--white)", border: "1px solid var(--gl)", borderLeft: `4px solid ${pi.color}`, opacity: n.gestita ? .55 : 1, alignItems: "flex-start" }}>
+              <div key={n.thread_id} className="fi" style={{ display: "flex", gap: 12, padding: "12px 16px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", borderLeft: `4px solid ${pi.color}`, opacity: n.gestita ? .55 : 1, alignItems: "flex-start" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 3 }}>
                     <span style={{ fontSize: 13, fontWeight: n.letto ? 500 : 700 }}>{n.oggetto}</span>
@@ -2835,14 +2858,14 @@ function App() {
   const navItems = [
     { id: "home", label: "Home", icon: "🏛️", count: null },
     { id: "notifiche", label: "Notifiche", icon: "🔔", count: notifCount, alert: true },
-    { id: "gestione", label: "Gestione & Contabilità", icon: "📊", count: null },
-    { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale },
-    { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length },
-    { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding },
-    { id: "lead", label: "Lead", icon: "🎯", count: null },
-    { id: "smistamento", label: "Smistamento doc", icon: "📥", count: null },
-    { id: "archivio", label: "Archivio", icon: "🗂️", count: null },
-    { id: "guida", label: "Guida", icon: "📚", count: null },
+    { id: "gestione", label: "Gestione & Contabilità", icon: "📊", count: null, group: "Operativo" },
+    { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale, group: "Operativo" },
+    { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length, group: "Operativo" },
+    { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding, group: "Operativo" },
+    { id: "lead", label: "Lead", icon: "🎯", count: null, group: "Operativo" },
+    { id: "smistamento", label: "Smistamento doc", icon: "📥", count: null, group: "Documenti" },
+    { id: "archivio", label: "Archivio", icon: "🗂️", count: null, group: "Documenti" },
+    { id: "guida", label: "Guida", icon: "📚", count: null, group: "Documenti" },
   ];
 
   return (
@@ -2877,11 +2900,14 @@ function App() {
             </div>
           </div>
           <nav style={{ flex: 1, padding: "0 12px" }}>
-            {navItems.map(item => (
-              <button key={item.id} onClick={() => { setView(item.id); setSearch(""); setFStato(""); setFContratto(""); setFGestore(""); setSidebarOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", background: view === item.id ? "rgba(214,156,49,.15)" : "transparent", border: view === item.id ? "1px solid rgba(214,156,49,.3)" : "1px solid transparent", color: view === item.id ? "var(--gold)" : "rgba(255,255,255,.6)", fontSize: 13, fontWeight: view === item.id ? 600 : 400, marginBottom: 4, transition: "all .2s", textAlign: "left" }}>
-                <span>{item.icon}</span><span style={{ flex: 1 }}>{item.label}</span>
-                {item.count !== null && <span style={{ fontSize: 10, background: item.alert && item.count > 0 ? "var(--red)" : "rgba(255,255,255,.1)", color: item.alert && item.count > 0 ? "#fff" : undefined, fontWeight: item.alert && item.count > 0 ? 700 : undefined, padding: "1px 6px", borderRadius: 10 }}>{item.count}</span>}
-              </button>
+            {navItems.map((item, i) => (
+              <Fragment key={item.id}>
+                {item.group && (i === 0 || navItems[i - 1].group !== item.group) && <div className="nav-group">{item.group}</div>}
+                <button className={view === item.id ? "nav-on" : ""} onClick={() => { setView(item.id); setSearch(""); setFStato(""); setFContratto(""); setFGestore(""); setSidebarOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", background: view === item.id ? "rgba(214,156,49,.15)" : "transparent", border: view === item.id ? "1px solid rgba(214,156,49,.3)" : "1px solid transparent", color: view === item.id ? "var(--gold)" : "rgba(255,255,255,.6)", fontSize: 13, fontWeight: view === item.id ? 600 : 400, marginBottom: 4, transition: "all .2s", textAlign: "left" }}>
+                  <span>{item.icon}</span><span style={{ flex: 1 }}>{item.label}</span>
+                  {item.count !== null && <span style={{ fontSize: 10, background: item.alert && item.count > 0 ? "var(--red)" : "rgba(255,255,255,.1)", color: item.alert && item.count > 0 ? "#fff" : undefined, fontWeight: item.alert && item.count > 0 ? 700 : undefined, padding: "1px 6px", borderRadius: 10 }}>{item.count}</span>}
+                </button>
+              </Fragment>
             ))}
           </nav>
           {notifStato !== "unsupported" && (
@@ -2927,7 +2953,7 @@ function App() {
                 </div>
                 <div className="gl" style={{ marginBottom: 24 }} />
                 {leadsError ? (
-                  <div style={{ padding: 20, background: "var(--white)", border: "1px solid var(--gl)", fontSize: 13 }}>
+                  <div style={{ padding: 20, background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", fontSize: 13 }}>
                     <div style={{ color: "var(--red)", fontWeight: 600, marginBottom: 6 }}>{leadsError}</div>
                     <div style={{ color: "var(--gray)", fontSize: 12 }}>Se è la prima volta, controlla che il token <strong>HUBSPOT_TOKEN</strong> sia stato aggiunto tra le variabili di Netlify.</div>
                   </div>
@@ -3057,7 +3083,7 @@ function App() {
       {/* Detail Proprietà */}
       {detP && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 900, display: "flex", justifyContent: "flex-end" }} onClick={e => e.target === e.currentTarget && setDetP(null)}>
-          <div style={{ background: "var(--cream)", width: "100%", maxWidth: 480, height: "100%", overflow: "auto", padding: 32 }} className="fi">
+          <div style={{ background: "var(--cream)", width: "100%", maxWidth: 480, height: "100%", overflow: "auto", padding: 32, borderRadius: "16px 0 0 16px", boxShadow: "-16px 0 50px rgba(0,0,0,.2)" }} className="fi">
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
               <h2 style={{ fontSize: 20, flex: 1, paddingRight: 16 }}>{detP.nome}</h2>
               <button onClick={() => setDetP(null)} style={{ background: "none", border: "none", fontSize: 22, color: "var(--gray)" }}>×</button>
@@ -3107,7 +3133,7 @@ function App() {
             <div style={{ marginTop: 24 }}>
               <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 12 }}>Proprietà Gestite</p>
               {proprieta.filter(p => p.proprietario_id === detO.id).map(p => (
-                <div key={p.id} onClick={() => { setDetO(null); setDetP(p); }} style={{ padding: "10px 12px", background: "var(--white)", border: "1px solid var(--gl)", marginBottom: 6, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                <div key={p.id} onClick={() => { setDetO(null); setDetP(p); }} style={{ padding: "10px 12px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", marginBottom: 6, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
                   onMouseEnter={e => e.currentTarget.style.borderColor = "var(--gold)"}
                   onMouseLeave={e => e.currentTarget.style.borderColor = "var(--gl)"}>
                   <div><p style={{ fontSize: 13, fontWeight: 600 }}>{p.nome}</p><p style={{ fontSize: 11, color: "var(--gray)" }}>{p.citta}</p></div>
