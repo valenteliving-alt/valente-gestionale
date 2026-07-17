@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 import Archivio from "./Archivio";
 import Guida from "./Guida";
+import Compliance from "./Compliance";
 
 // PASSWORD PER ENTRARE NEL GESTIONALE — cambiala qui quando vuoi
 const PASSWORD_SITO = "Living626!!";
@@ -2863,6 +2864,7 @@ function App() {
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length, group: "Operativo" },
     { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding, group: "Operativo" },
     { id: "lead", label: "Lead", icon: "🎯", count: null, group: "Operativo" },
+    { id: "compliance", label: "Compliance", icon: "✅", count: stats.senzaCin > 0 ? stats.senzaCin : null, group: "Operativo" },
     { id: "smistamento", label: "Smistamento doc", icon: "📥", count: null, group: "Documenti" },
     { id: "archivio", label: "Archivio", icon: "🗂️", count: null, group: "Documenti" },
     { id: "guida", label: "Guida", icon: "📚", count: null, group: "Documenti" },
@@ -2945,6 +2947,7 @@ function App() {
             view === "smistamento" ? <Smistamento proprieta={proprieta} owners={owners} onDataChanged={load} /> :
             view === "archivio" ? <Archivio proprieta={proprieta} owners={owners} /> :
             view === "guida" ? <Guida /> :
+            view === "compliance" ? <Compliance proprieta={proprieta} owners={owners} onPatch={(id, patch) => sb.patch("proprieta", id, patch)} onDataChanged={load} /> :
             view === "lead" ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
