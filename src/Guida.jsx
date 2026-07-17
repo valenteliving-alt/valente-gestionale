@@ -83,6 +83,13 @@ export default function Guida() {
   const [domanda, setDomanda] = useState("");
   const [risposta, setRisposta] = useState("");
   const [chiedendo, setChiedendo] = useState(false);
+  const oggi = new Date();
+  const [calcAnno, setCalcAnno] = useState(oggi.getFullYear());
+  const [calcTrim, setCalcTrim] = useState(Math.floor(oggi.getMonth() / 3) + 1);
+  const [calcRes, setCalcRes] = useState(null);
+  const [calcolando, setCalcolando] = useState(false);
+  const [briefTesto, setBriefTesto] = useState("");
+  const [briefLoading, setBriefLoading] = useState(false);
 
   const carica = useCallback(async () => {
     setCaricando(true); setErrore("");
@@ -123,6 +130,26 @@ export default function Guida() {
     try { const d = await fnGuida({ action: "ask", domanda }); setRisposta(d.risposta || ""); }
     catch (e) { setRisposta("Errore: " + e.message); }
     setChiedendo(false);
+  };
+
+  const calcola = async () => {
+    setCalcolando(true); setCalcRes(null);
+    try { const d = await fnGuida({ action: "calcola_imposta", anno: calcAnno, trimestre: calcTrim }); setCalcRes(d); }
+    catch (e) { setCalcRes({ error: e.message }); }
+    setCalcolando(false);
+  };
+
+  const provaBriefing = async () => {
+    setBriefLoading(true); setBriefTesto("");
+    try {
+      const r = await fetch("/.netlify/functions/briefing", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ push: false }),
+      });
+      const d = await r.json();
+      setBriefTesto(d.testo || d.error || "Nessuna risposta.");
+    } catch (e) { setBriefTesto("Errore: " + e.message); }
+    setBriefLoading(false);
   };
 
   const visibili = useMemo(() => {
@@ -173,6 +200,78 @@ export default function Guida() {
           <button className="bp" onClick={chiedi} disabled={chiedendo}>{chiedendo ? "Penso…" : "Chiedi"}</button>
         </div>
         {risposta && <div style={{ marginTop: 12, fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", background: "var(--cream)", padding: 12, border: "1px solid var(--gl)", borderRadius: 10 }}>{risposta}</div>}
+      </div>
+
+      {/* Calcolo imposta di soggiorno */}
+      <div style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 16, marginBottom: 20 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 10 }}>🧮 Calcolo imposta di soggiorno</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select value={calcTrim} onChange={e => setCalcTrim(Number(e.target.value))} style={{ width: "auto", minWidth: 170 }}>
+            {[1, 2, 3, 4].map(t => <option key={t} value={t}>{`T${t} (${["gen-mar", "apr-giu", "lug-set", "ott-dic"][t - 1]})`}</option>)}
+          </select>
+          <select value={calcAnno} onChange={e => setCalcAnno(Number(e.target.value))} style={{ width: "auto", minWidth: 100 }}>
+            {[oggi.getFullYear() - 1, oggi.getFullYear(), oggi.getFullYear() + 1].map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          <button className="bp" onClick={calcola} disabled={calcolando}>{calcolando ? "Calcolo…" : "Calcola"}</button>
+        </div>
+
+        {calcRes && calcRes.error && <div style={{ marginTop: 12, fontSize: 12, color: "var(--red)" }}>{calcRes.error}</div>}
+        {calcRes && !calcRes.error && (
+          <div style={{ marginTop: 14 }}>
+            {calcRes.righe.length === 0 ? (
+              <div style={{ fontSize: 12, color: "var(--gray)" }}>Nessuna prenotazione nel periodo.</div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ textAlign: "left", color: "var(--gray)" }}>
+                      {["Comune", "Pren.", "Notti tass.", "Ospiti×notti", "Da versare (calc.)", "Riscosso (Kross)", "Scadenza", ""].map(h =>
+                        <th key={h} style={{ padding: "6px 10px", fontSize: 10, textTransform: "uppercase", letterSpacing: ".05em", borderBottom: "1px solid var(--gl)", whiteSpace: "nowrap" }}>{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {calcRes.righe.map(r => (
+                      <tr key={r.comune} style={{ borderBottom: "1px solid var(--cd)" }}>
+                        <td style={{ padding: "8px 10px", fontWeight: 600, whiteSpace: "nowrap" }}>{r.comune}</td>
+                        <td style={{ padding: "8px 10px" }}>{r.n_pren}</td>
+                        <td style={{ padding: "8px 10px" }}>{r.notti_tassabili}</td>
+                        <td style={{ padding: "8px 10px" }}>{r.ospiti_notti}</td>
+                        <td style={{ padding: "8px 10px", fontWeight: 700, whiteSpace: "nowrap" }}>
+                          {!r.imposta_attiva ? <span style={{ color: "var(--gray)", fontWeight: 400 }}>no imposta</span>
+                            : r.importo_calcolato == null ? <span style={{ color: "#e07b39", fontWeight: 500 }}>manuale</span>
+                            : `€ ${r.importo_calcolato.toFixed(2)}`}
+                        </td>
+                        <td style={{ padding: "8px 10px", whiteSpace: "nowrap", color: r.importo_kross > 0 ? "var(--black)" : "var(--gray)" }}>{r.importo_kross > 0 ? `€ ${r.importo_kross.toFixed(2)}` : "—"}</td>
+                        <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{r.scadenza || "—"}</td>
+                        <td style={{ padding: "8px 10px" }}>{badgeConfidenza(r.confidenza)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {calcRes.anomalie && calcRes.anomalie.length > 0 && (
+              <div style={{ marginTop: 10, fontSize: 11, color: "#e07b39" }}>
+                ⚠️ {calcRes.anomalie.length} anomalie: {calcRes.anomalie.slice(0, 4).join(" · ")}{calcRes.anomalie.length > 4 ? " · …" : ""}
+              </div>
+            )}
+            <div style={{ marginTop: 10, fontSize: 10.5, color: "var(--gray)", lineHeight: 1.5 }}>
+              {(calcRes.avvertenze || []).join(" ")} La colonna "Riscosso (Kross)" mostra la tassa registrata su Krossbooking: se diverge molto dal calcolo, indaga.
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Briefing mattutino */}
+      <div style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 16, marginBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gold)" }}>🌅 Briefing mattutino</div>
+            <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 3 }}>Ogni mattina alle 7 l'agente controlla scadenze imposta, CIN mancanti e fatture da registrare, e ti manda una notifica se c'è qualcosa da fare.</div>
+          </div>
+          <button className="bg" onClick={provaBriefing} disabled={briefLoading}>{briefLoading ? "Controllo…" : "▶ Prova adesso"}</button>
+        </div>
+        {briefTesto && <div style={{ marginTop: 12, fontSize: 12.5, lineHeight: 1.6, whiteSpace: "pre-wrap", background: "var(--cream)", padding: 12, border: "1px solid var(--gl)", borderRadius: 10 }}>{briefTesto}</div>}
       </div>
 
       {/* Guide procedurali */}
