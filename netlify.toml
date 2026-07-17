@@ -10,6 +10,10 @@
 [functions."controlla-lead"]
   schedule = "*/15 * * * *"
 
+# Agente notturno: briefing mattutino alle 7:00 italiane (5:00 UTC in estate)
+[functions."agente-notturno"]
+  schedule = "0 5 * * *"
+
 [[redirects]]
   from = "/api/ai-agent"
   to = "/.netlify/functions/ai-agent"
