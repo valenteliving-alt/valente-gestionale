@@ -240,7 +240,7 @@ export default function Archivio({ proprieta = [], owners = [] }) {
           onClick={() => fileRef.current && fileRef.current.click()}
           style={{
             border: `2px dashed ${dragOver ? "var(--gold)" : "var(--gl)"}`,
-            background: dragOver ? "rgba(214,156,49,.06)" : "var(--cream)",
+            background: dragOver ? "rgba(99,102,241,.06)" : "var(--cream)",
             padding: "34px 20px", textAlign: "center", cursor: "pointer", transition: "all .2s", borderRadius: 12,
           }}
         >
@@ -318,7 +318,7 @@ export default function Archivio({ proprieta = [], owners = [] }) {
                     <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 3, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                       <span>{fmtData(d.created_at)}</span>
                       <span className="tag">{d.categoria || "Generale"}</span>
-                      {c && <span className="tag" style={{ background: "rgba(214,156,49,.15)", color: "var(--gold)", borderColor: "rgba(214,156,49,.3)" }}>{c.tipo === "prop" ? "🏠" : "👤"} {c.label}</span>}
+                      {c && <span className="tag" style={{ background: "rgba(99,102,241,.15)", color: "var(--gold)", borderColor: "rgba(99,102,241,.3)" }}>{c.tipo === "prop" ? "🏠" : "👤"} {c.label}</span>}
                       {(d.tags || "").split(",").map(t => t.trim()).filter(Boolean).map(t => <span key={t} className="tag">#{t}</span>)}
                     </div>
                     {d.ai_descrizione && <div style={{ fontSize: 11, color: "var(--black)", marginTop: 4 }}><span title="Descrizione generata dall'AI" style={{ color: "var(--gold)" }}>✨</span> {d.ai_descrizione}</div>}

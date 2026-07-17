@@ -128,7 +128,7 @@ export default function Compliance({ proprieta = [], owners = [], onPatch, onDat
           </p>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 26, fontFamily: "Playfair Display", fontWeight: 700, color: totali.completi === totali.totale ? "#2d6a4f" : "var(--gold)" }}>
+          <div style={{ fontSize: 26, fontFamily: "Inter", fontWeight: 700, color: totali.completi === totali.totale ? "#2d6a4f" : "var(--gold)" }}>
             {totali.completi}/{totali.totale}
           </div>
           <div style={{ fontSize: 10, color: "var(--gray)", textTransform: "uppercase", letterSpacing: ".05em" }}>fascicoli completi</div>

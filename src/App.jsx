@@ -103,7 +103,7 @@ const MONDAY_DATA = [
 ];
 
 const STATI = ["in lancio", "attivo", "mandato firmato", "mandato + cin", "ristrutturazione", "inattivo"];
-const STATI_COLOR = { "attivo": "#2d6a4f", "in lancio": "#d69c31", "mandato firmato": "#1d6fa4", "mandato + cin": "#4a90d9", "ristrutturazione": "#e07b39", "inattivo": "#888" };
+const STATI_COLOR = { "attivo": "#2d6a4f", "in lancio": "#6366F1", "mandato firmato": "#1d6fa4", "mandato + cin": "#4a90d9", "ristrutturazione": "#e07b39", "inattivo": "#888" };
 const CONTRATTI = ["gestione", "sublocazione"];
 const PIATTAFORME = ["Airbnb", "Booking", "VRBO", "Direct", "Expedia"];
 const GESTORI = ["Tommaso", "Francesco", "Jacopo"];
@@ -113,7 +113,7 @@ const WORKFLOW_COLUMNS = [
   { id: "scia", label: "SCIA", color: "#e07b39" },
   { id: "cin", label: "CIN", color: "#8b5cf6" },
   { id: "cir", label: "CIR/Ross1000", color: "#0891b2" },
-  { id: "geis", label: "GEIS", color: "#d69c31" },
+  { id: "geis", label: "GEIS", color: "#6366F1" },
   { id: "alloggiati", label: "Alloggiati Web", color: "#059669" },
   { id: "annunci", label: "Annunci Online", color: "#2d6a4f" },
 ];
@@ -140,34 +140,34 @@ const QUICK_PROMPTS = [
 ];
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Poppins:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--cream:#FBF9F8;--cd:#F0EAE2;--black:#0A0A0A;--gold:#D69C31;--white:#fff;--gray:#6b6b6b;--gl:#e4ddd8;--red:#c0392b;--sw:240px;--r:12px;--shadow:0 1px 2px rgba(20,14,4,.04),0 4px 14px rgba(20,14,4,.05);--shadow-lg:0 8px 30px rgba(20,14,4,.12)}
+:root{--cream:#F6F7F9;--cd:#ECEEF3;--black:#0F172A;--gold:#6366F1;--white:#fff;--gray:#64748B;--gl:#E2E8F0;--red:#E11D48;--sw:240px;--r:12px;--shadow:0 1px 2px rgba(15,23,42,.04),0 4px 14px rgba(15,23,42,.05);--shadow-lg:0 8px 30px rgba(15,23,42,.10)}
 html{scroll-behavior:smooth}
-body{font-family:'Poppins',sans-serif;background:var(--cream);color:var(--black);min-height:100vh;-webkit-font-smoothing:antialiased}
-h1,h2,h3{font-family:'Playfair Display',serif}
-input,select,textarea{font-family:'Poppins',sans-serif;font-size:13px;background:var(--white);border:1px solid var(--gl);color:var(--black);padding:10px 13px;width:100%;outline:none;border-radius:10px;transition:border-color .15s,box-shadow .15s}
-input:hover,select:hover,textarea:hover{border-color:#d0c6be}
-input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(214,156,49,.15)}
-input::placeholder,textarea::placeholder{color:#b3aca4}
+body{font-family:'Inter',sans-serif;background:var(--cream);color:var(--black);min-height:100vh;-webkit-font-smoothing:antialiased}
+h1,h2,h3{font-family:'Inter',sans-serif;letter-spacing:-.02em;font-weight:700}
+input,select,textarea{font-family:'Inter',sans-serif;font-size:13px;background:var(--white);border:1px solid var(--gl);color:var(--black);padding:10px 13px;width:100%;outline:none;border-radius:10px;transition:border-color .15s,box-shadow .15s}
+input:hover,select:hover,textarea:hover{border-color:#B6C2D4}
+input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
+input::placeholder,textarea::placeholder{color:#A2ACBD}
 select{cursor:pointer}
-button{font-family:'Poppins',sans-serif;cursor:pointer;border-radius:10px;transition:transform .12s,box-shadow .15s,background .15s,color .15s,border-color .15s}
+button{font-family:'Inter',sans-serif;cursor:pointer;border-radius:10px;transition:transform .12s,box-shadow .15s,background .15s,color .15s,border-color .15s}
 button:active{transform:scale(.97)}
 button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 ::-webkit-scrollbar{width:8px;height:8px}
 ::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:#d8cfc6;border-radius:99px}
+::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:99px}
 ::-webkit-scrollbar-thumb:hover{background:var(--gold)}
-.pill{display:inline-block;padding:3px 10px;font-size:11px;font-weight:500;border-radius:20px;text-transform:uppercase;letter-spacing:.04em;color:#fff}
-.tag{display:inline-block;padding:2px 9px;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;background:var(--cd);color:var(--gray);border:1px solid var(--gl);border-radius:6px}
-.bp{background:var(--black);color:var(--white);border:none;padding:10px 24px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;box-shadow:0 2px 8px rgba(10,10,10,.18)}
-.bp:hover{background:var(--gold);color:var(--black);box-shadow:0 4px 14px rgba(214,156,49,.35)}
+.pill{display:inline-block;padding:3px 10px;font-size:11px;font-weight:600;border-radius:20px;letter-spacing:.02em;color:#fff}
+.tag{display:inline-block;padding:2px 9px;font-size:10px;font-weight:600;letter-spacing:.03em;background:var(--cd);color:var(--gray);border:1px solid transparent;border-radius:6px}
+.bp{background:var(--gold);color:#fff;border:none;padding:10px 20px;font-size:12.5px;font-weight:600;letter-spacing:0;text-transform:none;box-shadow:0 1px 3px rgba(99,102,241,.35)}
+.bp:hover{background:#4F46E5;color:#fff;box-shadow:0 4px 14px rgba(99,102,241,.4)}
 .bp:disabled{opacity:.55;cursor:default;box-shadow:none}
-.bg{background:var(--white);color:var(--gray);border:1px solid var(--gl);padding:8px 16px;font-size:12px;font-weight:500}
-.bg:hover{border-color:var(--black);color:var(--black);box-shadow:var(--shadow)}
-.bd{background:transparent;color:var(--red);border:1px solid #e8c4c0;padding:8px 16px;font-size:12px;font-weight:500}
+.bg{background:var(--white);color:#475569;border:1px solid var(--gl);padding:8px 16px;font-size:12px;font-weight:500}
+.bg:hover{border-color:#94A3B8;color:var(--black);box-shadow:var(--shadow)}
+.bd{background:transparent;color:var(--red);border:1px solid #FBCFE0;padding:8px 16px;font-size:12px;font-weight:500}
 .bd:hover{background:var(--red);color:#fff;border-color:var(--red)}
-.gl{height:2px;background:linear-gradient(90deg,var(--gold),transparent);border-radius:2px}
+.gl{height:1px;background:var(--gl);border-radius:2px}
 .fi{animation:fi .3s ease}
 @keyframes fi{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .card{background:var(--white);border:1px solid var(--gl);padding:18px 20px;cursor:pointer;transition:box-shadow .2s,border-color .2s,transform .2s;position:relative;overflow:hidden;border-radius:var(--r);box-shadow:var(--shadow)}
@@ -176,7 +176,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-o
 .kcard:hover{border-color:var(--gold);box-shadow:var(--shadow-lg);transform:translateY(-1px)}
 .kcol{background:var(--cd);padding:12px;min-height:200px;flex:1;min-width:170px;border-radius:var(--r)}
 .check{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:12px;cursor:pointer;border-bottom:1px solid var(--cd)}
-.check:hover{background:rgba(214,156,49,.04)}
+.check:hover{background:rgba(99,102,241,.04)}
 .check input[type=checkbox]{width:15px;height:15px;accent-color:var(--gold);cursor:pointer;flex-shrink:0}
 .check.done span{text-decoration:line-through;color:var(--gray)}
 .msg-user{background:var(--black);color:var(--white);padding:12px 16px;max-width:80%;margin-left:auto;font-size:13px;line-height:1.5;border-radius:14px 14px 4px 14px}
@@ -185,7 +185,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-o
 .typing{display:flex;gap:4px;padding:12px 16px;background:var(--white);border:1px solid var(--gl);width:60px;border-radius:14px 14px 14px 4px}
 table{border-collapse:collapse}
 tbody tr{transition:background .12s}
-tbody tr:hover{background:rgba(214,156,49,.05)}
+tbody tr:hover{background:rgba(99,102,241,.05)}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:bounce 1.2s infinite}
 .dot:nth-child(2){animation-delay:.2s}
 .dot:nth-child(3){animation-delay:.4s}
@@ -194,7 +194,7 @@ tbody tr:hover{background:rgba(214,156,49,.05)}
 .ai-btn:hover{background:var(--gold);transform:scale(1.08)}
 .ai-panel{position:fixed;bottom:0;right:0;width:420px;height:100vh;background:var(--cream);border-left:1px solid var(--gl);display:flex;flex-direction:column;z-index:600;animation:slideIn .3s ease;box-shadow:-12px 0 40px rgba(0,0,0,.12)}
 @keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
-.sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--sw);z-index:100;background:linear-gradient(180deg,#0A0A0A 0%,#151310 100%);color:var(--white);display:flex;flex-direction:column;overflow-y:auto;scrollbar-width:thin}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--sw);z-index:100;background:linear-gradient(180deg,#0F1226 0%,#131A33 100%);color:var(--white);display:flex;flex-direction:column;overflow-y:auto;scrollbar-width:thin}
 .sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15)}
 .sidebar nav button{border-radius:10px}
 .sidebar nav button:not(.nav-on):hover{background:rgba(255,255,255,.06)!important;color:#fff!important}
@@ -212,7 +212,7 @@ tbody tr:hover{background:rgba(214,156,49,.05)}
   .sidebar.open{transform:translateX(0)}
   .sidebar nav button{padding-top:13px!important;padding-bottom:13px!important}
   .main{margin-left:0;padding:14px;padding-top:64px}
-  .topbar{display:flex;position:fixed;top:0;left:0;right:0;height:52px;background:rgba(10,10,10,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:var(--white);align-items:center;gap:14px;padding:0 16px;z-index:90}
+  .topbar{display:flex;position:fixed;top:0;left:0;right:0;height:52px;background:rgba(15,18,38,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:var(--white);align-items:center;gap:14px;padding:0 16px;z-index:90}
   .backdrop{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:95}
   .ai-panel{width:100%;right:0}
   .ai-btn{bottom:18px;right:18px;width:50px;height:50px;font-size:20px}
@@ -226,7 +226,7 @@ tbody tr:hover{background:rgba(214,156,49,.05)}
 `;
 
 const SB = ({ stato }) => <span className="pill" style={{ background: STATI_COLOR[stato] || "#888" }}>{stato || "—"}</span>;
-const CT = ({ tipo }) => <span className="tag" style={tipo === "sublocazione" ? { background: "#fff8e1", color: "#b8860b", borderColor: "#d69c31" } : {}}>{tipo || "gestione"}</span>;
+const CT = ({ tipo }) => <span className="tag" style={tipo === "sublocazione" ? { background: "#EEF2FF", color: "#4F46E5", borderColor: "transparent" } : {}}>{tipo || "gestione"}</span>;
 const DR = ({ label, val }) => val ? (
   <div style={{ display: "flex", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--cd)" }}>
     <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", minWidth: 130 }}>{label}</span>
@@ -434,7 +434,7 @@ const AiPanel = ({ onClose, proprieta, owners, onDataChanged }) => {
       <div style={{ padding: "16px 20px", background: "var(--black)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
         <div style={{ width: 36, height: 36, background: "var(--gold)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>✦</div>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: "var(--white)", fontFamily: "Playfair Display" }}>Assistente AI</p>
+          <p style={{ fontSize: 14, fontWeight: 600, color: "var(--white)", fontFamily: "Inter" }}>Assistente AI</p>
           <p style={{ fontSize: 10, color: "rgba(255,255,255,.5)", letterSpacing: ".06em", textTransform: "uppercase" }}>Valente Living · Powered by Claude</p>
         </div>
         <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,.6)", fontSize: 20 }}>×</button>
@@ -595,8 +595,8 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading }) => {
   return (
     <>
       {f.id && (
-        <div style={{ marginBottom: 18, padding: 14, background: "rgba(214,156,49,.08)", border: "1px solid rgba(214,156,49,.35)" }}>
-          <button type="button" onClick={compilaAI} disabled={aiBusy} style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, letterSpacing: ".04em", border: "none", background: aiBusy ? "#bbb" : "linear-gradient(135deg, #D69C31, #f0c84a)", color: "var(--black)", cursor: aiBusy ? "default" : "pointer", borderRadius: 999 }}>
+        <div style={{ marginBottom: 18, padding: 14, background: "rgba(99,102,241,.08)", border: "1px solid rgba(99,102,241,.35)" }}>
+          <button type="button" onClick={compilaAI} disabled={aiBusy} style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, letterSpacing: ".04em", border: "none", background: aiBusy ? "#bbb" : "linear-gradient(135deg, #6366F1, #818CF8)", color: "#fff", cursor: aiBusy ? "default" : "pointer", borderRadius: 999 }}>
             {aiBusy ? "Leggo i documenti…" : "✨ Compila con AI dai documenti"}
           </button>
           {aiMsg && <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 10, lineHeight: 1.4 }}>{aiMsg}</p>}
@@ -825,7 +825,7 @@ const PropRow = ({ p, o, onClick }) => (
 const OwnerRow = ({ o, pc, onClick }) => (
   <div className="fi" onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 14px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", cursor: "pointer" }}
     onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--gold)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--gl)"; }}>
-    <div style={{ width: 30, height: 30, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: "Playfair Display", fontSize: 11, fontWeight: 700, color: "var(--gold)" }}>{o.cognome?.[0]}{o.nome?.[0]}</span></div>
+    <div style={{ width: 30, height: 30, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: "Inter", fontSize: 11, fontWeight: 700, color: "var(--gold)" }}>{o.cognome?.[0]}{o.nome?.[0]}</span></div>
     <div style={{ flex: "1.4 1 0", minWidth: 0, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.cognome} {o.nome}</div>
     <div style={{ flex: "1 1 0", minWidth: 0, fontSize: 11, fontFamily: "monospace", letterSpacing: ".04em", color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.codice_fiscale || "—"}</div>
     <div style={{ flex: "1.3 1 0", minWidth: 0, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.email || "—"}</div>
@@ -843,7 +843,7 @@ const DOC_CATEGORIE = [
   { id: "planimetria", label: "Planimetrie", icon: "📐", color: "#0891b2", match: /\b(planimetr|piantina|disegno|layout)\w*/i },
   { id: "catasto", label: "Visure / Catasto", icon: "🗂️", color: "#e07b39", match: /\b(visur|catast|atto|rogito|ape|certificazione\s*energetica)\w*/i },
   { id: "anagrafica", label: "Documenti d'identità / Anagrafica", icon: "🪪", color: "#b8860b", match: /\b(carta\s*identit|ci\b|passaport|patente|codice\s*fiscale|cf\b|tessera|anagraf)\w*/i },
-  { id: "scia", label: "SCIA / Comune", icon: "🏛️", color: "#d69c31", match: /\b(scia|suap|comune|protocoll|asseverazione)\w*/i },
+  { id: "scia", label: "SCIA / Comune", icon: "🏛️", color: "#6366F1", match: /\b(scia|suap|comune|protocoll|asseverazione)\w*/i },
   { id: "altro", label: "Altri documenti", icon: "📎", color: "#888", match: /.*/ },
 ];
 function categoriaDoc(nome) {
@@ -987,7 +987,7 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
 
   return (
     <div
-      style={{ marginTop: 24, border: dragOver ? "2px dashed var(--gold)" : "2px dashed transparent", padding: dragOver ? 10 : 0, background: dragOver ? "rgba(214,156,49,.06)" : "transparent", transition: "all .12s" }}
+      style={{ marginTop: 24, border: dragOver ? "2px dashed var(--gold)" : "2px dashed transparent", padding: dragOver ? 10 : 0, background: dragOver ? "rgba(99,102,241,.06)" : "transparent", transition: "all .12s" }}
       onDragOver={(e) => { e.preventDefault(); if (!busy) setDragOver(true); }}
       onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
       onDrop={(e) => { e.preventDefault(); setDragOver(false); caricaFiles(e.dataTransfer.files); }}
@@ -1170,7 +1170,7 @@ function Smistamento({ proprieta, owners, onDataChanged }) {
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
         onDrop={(e) => { e.preventDefault(); setDragOver(false); aggiungiFiles(e.dataTransfer.files); }}
-        style={{ border: dragOver ? "2px dashed var(--gold)" : "2px dashed var(--gl)", background: dragOver ? "rgba(214,156,49,.06)" : "var(--white)", padding: 36, textAlign: "center", cursor: "pointer", transition: "all .12s" }}
+        style={{ border: dragOver ? "2px dashed var(--gold)" : "2px dashed var(--gl)", background: dragOver ? "rgba(99,102,241,.06)" : "var(--white)", padding: 36, textAlign: "center", cursor: "pointer", transition: "all .12s" }}
       >
         <input ref={fileRef} type="file" multiple style={{ display: "none" }} onChange={(e) => { aggiungiFiles(e.target.files); e.target.value = ""; }} />
         <p style={{ fontSize: 14, fontWeight: 600, color: dragOver ? "var(--gold)" : "var(--black)" }}>{dragOver ? "Rilascia qui i documenti" : "Trascina qui i documenti o clicca per selezionarli"}</p>
@@ -1283,7 +1283,7 @@ function MappaItalia({ proprieta, compact = false, onApri }) {
       let ox = 0, oy = 0;
       if (n > 1) { const ang = (i / n) * Math.PI * 2; const r = 7 + (i % 3) * 3.5; ox = Math.cos(ang) * r; oy = Math.sin(ang) * r; }
       const sub = p.tipo_contratto === "sublocazione";
-      dots.push({ x: bx + ox, y: by + oy, color: sub ? "#D69C31" : "#2d6a4f", name: p.nome, citta: p.citta || "", tipo: sub ? "sublocazione" : "gestione", attivo: p.stato === "attivo" });
+      dots.push({ x: bx + ox, y: by + oy, color: sub ? "#6366F1" : "#2d6a4f", name: p.nome, citta: p.citta || "", tipo: sub ? "sublocazione" : "gestione", attivo: p.stato === "attivo" });
     });
   });
   const nGest = (proprieta || []).filter((p) => p.tipo_contratto !== "sublocazione").length;
@@ -1312,7 +1312,7 @@ function MappaItalia({ proprieta, compact = false, onApri }) {
         </svg>
         <div style={{ display: "flex", gap: 16, marginTop: 8, justifyContent: "center" }}>
           <span style={{ fontSize: 11, color: "var(--gray)", display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: "50%", background: "#2d6a4f" }} />Gestione {nGest}</span>
-          <span style={{ fontSize: 11, color: "var(--gray)", display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: "50%", background: "#D69C31" }} />Subloc. {nSub}</span>
+          <span style={{ fontSize: 11, color: "var(--gray)", display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: "50%", background: "#6366F1" }} />Subloc. {nSub}</span>
         </div>
       </div>
     );
@@ -1344,7 +1344,7 @@ function MappaItalia({ proprieta, compact = false, onApri }) {
           <div className="card" style={{ padding: 18, marginBottom: 16 }}>
             <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 12 }}>Legenda</p>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><span style={{ width: 12, height: 12, borderRadius: "50%", background: "#2d6a4f", display: "inline-block" }} /><span style={{ fontSize: 13 }}>Gestione <strong>({nGest})</strong></span></div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ width: 12, height: 12, borderRadius: "50%", background: "#D69C31", display: "inline-block" }} /><span style={{ fontSize: 13 }}>Sublocazione <strong>({nSub})</strong></span></div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ width: 12, height: 12, borderRadius: "50%", background: "#6366F1", display: "inline-block" }} /><span style={{ fontSize: 13 }}>Sublocazione <strong>({nSub})</strong></span></div>
             <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 10 }}>I puntini più chiari sono immobili non ancora attivi.</p>
           </div>
           <div className="card" style={{ padding: 18 }}>
@@ -1471,7 +1471,7 @@ function DashboardGestione() {
   const tdS = (r) => ({ padding: 8, borderBottom: "1px solid var(--gl)", textAlign: r ? "right" : "left", fontSize: 12.5 });
   const Card = ({ children, style }) => <div style={{ background: "#fff", border: "1px solid var(--gl)", padding: 24, ...style }}>{children}</div>;
   const H2 = ({ t, s }) => <div style={{ margin: "34px 0 14px" }}><h2 style={{ fontSize: 19 }}>{t}</h2><div style={{ fontSize: 12, color: "var(--gray)", marginTop: 3 }}>{s}</div></div>;
-  const Kpi = ({ l, v, n, gold }) => <div style={{ background: "#fff", padding: "18px 16px" }}><div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: "var(--gray)" }}>{l}</div><div style={{ fontFamily: "'Playfair Display',serif", fontSize: 24, fontWeight: 600, marginTop: 6, color: gold ? "var(--gold)" : "var(--black)" }}>{v}</div><div style={{ fontSize: 11, color: "var(--gray)", marginTop: 3 }}>{n}</div></div>;
+  const Kpi = ({ l, v, n, gold }) => <div style={{ background: "#fff", padding: "18px 16px" }}><div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: "var(--gray)" }}>{l}</div><div style={{ fontFamily: "'Inter',serif", fontSize: 24, fontWeight: 600, marginTop: 6, color: gold ? "var(--gold)" : "var(--black)" }}>{v}</div><div style={{ fontSize: 11, color: "var(--gray)", marginTop: 3 }}>{n}</div></div>;
   const Chk = ({ ok, children }) => <div style={{ display: "flex", gap: 10, padding: "9px 0", borderBottom: "1px solid var(--gl)", fontSize: 13, alignItems: "flex-start" }}><span style={{ minWidth: 9, height: 9, borderRadius: "50%", marginTop: 5, background: ok ? "#2E7D32" : "#B26A00", display: "inline-block" }} /><div>{children}</div></div>;
 
   if (rows === null) return <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento dati gestione…</div>;
@@ -1571,7 +1571,7 @@ const C_fineMese = (ym) => { const [a, m] = ym.split("-").map(Number); return ym
 const C_thS = (r) => ({ textAlign: r ? "right" : "left", fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "var(--gray)", fontWeight: 500, padding: 8, borderBottom: "1px solid var(--black)", whiteSpace: "nowrap" });
 const C_tdS = (r) => ({ padding: 8, borderBottom: "1px solid var(--gl)", textAlign: r ? "right" : "left", fontSize: 12.5 });
 const C_Card = ({ children, style }) => <div style={{ background: "#fff", border: "1px solid var(--gl)", padding: 20, ...style }}>{children}</div>;
-const C_Kpi = ({ l, v, n, gold }) => <div style={{ background: "#fff", padding: "16px 14px" }}><div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: "var(--gray)" }}>{l}</div><div style={{ fontFamily: "'Playfair Display',serif", fontSize: 22, fontWeight: 600, marginTop: 6, color: gold ? "var(--gold)" : "var(--black)" }}>{v}</div>{n && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 3 }}>{n}</div>}</div>;
+const C_Kpi = ({ l, v, n, gold }) => <div style={{ background: "#fff", padding: "16px 14px" }}><div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: "var(--gray)" }}>{l}</div><div style={{ fontFamily: "'Inter',serif", fontSize: 22, fontWeight: 600, marginTop: 6, color: gold ? "var(--gold)" : "var(--black)" }}>{v}</div>{n && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 3 }}>{n}</div>}</div>;
 const FATT_STATI = { bozza: "#888", emessa: "#1d6fa4", incassata: "#2d6a4f", scaduta: "#c0392b", annullata: "#aaa" };
 const REND_STATI = { bozza: "#888", inviato: "#1d6fa4", liquidato: "#2d6a4f" };
 
@@ -2198,8 +2198,8 @@ function EntrataTab({ proprieta, onChanged, setMsg }) {
                 <td style={{ ...C_tdS(), maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.oggetto}>{f.oggetto || "—"}</td>
                 <td style={C_tdS()}>{f.numero_fattura || "—"}</td>
                 <td style={C_tdS()}><span className="tag">{f.categoria || "altro"}</span></td>
-                <td style={{ ...C_tdS(1), fontWeight: 600, whiteSpace: "nowrap" }}>{f.importo_totale != null ? C_valuta(C_num(f.importo_totale), f.valuta) : "—"}{f.valuta && f.valuta !== "EUR" && <span className="tag" style={{ marginLeft: 6, fontSize: 9, color: "#b8860b", borderColor: "#d69c31" }}>{f.valuta}</span>}</td>
-                <td style={C_tdS()}><span className="pill" style={{ background: f.stato === "registrata" ? "#2d6a4f" : f.stato === "ignorata" ? "#888" : "#d69c31" }}>{f.stato.replace("_", " ")}</span></td>
+                <td style={{ ...C_tdS(1), fontWeight: 600, whiteSpace: "nowrap" }}>{f.importo_totale != null ? C_valuta(C_num(f.importo_totale), f.valuta) : "—"}{f.valuta && f.valuta !== "EUR" && <span className="tag" style={{ marginLeft: 6, fontSize: 9, color: "#b8860b", borderColor: "#6366F1" }}>{f.valuta}</span>}</td>
+                <td style={C_tdS()}><span className="pill" style={{ background: f.stato === "registrata" ? "#2d6a4f" : f.stato === "ignorata" ? "#888" : "#6366F1" }}>{f.stato.replace("_", " ")}</span></td>
                 <td style={{ ...C_tdS(1), whiteSpace: "nowrap" }}>
                   <a href={`https://mail.google.com/mail/u/0/#all/${f.thread_id}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none", marginRight: 8 }}>Email →</a>
                   {f.stato === "da_registrare" && <>
@@ -2220,7 +2220,7 @@ function EntrataTab({ proprieta, onChanged, setMsg }) {
 
 /* ============ SEZIONE NOTIFICHE: posta Gmail classificata per priorità ============ */
 /* I dati arrivano dalla tabella email_notifiche, alimentata ogni ora dalla sync Gmail (Cowork). */
-const PRIO_INFO = { 3: { label: "Alta", color: "#c0392b" }, 2: { label: "Media", color: "#d69c31" }, 1: { label: "Bassa", color: "#8a8a8a" } };
+const PRIO_INFO = { 3: { label: "Alta", color: "#c0392b" }, 2: { label: "Media", color: "#6366F1" }, 1: { label: "Bassa", color: "#8a8a8a" } };
 const N_quando = (d) => {
   if (!d) return "—";
   const t = new Date(d), ore = (Date.now() - t.getTime()) / 36e5;
@@ -2347,7 +2347,7 @@ function parseCSV(t) {
   if (f.length || row.length) { row.push(f); rows.push(row); }
   return rows;
 }
-const TICKET_STATO_COLOR = { "completata": "#2d6a4f", "in corso": "#1d6fa4", "in attesa": "#e07b39", "da fare": "#d69c31", "aperto": "#d69c31", "annullata": "#888" };
+const TICKET_STATO_COLOR = { "completata": "#2d6a4f", "in corso": "#1d6fa4", "in attesa": "#e07b39", "da fare": "#6366F1", "aperto": "#6366F1", "annullata": "#888" };
 
 function AttivitaView() {
   const [rows, setRows] = useState([]);
@@ -2648,7 +2648,7 @@ function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
 
   const milestoneNext = [25, 40, 50, 75, 100].find(m => m > totale) || 100;
   const obiettivi = [
-    inArrivo.length ? { t: `Lanciare ${inArrivo.length} immobili in pipeline`, s: "in onboarding (mandato/lancio)", c: "#d69c31", go: "lancio" } : null,
+    inArrivo.length ? { t: `Lanciare ${inArrivo.length} immobili in pipeline`, s: "in onboarding (mandato/lancio)", c: "#6366F1", go: "lancio" } : null,
     stats.senzaCin ? { t: `Ottenere il CIN per ${stats.senzaCin} immobili attivi`, s: "CIN mancante", c: "#e07b39", go: "proprieta" } : null,
     { t: `Raggiungere ${milestoneNext} immobili`, s: `mancano ${milestoneNext - totale} immobili`, c: "#1d6fa4", go: "proprieta" },
     { t: `Obiettivo finale: ${OBIETTIVO_IMMOBILI} immobili`, s: `mancano ${mancanti}`, c: "#2d6a4f", go: "proprieta" },
@@ -2667,12 +2667,12 @@ function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
           <div>
             <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 6 }}>Roadmap verso {OBIETTIVO_IMMOBILI} immobili</p>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-              <span style={{ fontFamily: "Playfair Display", fontSize: 44, fontWeight: 700, lineHeight: 1 }}>{totale}</span>
+              <span style={{ fontFamily: "Inter", fontSize: 44, fontWeight: 700, lineHeight: 1 }}>{totale}</span>
               <span style={{ fontSize: 16, color: "var(--gray)" }}>/ {OBIETTIVO_IMMOBILI}</span>
             </div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <span style={{ fontFamily: "Playfair Display", fontSize: 40, fontWeight: 700, color: "var(--gold)" }}>{pct}%</span>
+            <span style={{ fontFamily: "Inter", fontSize: 40, fontWeight: 700, color: "var(--gold)" }}>{pct}%</span>
             <p style={{ fontSize: 11, color: "var(--gray)" }}>mancano {mancanti} immobili</p>
           </div>
         </div>
@@ -2680,9 +2680,9 @@ function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
           <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg, #2d6a4f, var(--gold))", borderRadius: 999, transition: "width .6s ease" }} />
         </div>
         <div style={{ display: "flex", gap: 16, marginTop: 16, flexWrap: "wrap" }}>
-          {[{ n: stats.attivi, l: "attivi", c: "#2d6a4f" }, { n: stats.onboarding, l: "in lancio", c: "#d69c31" }, { n: owners.length, l: "proprietari", c: "#1d6fa4" }, { n: stats.senzaCin, l: "senza CIN", c: "#e07b39" }].map((k, i) => (
+          {[{ n: stats.attivi, l: "attivi", c: "#2d6a4f" }, { n: stats.onboarding, l: "in lancio", c: "#6366F1" }, { n: owners.length, l: "proprietari", c: "#1d6fa4" }, { n: stats.senzaCin, l: "senza CIN", c: "#e07b39" }].map((k, i) => (
             <div key={i} style={{ flex: "1 1 90px", background: "var(--cream)", border: "1px solid var(--gl)", padding: "10px 12px" }}>
-              <div style={{ fontSize: 22, fontWeight: 700, color: k.c, fontFamily: "Playfair Display" }}>{k.n}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: k.c, fontFamily: "Inter" }}>{k.n}</div>
               <div style={{ fontSize: 10, color: "var(--gray)", textTransform: "uppercase", letterSpacing: ".06em" }}>{k.l}</div>
             </div>
           ))}
@@ -2877,21 +2877,21 @@ function App() {
         {/* Mobile top bar */}
         <div className="topbar">
           <button onClick={() => setSidebarOpen(true)} aria-label="Apri menu" style={{ background: "none", border: "none", color: "#fff", fontSize: 24, lineHeight: 1, padding: 4, cursor: "pointer" }}>☰</button>
-          <span style={{ fontFamily: "Playfair Display", fontSize: 16, fontWeight: 700 }}>Valente <span style={{ color: "var(--gold)" }}>Living</span></span>
+          <span style={{ fontFamily: "Inter", fontSize: 16, fontWeight: 700 }}>Valente <span style={{ color: "var(--gold)" }}>Living</span></span>
         </div>
         {sidebarOpen && <div className="backdrop" onClick={() => setSidebarOpen(false)} />}
         {/* Sidebar */}
         <aside className={"sidebar" + (sidebarOpen ? " open" : "")}>
           <div style={{ padding: "28px 20px 20px" }}>
-            <span style={{ fontFamily: "Playfair Display", fontSize: 13, fontWeight: 700, letterSpacing: ".15em", color: "var(--gold)", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Valente</span>
-            <span style={{ fontFamily: "Playfair Display", fontSize: 22, fontWeight: 700, lineHeight: 1, display: "block" }}>Living</span>
+            <span style={{ fontFamily: "Inter", fontSize: 13, fontWeight: 700, letterSpacing: ".15em", color: "var(--gold)", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Valente</span>
+            <span style={{ fontFamily: "Inter", fontSize: 22, fontWeight: 700, lineHeight: 1, display: "block" }}>Living</span>
             <span style={{ fontSize: 9, letterSpacing: ".15em", textTransform: "uppercase", color: "rgba(255,255,255,.4)" }}>Property Manager v3.0</span>
           </div>
           <div className="gl" style={{ margin: "0 20px 20px" }} />
           <div style={{ padding: "0 20px 20px" }}>
             <div style={{ background: "rgba(255,255,255,.05)", padding: "12px 14px" }}>
               <p style={{ fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: "rgba(255,255,255,.4)", marginBottom: 8 }}>Portfolio</p>
-              <div style={{ fontSize: 28, fontFamily: "Playfair Display", fontWeight: 700, color: "var(--gold)", lineHeight: 1 }}>{stats.totale}</div>
+              <div style={{ fontSize: 28, fontFamily: "Inter", fontWeight: 700, color: "var(--gold)", lineHeight: 1 }}>{stats.totale}</div>
               <p style={{ fontSize: 10, color: "rgba(255,255,255,.5)", marginTop: 2 }}>proprietà totali</p>
               <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <div style={{ textAlign: "center" }}><div style={{ fontSize: 14, fontWeight: 700, color: "#2d6a4f" }}>{stats.attivi}</div><div style={{ fontSize: 8, color: "rgba(255,255,255,.4)" }}>attivi</div></div>
@@ -2905,7 +2905,7 @@ function App() {
             {navItems.map((item, i) => (
               <Fragment key={item.id}>
                 {item.group && (i === 0 || navItems[i - 1].group !== item.group) && <div className="nav-group">{item.group}</div>}
-                <button className={view === item.id ? "nav-on" : ""} onClick={() => { setView(item.id); setSearch(""); setFStato(""); setFContratto(""); setFGestore(""); setSidebarOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", background: view === item.id ? "rgba(214,156,49,.15)" : "transparent", border: view === item.id ? "1px solid rgba(214,156,49,.3)" : "1px solid transparent", color: view === item.id ? "var(--gold)" : "rgba(255,255,255,.6)", fontSize: 13, fontWeight: view === item.id ? 600 : 400, marginBottom: 4, transition: "all .2s", textAlign: "left" }}>
+                <button className={view === item.id ? "nav-on" : ""} onClick={() => { setView(item.id); setSearch(""); setFStato(""); setFContratto(""); setFGestore(""); setSidebarOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", background: view === item.id ? "rgba(99,102,241,.15)" : "transparent", border: view === item.id ? "1px solid rgba(99,102,241,.3)" : "1px solid transparent", color: view === item.id ? "var(--gold)" : "rgba(255,255,255,.6)", fontSize: 13, fontWeight: view === item.id ? 600 : 400, marginBottom: 4, transition: "all .2s", textAlign: "left" }}>
                   <span>{item.icon}</span><span style={{ flex: 1 }}>{item.label}</span>
                   {item.count !== null && <span style={{ fontSize: 10, background: item.alert && item.count > 0 ? "var(--red)" : "rgba(255,255,255,.1)", color: item.alert && item.count > 0 ? "#fff" : undefined, fontWeight: item.alert && item.count > 0 ? 700 : undefined, padding: "1px 6px", borderRadius: 10 }}>{item.count}</span>}
                 </button>
@@ -2921,7 +2921,7 @@ function App() {
             </div>
           )}
           <div style={{ padding: "12px 20px", borderTop: "1px solid rgba(255,255,255,.08)" }}>
-            <button onClick={() => { setAiOpen(true); setSidebarOpen(false); }} style={{ width: "100%", padding: "10px", background: "linear-gradient(135deg, #D69C31, #f0c84a)", border: "none", color: "var(--black)", fontSize: 12, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <button onClick={() => { setAiOpen(true); setSidebarOpen(false); }} style={{ width: "100%", padding: "10px", background: "linear-gradient(135deg, #6366F1, #818CF8)", border: "none", color: "#fff", fontSize: 12, fontWeight: 700, letterSpacing: ".02em", textTransform: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               ✦ Assistente AI
             </button>
           </div>
@@ -3010,7 +3010,7 @@ function App() {
                     return (
                       <div key={o.id} className="card fi" onClick={() => setDetO(o)}>
                         <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 12 }}>
-                          <div style={{ width: 42, height: 42, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: "Playfair Display", fontSize: 14, fontWeight: 700, color: "var(--gold)" }}>{o.cognome?.[0]}{o.nome?.[0]}</span></div>
+                          <div style={{ width: 42, height: 42, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: "Inter", fontSize: 14, fontWeight: 700, color: "var(--gold)" }}>{o.cognome?.[0]}{o.nome?.[0]}</span></div>
                           <div><h3 style={{ fontSize: 15, fontWeight: 600 }}>{o.cognome} {o.nome}</h3><p style={{ fontSize: 11, color: "var(--gray)" }}>{o.citta || "—"}</p></div>
                         </div>
                         {o.codice_fiscale && <p style={{ fontSize: 11, fontFamily: "monospace", color: "var(--gray)", letterSpacing: ".06em", marginBottom: 6 }}>{o.codice_fiscale}</p>}
@@ -3121,7 +3121,7 @@ function App() {
           <div style={{ background: "var(--cream)", width: "100%", maxWidth: 420, height: "100%", overflow: "auto", padding: 32 }} className="fi">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                <div style={{ width: 50, height: 50, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontFamily: "Playfair Display", fontSize: 18, fontWeight: 700, color: "var(--gold)" }}>{detO.cognome?.[0]}{detO.nome?.[0]}</span></div>
+                <div style={{ width: 50, height: 50, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontFamily: "Inter", fontSize: 18, fontWeight: 700, color: "var(--gold)" }}>{detO.cognome?.[0]}{detO.nome?.[0]}</span></div>
                 <h2 style={{ fontSize: 20 }}>{detO.cognome} {detO.nome}</h2>
               </div>
               <button onClick={() => setDetO(null)} style={{ background: "none", border: "none", fontSize: 22, color: "var(--gray)" }}>×</button>
@@ -3181,18 +3181,19 @@ export default function Gate() {
     else { setErr(true); }
   };
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#FBF9F8", fontFamily: "'Poppins', sans-serif", padding: 20 }}>
-      <div style={{ width: "100%", maxWidth: 340 }}>
-        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 700, color: "#000", textAlign: "center", marginBottom: 6 }}>Valente Living</h1>
-        <p style={{ fontSize: 13, color: "#777", textAlign: "center", marginBottom: 24 }}>Inserisci la password per accedere</p>
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F6F7F9", fontFamily: "'Inter', sans-serif", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 360, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, boxShadow: "0 8px 30px rgba(15,23,42,.08)", padding: "36px 32px" }}>
+        <div style={{ width: 44, height: 44, borderRadius: 12, background: "linear-gradient(135deg, #6366F1, #818CF8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 20, fontWeight: 800, margin: "0 auto 16px" }}>V</div>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: "#0F172A", textAlign: "center", marginBottom: 6, letterSpacing: "-.02em" }}>Valente Living</h1>
+        <p style={{ fontSize: 13, color: "#64748B", textAlign: "center", marginBottom: 24 }}>Inserisci la password per accedere</p>
         <input type="password" value={val} autoFocus placeholder="Password"
           onChange={e => { setVal(e.target.value); setErr(false); }}
           onKeyDown={e => e.key === "Enter" && submit()}
-          style={{ width: "100%", padding: "12px 14px", border: "1px solid #ddd", fontSize: 15, marginBottom: 12, boxSizing: "border-box", outline: "none" }} />
-        {err && <p style={{ color: "#c0392b", fontSize: 12, marginBottom: 12, textAlign: "center" }}>Password errata, riprova.</p>}
+          style={{ width: "100%", padding: "12px 14px", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 15, marginBottom: 12, boxSizing: "border-box", outline: "none" }} />
+        {err && <p style={{ color: "#E11D48", fontSize: 12, marginBottom: 12, textAlign: "center" }}>Password errata, riprova.</p>}
         <button onClick={submit}
-          style={{ width: "100%", padding: "12px", background: "#000", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", borderRadius: 999, letterSpacing: ".05em" }}>
-          ENTRA
+          style={{ width: "100%", padding: "12px", background: "#6366F1", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", borderRadius: 10 }}>
+          Entra
         </button>
       </div>
     </div>

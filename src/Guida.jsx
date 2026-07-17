@@ -56,7 +56,7 @@ function badgeConfidenza(c) {
   const v = (c || "").toLowerCase();
   const map = {
     alta: { bg: "rgba(45,106,79,.15)", col: "#2d6a4f", txt: "dato affidabile" },
-    media: { bg: "rgba(214,156,49,.15)", col: "var(--gold)", txt: "da confermare" },
+    media: { bg: "rgba(99,102,241,.15)", col: "var(--gold)", txt: "da confermare" },
     bassa: { bg: "rgba(224,123,57,.15)", col: "#e07b39", txt: "da verificare" },
   };
   const s = map[v] || map.media;
@@ -171,7 +171,7 @@ export default function Guida() {
       <div className="gl" style={{ marginBottom: 20 }} />
 
       {/* Avviso */}
-      <div style={{ background: "rgba(214,156,49,.08)", border: "1px solid rgba(214,156,49,.3)", padding: "10px 14px", marginBottom: 20, fontSize: 12, color: "var(--black)", borderRadius: 12 }}>
+      <div style={{ background: "rgba(99,102,241,.08)", border: "1px solid rgba(99,102,241,.3)", padding: "10px 14px", marginBottom: 20, fontSize: 12, color: "var(--black)", borderRadius: 12 }}>
         ⚠️ I dati sono <strong>indicativi</strong> e possono cambiare: prima di ogni adempimento fiscale <strong>verifica sempre sul portale ufficiale del comune</strong> (link in ogni scheda). Le tariffe segnate "da confermare/verificare" vanno controllate all'ufficio Tributi.
       </div>
 
