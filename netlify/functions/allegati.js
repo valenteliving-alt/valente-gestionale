@@ -63,14 +63,18 @@ const handler = async (event) => {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ files: data }) };
     }
 
-    // Archivio generale: modifica categoria / tag / nota
+    // Archivio generale: modifica categoria / tag / nota / ricorrenza
     if (action === "update") {
-      const { id, categoria, tags, note } = body;
+      const { id, categoria, tags, note, ric_tipo, ric_anno, ric_periodo, ric_ambito } = body;
       if (!id) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Manca id." }) };
       const patch = {};
       if (categoria !== undefined) patch.categoria = categoria;
       if (tags !== undefined) patch.tags = tags;
       if (note !== undefined) patch.note = note;
+      if (ric_tipo !== undefined) patch.ric_tipo = ric_tipo || null;
+      if (ric_anno !== undefined) patch.ric_anno = ric_anno ? parseInt(ric_anno) : null;
+      if (ric_periodo !== undefined) patch.ric_periodo = ric_periodo || null;
+      if (ric_ambito !== undefined) patch.ric_ambito = ric_ambito || null;
       const r = await fetch(`${SUPABASE_URL}/rest/v1/documenti?id=eq.${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { ...sb, "Content-Type": "application/json", "Prefer": "return=representation" },
@@ -82,7 +86,7 @@ const handler = async (event) => {
     }
 
     if (action === "upload") {
-      const { proprieta_id, proprietario_id, nome_file, tipo, data, categoria, tags, note } = body;
+      const { proprieta_id, proprietario_id, nome_file, tipo, data, categoria, tags, note, ric_tipo, ric_anno, ric_periodo, ric_ambito } = body;
       if (!data || !nome_file) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "File mancante." }) };
       const safeName = nome_file.replace(/[^a-zA-Z0-9._-]/g, "_");
       const catFolder = String(categoria || "Generale").replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -114,6 +118,10 @@ const handler = async (event) => {
           categoria: categoria || (proprieta_id || proprietario_id ? null : "Generale"),
           tags: tags || null,
           note: note || null,
+          ric_tipo: ric_tipo || null,
+          ric_anno: ric_anno ? parseInt(ric_anno) : null,
+          ric_periodo: ric_periodo || null,
+          ric_ambito: ric_ambito || null,
         }),
       });
       const rec = await ins.json();
