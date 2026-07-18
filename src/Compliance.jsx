@@ -7,13 +7,14 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 
 const CIN_RE = /^IT[0-9A-Z]{16}$/;
 
-// Riconoscimento documenti dal nome file (coerente con lo Smistamento)
+// Riconoscimento documenti dal nome file (coerente con lo Smistamento).
+// plus: true = facoltativo, non conta nel completamento (per chi vuole essere pignolo)
 const DOC_CHECKS = [
   { id: "mandato", label: "Mandato / Contratto", match: /\b(mandat|incaric|contratt|procura)\w*/i },
-  { id: "visura", label: "Visura / Catasto", match: /\b(visur|catast|atto|rogito|ape)\w*/i },
-  { id: "planimetria", label: "Planimetria", match: /\b(planimetr|piantina|layout)\w*/i },
   { id: "identita", label: "Doc. identità proprietario", match: /\b(carta\s*identit|ci\b|passaport|patente|codice\s*fiscale|cf\b|tessera|anagraf|identit)\w*/i, owner: true },
-  { id: "cin_doc", label: "Certificato CIN/CIR", match: /\b(cin|cir|codice\s*identificativo|bdsr)\b/i },
+  { id: "visura", label: "Visura / Catasto", match: /\b(visur|catast|atto|rogito|ape)\w*/i, plus: true },
+  { id: "planimetria", label: "Planimetria", match: /\b(planimetr|piantina|layout)\w*/i, plus: true },
+  { id: "cin_doc", label: "Certificato CIN/CIR", match: /\b(cin|cir|codice\s*identificativo|bdsr)\b/i, plus: true },
 ];
 
 const SCIA_OPZIONI = ["", "da fare", "inviata", "fatta", "non richiesta"];
@@ -66,14 +67,17 @@ export default function Compliance({ proprieta = [], owners = [], onPatch, onDat
 
     const propDocs = docsByProp[String(p.id)] || [];
     const ownerDocs = docsByOwner[String(p.proprietario_id)] || [];
+    const plus = [];
     DOC_CHECKS.forEach(c => {
       const pool = c.owner ? [...propDocs, ...ownerDocs] : propDocs;
       const trovato = pool.find(d => c.match.test(d.nome_file || ""));
-      checks.push({ id: c.id, label: c.label, ok: !!trovato, doc: trovato, detail: trovato ? trovato.nome_file : "non trovato negli allegati" });
+      const check = { id: c.id, label: c.label, ok: !!trovato, doc: trovato, detail: trovato ? trovato.nome_file : "non trovato negli allegati" };
+      if (c.plus) plus.push(check); else checks.push(check);
     });
 
+    // Il completamento conta SOLO gli obbligatori; i "plus" sono facoltativi
     const fatti = checks.filter(c => c.ok).length;
-    return { checks, fatti, totale: checks.length, pct: Math.round((fatti / checks.length) * 100) };
+    return { checks, plus, fatti, totale: checks.length, pct: Math.round((fatti / checks.length) * 100) };
   }, [docsByProp, docsByOwner]);
 
   const attivo = (p) => String(p.stato || "").toLowerCase().startsWith("attiv");
@@ -174,11 +178,20 @@ export default function Compliance({ proprieta = [], owners = [], onPatch, onDat
                 <button className="bg" onClick={() => inEdit ? setEditId(null) : apriEdit(p)} style={{ fontSize: 11, padding: "6px 10px" }}>{inEdit ? "Chiudi" : "✎ Codici"}</button>
               </div>
 
-              {/* Checklist */}
+              {/* Checklist obbligatori */}
               <div style={{ display: "flex", gap: "6px 16px", flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--cd)" }}>
                 {a.checks.map(c => (
                   <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: c.ok ? "var(--black)" : "var(--gray)" }} title={c.detail}>
                     <Icona c={c} /> {c.label}
+                  </div>
+                ))}
+              </div>
+              {/* Plus facoltativi: non contano nel completamento */}
+              <div style={{ display: "flex", gap: "4px 14px", flexWrap: "wrap", marginTop: 6, alignItems: "center" }}>
+                <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "#A2ACBD" }}>Plus</span>
+                {a.plus.map(c => (
+                  <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: c.ok ? "#475569" : "#A2ACBD" }} title={c.detail + " (facoltativo, non conta nel completamento)"}>
+                    <span style={{ fontSize: 11 }}>{c.ok ? "✓" : "·"}</span> {c.label}
                   </div>
                 ))}
               </div>
