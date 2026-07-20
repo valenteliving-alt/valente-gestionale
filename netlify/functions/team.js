@@ -75,6 +75,80 @@ const handler = async (event) => {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
     }
 
+    /* Invita una persona: manda l'email di invito e collega l'account al collaboratore.
+       La password la sceglie SOLO l'invitato dal link ricevuto: non passa mai da qui. */
+    if (action === "invita") {
+      const { id, email } = body;
+      const mail = String(email || "").trim().toLowerCase();
+      if (!id || !mail) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Servono la persona e la sua email." }) };
+
+      // Se l'utente esiste già lo collego soltanto, senza rimandare l'invito
+      const cerca = await fetch(`${SUPABASE_URL}/auth/v1/admin/users?page=1&per_page=200`, { headers: sb });
+      const elenco = await cerca.json().catch(() => ({}));
+      const esistente = (elenco.users || []).find(u => String(u.email || "").toLowerCase() === mail);
+
+      let utente = esistente;
+      let invitato = false;
+
+      if (!utente) {
+        const r = await fetch(`${SUPABASE_URL}/auth/v1/invite`, {
+          method: "POST",
+          headers: { ...sb, "Content-Type": "application/json" },
+          body: JSON.stringify({ email: mail }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) return { statusCode: r.status, headers: CORS, body: JSON.stringify({ error: d.msg || d.message || "Invio dell'invito non riuscito." }) };
+        utente = d;
+        invitato = true;
+      }
+
+      const patch = await fetch(`${SUPABASE_URL}/rest/v1/collaboratori?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { ...sb, "Content-Type": "application/json", "Prefer": "return=representation" },
+        body: JSON.stringify({ user_id: utente.id, email_accesso: mail, email: mail }),
+      });
+      const rec = await patch.json().catch(() => null);
+      if (!patch.ok) return { statusCode: patch.status, headers: CORS, body: JSON.stringify({ error: "Account creato ma collegamento fallito." }) };
+
+      return {
+        statusCode: 200, headers: CORS,
+        body: JSON.stringify({
+          collaboratore: Array.isArray(rec) ? rec[0] : rec,
+          invitato,
+          messaggio: invitato
+            ? `Invito inviato a ${mail}. Riceverà un'email per scegliere la sua password.`
+            : `L'account ${mail} esisteva già: l'ho collegato a questa persona.`,
+        })
+      };
+    }
+
+    // Rimanda l'invito a chi non ha ancora completato la registrazione
+    if (action === "reinvita") {
+      const mail = String(body.email || "").trim().toLowerCase();
+      if (!mail) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Manca l'email." }) };
+      const r = await fetch(`${SUPABASE_URL}/auth/v1/invite`, {
+        method: "POST", headers: { ...sb, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: mail }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) return { statusCode: r.status, headers: CORS, body: JSON.stringify({ error: d.msg || d.message || "Invio non riuscito." }) };
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ messaggio: `Nuovo invito inviato a ${mail}.` }) };
+    }
+
+    // Revoca l'accesso: scollega l'account, la persona resta in anagrafica
+    if (action === "revoca") {
+      const { id } = body;
+      if (!id) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Manca id." }) };
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/collaboratori?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { ...sb, "Content-Type": "application/json", "Prefer": "return=representation" },
+        body: JSON.stringify({ user_id: null, email_accesso: null }),
+      });
+      const rec = await r.json().catch(() => null);
+      if (!r.ok) return { statusCode: r.status, headers: CORS, body: JSON.stringify({ error: "Revoca non riuscita." }) };
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ collaboratore: Array.isArray(rec) ? rec[0] : rec }) };
+    }
+
     // ── Task ──
     if (action === "list_task") {
       let q = "select=*&order=created_at.desc&limit=1000";
