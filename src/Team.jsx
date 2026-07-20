@@ -24,6 +24,9 @@ export default function Team({ proprieta = [], sonoMaster }) {
   const [errore, setErrore] = useState("");
   const [form, setForm] = useState(null); // null | {…} in modifica/creazione
   const [salvando, setSalvando] = useState(false);
+  const [invito, setInvito] = useState(null);   // { id, nome, email } persona da invitare
+  const [inviando, setInviando] = useState(false);
+  const [esito, setEsito] = useState("");
 
   const carica = useCallback(async () => {
     setCaricando(true); setErrore("");
@@ -55,6 +58,35 @@ export default function Team({ proprieta = [], sonoMaster }) {
       setForm(null);
     } catch (e) { setErrore(e.message); }
     setSalvando(false);
+  };
+
+  // Manda l'invito e collega l'account: la password la sceglie l'invitato
+  const invia = async () => {
+    if (!invito || !invito.email.trim()) { setErrore("Serve l'email della persona."); return; }
+    setInviando(true); setErrore(""); setEsito("");
+    try {
+      const d = await fnTeam({ action: "invita", id: invito.id, email: invito.email.trim() });
+      setCollaboratori(cs => cs.map(x => x.id === d.collaboratore.id ? d.collaboratore : x));
+      setEsito(d.messaggio);
+      setInvito(null);
+    } catch (e) { setErrore(e.message); }
+    setInviando(false);
+  };
+
+  const reinvita = async (c) => {
+    setErrore(""); setEsito("");
+    try { const d = await fnTeam({ action: "reinvita", email: c.email_accesso }); setEsito(d.messaggio); }
+    catch (e) { setErrore(e.message); }
+  };
+
+  const revoca = async (c) => {
+    if (!window.confirm(`Revocare l'accesso a ${c.nome}? Non potrà più entrare nel CRM, ma resta in anagrafica.`)) return;
+    setErrore(""); setEsito("");
+    try {
+      const d = await fnTeam({ action: "revoca", id: c.id });
+      setCollaboratori(cs => cs.map(x => x.id === d.collaboratore.id ? d.collaboratore : x));
+      setEsito(`Accesso revocato a ${c.nome}.`);
+    } catch (e) { setErrore(e.message); }
   };
 
   const elimina = async (c) => {
@@ -92,6 +124,11 @@ export default function Team({ proprieta = [], sonoMaster }) {
       <div className="gl" style={{ marginBottom: 20 }} />
 
       {errore && <div style={{ fontSize: 12, color: "var(--red)", marginBottom: 12 }}>{errore}</div>}
+      {esito && (
+        <div style={{ fontSize: 12.5, color: "#2d6a4f", background: "rgba(45,106,79,.08)", border: "1px solid rgba(45,106,79,.25)", borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+          ✓ {esito}
+        </div>
+      )}
 
       {/* Come funzionano i permessi */}
       <div style={{ background: "#EEF2FF", border: "1px solid rgba(99,102,241,.25)", borderRadius: 12, padding: "12px 14px", marginBottom: 20, fontSize: 12, lineHeight: 1.6, color: "var(--black)" }}>
@@ -132,8 +169,20 @@ export default function Team({ proprieta = [], sonoMaster }) {
                 </div>
 
                 {/* Stato dell'accesso */}
-                <div style={{ fontSize: 11.5, marginBottom: 10, color: senzaAccount ? "#e07b39" : "#2d6a4f" }}>
-                  {senzaAccount ? "⚠ Nessun account di accesso collegato" : `✓ Accede come ${c.email_accesso}`}
+                <div style={{ marginBottom: 10 }}>
+                  {senzaAccount ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 11.5, color: "#e07b39" }}>⚠ Nessun accesso</span>
+                      <button className="bp" onClick={() => { setInvito({ id: c.id, nome: c.nome, email: c.email || "" }); setEsito(""); setErrore(""); }}
+                        style={{ fontSize: 11, padding: "5px 12px" }}>✉ Invita nel CRM</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 11.5, color: "#2d6a4f" }}>✓ {c.email_accesso}</span>
+                      <button className="bg" onClick={() => reinvita(c)} style={{ fontSize: 10.5, padding: "3px 8px" }} title="Rimanda l'email di invito/reset">↻ Rimanda invito</button>
+                      <button className="bg" onClick={() => revoca(c)} style={{ fontSize: 10.5, padding: "3px 8px", color: "var(--red)" }} title="Toglie l'accesso, la persona resta in anagrafica">Revoca</button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Cosa vede */}
@@ -179,6 +228,28 @@ export default function Team({ proprieta = [], sonoMaster }) {
           </div>
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
             {nonAssegnati.map(p => <span key={p.id} className="tag">{p.nome}</span>)}
+          </div>
+        </div>
+      )}
+
+      {/* Invito al CRM */}
+      {invito && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          onClick={e => e.target === e.currentTarget && setInvito(null)}>
+          <div style={{ background: "var(--cream)", width: "100%", maxWidth: 440, borderRadius: 16, boxShadow: "0 24px 70px rgba(0,0,0,.28)", padding: 28 }} className="fi">
+            <h2 style={{ fontSize: 18, marginBottom: 6 }}>Invita {invito.nome} nel CRM</h2>
+            <p style={{ fontSize: 12.5, color: "var(--gray)", marginBottom: 16, lineHeight: 1.6 }}>
+              Riceverà un'email con un link per <strong>scegliere la sua password</strong>. Nessuno, nemmeno tu, la conoscerà.
+            </p>
+            <label style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)" }}>Email</label>
+            <input autoFocus type="email" value={invito.email}
+              onChange={e => setInvito(v => ({ ...v, email: e.target.value }))}
+              onKeyDown={e => e.key === "Enter" && invia()}
+              placeholder="nome@esempio.it" style={{ marginTop: 4 }} />
+            <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+              <button className="bg" onClick={() => setInvito(null)}>Annulla</button>
+              <button className="bp" onClick={invia} disabled={inviando}>{inviando ? "Invio…" : "✉ Manda l'invito"}</button>
+            </div>
           </div>
         </div>
       )}
@@ -230,9 +301,8 @@ export default function Team({ proprieta = [], sonoMaster }) {
             </div>
 
             <div style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 10, padding: 12, marginTop: 14, fontSize: 11.5, color: "var(--gray)", lineHeight: 1.6 }}>
-              <strong style={{ color: "var(--black)" }}>Per dargli l'accesso al CRM:</strong> crea il suo account dal pannello Supabase
-              (<em>Authentication → Users → Add user → Send invitation</em>) usando la stessa email scritta qui sopra.
-              Sceglierà lui la password. Poi collega l'account a questa persona e assegnale gli immobili dal Workflow.
+              <strong style={{ color: "var(--black)" }}>Dopo aver salvato</strong>, usa il pulsante <em>✉ Invita nel CRM</em> sulla sua scheda:
+              riceverà un'email per scegliere <strong>da sé</strong> la password. Poi assegnale gli immobili dal Workflow.
             </div>
 
             <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
