@@ -3214,6 +3214,19 @@ function App({ utente, onLogout }) {
   const [gestori, setGestori] = useState(GESTORI);       // nomi dall'anagrafica collaboratori
 
   const [coloriGestori, setColoriGestori] = useState({});
+  const [daApprovare, setDaApprovare] = useState(0);     // agenti registrati in attesa di via libera
+
+  // Registrazioni agenti in sospeso: il titolare le vede subito nel menu, senza cercarle
+  useEffect(() => {
+    if (!sonoMaster) { setDaApprovare(0); return; }
+    let vivo = true;
+    const conta = () => sb.get("collaboratori", "?select=id&stato_approvazione=eq.in_attesa")
+      .then(({ data }) => { if (vivo && Array.isArray(data)) setDaApprovare(data.length); })
+      .catch(() => {});
+    conta();
+    const t = setInterval(conta, 120000); // ricontrolla ogni due minuti
+    return () => { vivo = false; clearInterval(t); };
+  }, [sonoMaster, view]);
 
   // Elenco assegnatari sempre allineato a chi è davvero nel team
   useEffect(() => {
@@ -3356,7 +3369,7 @@ function App({ utente, onLogout }) {
     { id: "home", label: "Home", icon: "🏛️", count: null },
     { id: "notifiche", label: "Notifiche", icon: "🔔", count: notifCount, alert: true },
     // Gestione accessi: subito in alto, visibile solo al titolare
-    ...(sonoMaster ? [{ id: "team", label: "Team & Accessi", icon: "👥", count: null }] : []),
+    ...(sonoMaster ? [{ id: "team", label: "Team & Accessi", icon: "👥", count: daApprovare || null, alert: daApprovare > 0 }] : []),
     /* I property manager hanno una vista essenziale: solo i loro immobili,
        i proprietari collegati, i documenti e la compliance. */
     { id: "gestione", label: "Gestione & Contabilità", icon: "📊", count: null, group: "Operativo" },
