@@ -4,9 +4,6 @@ import Guida from "./Guida";
 import Compliance from "./Compliance";
 import Ricorrenti from "./Ricorrenti";
 
-// PASSWORD PER ENTRARE NEL GESTIONALE — cambiala qui quando vuoi
-const PASSWORD_SITO = "Living626!!";
-
 const SUPABASE_URL = "https://heabtbdmwbjlgujsisor.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
 
@@ -43,12 +40,70 @@ function inviaPush(title, body, url) {
   } catch (_) { /* ignora */ }
 }
 
+/* ── Sessione utente (Supabase Auth) ──────────────────────────────────────────
+   Il token dell'utente loggato sostituisce la chiave anonima in ogni chiamata:
+   così il database può distinguere chi sta scrivendo e applicare i permessi. */
+const AUTH_KEY = "vl_sessione";
+const auth = {
+  leggi() {
+    try { return JSON.parse(localStorage.getItem(AUTH_KEY) || "null"); } catch { return null; }
+  },
+  scrivi(s) {
+    try { s ? localStorage.setItem(AUTH_KEY, JSON.stringify(s)) : localStorage.removeItem(AUTH_KEY); } catch { /* ignora */ }
+  },
+  token() { const s = auth.leggi(); return (s && s.access_token) || null; },
+  utente() { const s = auth.leggi(); return (s && s.user) || null; },
+
+  async login(email, password) {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: String(email).trim(), password }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error_description || d.msg || d.message || "Accesso non riuscito.");
+    auth.scrivi({ access_token: d.access_token, refresh_token: d.refresh_token, scade: Date.now() + (d.expires_in || 3600) * 1000, user: d.user });
+    return d.user;
+  },
+
+  // Rinnova il token quando sta per scadere, così non si viene buttati fuori
+  async rinnova() {
+    const s = auth.leggi();
+    if (!s || !s.refresh_token) return null;
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: s.refresh_token }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { auth.scrivi(null); return null; }
+    auth.scrivi({ access_token: d.access_token, refresh_token: d.refresh_token, scade: Date.now() + (d.expires_in || 3600) * 1000, user: d.user || s.user });
+    return d.access_token;
+  },
+
+  async logout() {
+    const t = auth.token();
+    if (t) {
+      try { await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: "POST", headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${t}` } }); } catch { /* ignora */ }
+    }
+    auth.scrivi(null);
+  },
+};
+
 const sb = {
-  async req(method, table, body, query = "") {
+  async req(method, table, body, query = "", riprova = true) {
+    const s = auth.leggi();
+    // Se il token è scaduto (o quasi) lo rinnovo prima di chiamare
+    if (s && s.scade && s.scade - Date.now() < 60000) await auth.rinnova();
+    const token = auth.token() || SUPABASE_KEY;
     const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
       method, body: body ? JSON.stringify(body) : undefined,
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" }
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=representation" }
     });
+    if (r.status === 401 && riprova && auth.leggi()) {
+      const nuovo = await auth.rinnova();
+      if (nuovo) return sb.req(method, table, body, query, false);
+    }
     const data = await r.json().catch(() => null);
     return { data, ok: r.ok };
   },
@@ -3085,7 +3140,7 @@ function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
   );
 }
 
-function App() {
+function App({ utente, onLogout }) {
   const [view, setView] = useState("home");
   const [proprieta, setProprieta] = useState([]);
   const [owners, setOwners] = useState([]);
@@ -3270,8 +3325,19 @@ function App() {
               ✦ Assistente AI
             </button>
           </div>
-          <div style={{ padding: "12px 20px" }}>
-            <p style={{ fontSize: 9, color: "rgba(255,255,255,.3)", textAlign: "center" }}>v3.0 · Valente Living SRL</p>
+          {/* Utente collegato + uscita */}
+          <div style={{ padding: "10px 20px 12px", borderTop: "1px solid rgba(255,255,255,.08)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ width: 26, height: 26, borderRadius: "50%", background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+                {String((utente && utente.email) || "?")[0].toUpperCase()}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,.75)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(utente && utente.email) || "—"}</div>
+              </div>
+              <button onClick={onLogout} title="Esci dal gestionale"
+                style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", color: "rgba(255,255,255,.7)", fontSize: 10.5, fontWeight: 600, padding: "5px 9px" }}>Esci</button>
+            </div>
+            <p style={{ fontSize: 9, color: "rgba(255,255,255,.3)", textAlign: "center", marginTop: 10 }}>v3.0 · Valente Living SRL</p>
           </div>
         </aside>
 
@@ -3550,30 +3616,153 @@ function App() {
   );
 }
 
-// ── Schermata password (cancello d'ingresso) ─────────────────────────────────
-export default function Gate() {
-  const [ok, setOk] = useState(() => { try { return sessionStorage.getItem("vl_auth") === "1"; } catch { return false; } });
-  const [val, setVal] = useState("");
-  const [err, setErr] = useState(false);
-  if (ok) return <App />;
-  const submit = () => {
-    if (val === PASSWORD_SITO) { try { sessionStorage.setItem("vl_auth", "1"); } catch { /* ignore */ } setOk(true); }
-    else { setErr(true); }
+// ── Accesso con account personale (Supabase Auth) ────────────────────────────
+/* Schermata "scegli la tua password": è dove atterrano i link di invito
+   e di recupero password che Supabase manda via email. */
+function ImpostaPassword({ token, invito, onFatto }) {
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const salva = async () => {
+    if (pw.length < 8) { setErr("La password deve avere almeno 8 caratteri."); return; }
+    if (pw !== pw2) { setErr("Le due password non coincidono."); return; }
+    setBusy(true); setErr("");
+    try {
+      const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        method: "PUT",
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pw }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.msg || d.message || "Non è stato possibile salvare la password.");
+      onFatto();
+    } catch (e) { setErr(e.message); }
+    setBusy(false);
   };
+
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F6F7F9", fontFamily: "'Inter', sans-serif", padding: 20 }}>
-      <div style={{ width: "100%", maxWidth: 360, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, boxShadow: "0 8px 30px rgba(15,23,42,.08)", padding: "36px 32px" }}>
+      <div style={{ width: "100%", maxWidth: 380, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, boxShadow: "0 8px 30px rgba(15,23,42,.08)", padding: "36px 32px" }}>
+        <div style={{ width: 44, height: 44, borderRadius: 12, background: "linear-gradient(135deg, #6366F1, #818CF8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 20, fontWeight: 800, margin: "0 auto 16px" }}>V</div>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: "#0F172A", textAlign: "center", marginBottom: 6, letterSpacing: "-.02em" }}>
+          {invito ? "Benvenuto in Valente Living" : "Nuova password"}
+        </h1>
+        <p style={{ fontSize: 13, color: "#64748B", textAlign: "center", marginBottom: 24 }}>
+          {invito ? "Scegli la password del tuo account" : "Scegli una nuova password per il tuo account"}
+        </p>
+        <input type="password" value={pw} autoFocus placeholder="Nuova password (min. 8 caratteri)" autoComplete="new-password"
+          onChange={e => { setPw(e.target.value); setErr(""); }}
+          style={{ width: "100%", padding: "12px 14px", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 15, marginBottom: 10, boxSizing: "border-box", outline: "none" }} />
+        <input type="password" value={pw2} placeholder="Ripeti la password" autoComplete="new-password"
+          onChange={e => { setPw2(e.target.value); setErr(""); }}
+          onKeyDown={e => e.key === "Enter" && salva()}
+          style={{ width: "100%", padding: "12px 14px", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 15, marginBottom: 12, boxSizing: "border-box", outline: "none" }} />
+        {err && <p style={{ color: "#E11D48", fontSize: 12, marginBottom: 12, textAlign: "center" }}>{err}</p>}
+        <button onClick={salva} disabled={busy}
+          style={{ width: "100%", padding: "12px", background: busy ? "#A5B4FC" : "#6366F1", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: busy ? "default" : "pointer", borderRadius: 10 }}>
+          {busy ? "Salvo…" : "Salva password ed entra"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Legge il token che Supabase mette nell'indirizzo dopo un invito o un recupero password
+function leggiTokenDaUrl() {
+  try {
+    const h = new URLSearchParams(String(window.location.hash || "").replace(/^#/, ""));
+    const tipo = h.get("type");
+    const token = h.get("access_token");
+    if (token && (tipo === "recovery" || tipo === "invite" || tipo === "signup")) {
+      return { token, invito: tipo !== "recovery", refresh: h.get("refresh_token") };
+    }
+  } catch { /* ignora */ }
+  return null;
+}
+
+export default function Gate() {
+  const [utente, setUtente] = useState(() => auth.utente());
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [recupero, setRecupero] = useState("");
+  const [reset, setReset] = useState(() => leggiTokenDaUrl());
+
+  // All'avvio: se c'è una sessione salvata la rinnovo, così non serve rifare il login ogni volta
+  useEffect(() => {
+    const s = auth.leggi();
+    if (s && s.scade && s.scade - Date.now() < 60000) {
+      auth.rinnova().then(t => { if (!t) setUtente(null); });
+    }
+  }, []);
+
+  // Link di invito o recupero password: mostra la schermata per scegliere la password
+  if (reset) {
+    return <ImpostaPassword token={reset.token} invito={reset.invito} onFatto={() => {
+      auth.scrivi({ access_token: reset.token, refresh_token: reset.refresh, scade: Date.now() + 3600000, user: null });
+      try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignora */ }
+      setReset(null);
+      setUtente(null);
+      setRecupero("Password impostata. Ora entra con la tua email e la nuova password.");
+      auth.scrivi(null);
+    }} />;
+  }
+
+  if (utente) return <App utente={utente} onLogout={async () => { await auth.logout(); setUtente(null); }} />;
+
+  const entra = async () => {
+    if (!email.trim() || !pw) { setErr("Inserisci email e password."); return; }
+    setBusy(true); setErr("");
+    try { setUtente(await auth.login(email, pw)); }
+    catch (e) {
+      setErr(/invalid/i.test(e.message) ? "Email o password non corretti." : e.message);
+    }
+    setBusy(false);
+  };
+
+  const recuperaPassword = async () => {
+    if (!email.trim()) { setErr("Scrivi la tua email qui sopra, poi riclicca."); return; }
+    setBusy(true); setErr(""); setRecupero("");
+    try {
+      await fetch(`${SUPABASE_URL}/auth/v1/recover`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      setRecupero("Se l'indirizzo è registrato, ti arriva un'email per reimpostare la password.");
+    } catch { setErr("Non sono riuscito a inviare l'email."); }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F6F7F9", fontFamily: "'Inter', sans-serif", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 380, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, boxShadow: "0 8px 30px rgba(15,23,42,.08)", padding: "36px 32px" }}>
         <div style={{ width: 44, height: 44, borderRadius: 12, background: "linear-gradient(135deg, #6366F1, #818CF8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 20, fontWeight: 800, margin: "0 auto 16px" }}>V</div>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: "#0F172A", textAlign: "center", marginBottom: 6, letterSpacing: "-.02em" }}>Valente Living</h1>
-        <p style={{ fontSize: 13, color: "#64748B", textAlign: "center", marginBottom: 24 }}>Inserisci la password per accedere</p>
-        <input type="password" value={val} autoFocus placeholder="Password"
-          onChange={e => { setVal(e.target.value); setErr(false); }}
-          onKeyDown={e => e.key === "Enter" && submit()}
+        <p style={{ fontSize: 13, color: "#64748B", textAlign: "center", marginBottom: 24 }}>Accedi con il tuo account</p>
+
+        <input type="email" value={email} autoFocus placeholder="Email" autoComplete="username"
+          onChange={e => { setEmail(e.target.value); setErr(""); }}
+          onKeyDown={e => e.key === "Enter" && entra()}
+          style={{ width: "100%", padding: "12px 14px", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 15, marginBottom: 10, boxSizing: "border-box", outline: "none" }} />
+        <input type="password" value={pw} placeholder="Password" autoComplete="current-password"
+          onChange={e => { setPw(e.target.value); setErr(""); }}
+          onKeyDown={e => e.key === "Enter" && entra()}
           style={{ width: "100%", padding: "12px 14px", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 15, marginBottom: 12, boxSizing: "border-box", outline: "none" }} />
-        {err && <p style={{ color: "#E11D48", fontSize: 12, marginBottom: 12, textAlign: "center" }}>Password errata, riprova.</p>}
-        <button onClick={submit}
-          style={{ width: "100%", padding: "12px", background: "#6366F1", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", borderRadius: 10 }}>
-          Entra
+
+        {err && <p style={{ color: "#E11D48", fontSize: 12, marginBottom: 12, textAlign: "center" }}>{err}</p>}
+        {recupero && <p style={{ color: "#2d6a4f", fontSize: 12, marginBottom: 12, textAlign: "center" }}>{recupero}</p>}
+
+        <button onClick={entra} disabled={busy}
+          style={{ width: "100%", padding: "12px", background: busy ? "#A5B4FC" : "#6366F1", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: busy ? "default" : "pointer", borderRadius: 10 }}>
+          {busy ? "Accesso…" : "Entra"}
+        </button>
+        <button onClick={recuperaPassword} disabled={busy}
+          style={{ width: "100%", marginTop: 10, padding: "8px", background: "transparent", border: "none", color: "#64748B", fontSize: 12, cursor: "pointer" }}>
+          Password dimenticata?
         </button>
       </div>
     </div>
