@@ -731,7 +731,7 @@ async function fnTeam(payload) {
 const COLORI_COLL = ["#6366F1", "#0891b2", "#e07b39", "#2d6a4f", "#8b5cf6", "#b8860b", "#c0392b", "#1d6fa4"];
 
 // ── Workflow Lancio ──────────────────────────────────────────────────────────
-const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
+const KanbanView = ({ proprieta, owners, onDataChanged, onEdit, onApriScheda }) => {
   const [saving, setSaving] = useState(null);
   const [noteAperte, setNoteAperte] = useState(null); // id proprietà con le note aperte
   const [noteDraft, setNoteDraft] = useState("");
@@ -874,7 +874,14 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
               <div key={p.id} className="card" style={{ padding: 18, opacity: busy ? .55 : 1, transition: "opacity .15s" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
                   <div>
-                    <div style={{ fontSize: 16, fontWeight: 600 }}>{p.nome}</div>
+                    <div onClick={() => onApriScheda && onApriScheda(p)}
+                      title="Apri la scheda completa con tutti i documenti"
+                      style={{ fontSize: 16, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}
+                      onMouseEnter={e => { e.currentTarget.style.color = "var(--gold)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.color = "var(--black)"; }}>
+                      {p.nome}
+                      <span style={{ fontSize: 11, color: "var(--gray)" }}>↗</span>
+                    </div>
                     <div style={{ fontSize: 12, color: "var(--gray)", marginTop: 2 }}>{[p.citta, p.provincia].filter(Boolean).join(", ")}{owner ? ` · ${owner.cognome || ""} ${owner.nome || ""}`.replace(/ +$/, "") : ""}</div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -3281,7 +3288,7 @@ function App() {
             view === "home" ? <HomeView proprieta={proprieta} owners={owners} stats={stats} onVai={(v) => setView(v)} onApriProp={setDetP} /> :
             view === "gestione" ? <ContabilitaView proprieta={proprieta} owners={owners} /> :
             view === "notifiche" ? <NotificheView onDataChanged={load} /> :
-            view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} onEdit={setModalP} /> :
+            view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} onEdit={setModalP} onApriScheda={setDetP} /> :
             view === "smistamento" ? <Smistamento proprieta={proprieta} owners={owners} onDataChanged={load} /> :
             view === "archivio" ? <Archivio proprieta={proprieta} owners={owners} /> :
             view === "guida" ? <Guida /> :
