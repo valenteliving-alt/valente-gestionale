@@ -87,21 +87,8 @@ export default function Ricorrenti({ proprieta = [], owners = [] }) {
 
   const docsSlot = (tipo, periodo, ambito) => idx[[tipo, anno, periodo, norm(ambito)].join("|")] || [];
 
-  // Sezioni della griglia
+  // Sezioni della griglia (imposta e ISTAT stanno nella tabella unica dei comuni)
   const sezioni = useMemo(() => ([
-    {
-      tipo: "imposta_soggiorno", icona: "🏛️", titolo: "Imposta di soggiorno",
-      sotto: "Ricevute di dichiarazione/versamento per comune — cadenza dalla Guida",
-      righe: comuniAttivi.filter(c => !c.regola || c.regola.imposta_attiva !== false).map(c => ({
-        id: c.comune, label: c.comune, extra: `${c.n} immobil${c.n === 1 ? "e" : "i"}`,
-        periodi: periodiPer(c.regola ? c.regola.cadenza_tipo : "trimestrale"),
-      })),
-    },
-    {
-      tipo: "istat", icona: "📊", titolo: "Comunicazioni ISTAT / flussi",
-      sotto: "Ricevute di trasmissione presenze per comune — mensile",
-      righe: comuniAttivi.map(c => ({ id: c.comune, label: c.comune, extra: `${c.n} immobil${c.n === 1 ? "e" : "i"}`, periodi: periodiPer("mensile") })),
-    },
     {
       tipo: "cu", icona: "📄", titolo: "Certificazioni Uniche",
       sotto: "CU per proprietario — annuale (redditi anno precedente)",
@@ -130,6 +117,20 @@ export default function Ricorrenti({ proprieta = [], owners = [] }) {
     if (k.startsWith("Q")) return parseInt(k.slice(1)) * 4 < m;
     return true;
   };
+
+  /* Di norma servono gli ultimi tre mesi: il resto dell'anno è storia, e tenerlo
+     sempre a schermo rende la pagina illeggibile. Con "tutto l'anno" torna intero. */
+  const [tuttoAnno, setTuttoAnno] = useState(false);
+  const ultimiPeriodi = useCallback((cadenza) => {
+    const tutti = periodiPer(cadenza);
+    if (tuttoAnno || cadenza === "annuale") return tutti;
+    const fine = anno === oggi.getFullYear() ? oggi.getMonth() + 1 : 12;
+    const mesi = [fine - 2, fine - 1, fine].filter(m => m >= 1 && m <= 12);
+    if (cadenza === "mensile") return tutti.filter(p => mesi.includes(parseInt(p.k.slice(1))));
+    const larghezza = cadenza === "quadrimestrale" ? 4 : 3;
+    const gruppi = new Set(mesi.map(m => Math.ceil(m / larghezza)));
+    return tutti.filter(p => gruppi.has(parseInt(p.k.slice(1))));
+  }, [tuttoAnno, anno, oggi]);
 
   const scegliFile = (tipo, periodo, riga) => {
     setSlot({ tipo, periodo, ambito: riga.label, ambitoId: riga.id, ownerId: riga.ownerId || null });
@@ -202,6 +203,92 @@ export default function Ricorrenti({ proprieta = [], owners = [] }) {
       {errore && <div style={{ fontSize: 12, color: "var(--red)", marginBottom: 12 }}>{errore}</div>}
       {uploading && <div style={{ fontSize: 12, color: "var(--gold)", fontWeight: 600, marginBottom: 12 }}>Carico il documento…</div>}
       <input ref={fileRef} type="file" style={{ display: "none" }} onChange={e => caricaFile(e.target.files)} />
+
+      {/* Tabella unica dei comuni: a sinistra il comune, accanto imposta e ISTAT */}
+      {!caricando && (
+        <div style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 16, marginBottom: 16, overflowX: "auto" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>Comuni</span>
+            <span style={{ fontSize: 11, color: "var(--gray)" }}>
+              {tuttoAnno ? `tutto il ${anno}` : "ultimi tre mesi"}
+            </span>
+            <button className="bg" onClick={() => setTuttoAnno(v => !v)} style={{ fontSize: 10.5, padding: "3px 9px", marginLeft: "auto" }}>
+              {tuttoAnno ? "Mostra ultimi 3 mesi" : "Mostra tutto l'anno"}
+            </button>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, paddingBottom: 6, borderBottom: "1px solid var(--cd)", fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)" }}>
+            <div style={{ flex: "1 1 180px", minWidth: 150 }}>Comune</div>
+            <div style={{ flex: "0 0 auto", minWidth: 150 }}>🏛️ Imposta di soggiorno</div>
+            <div style={{ flex: "0 0 auto", minWidth: 150 }}>📊 ISTAT</div>
+          </div>
+
+          {comuniAttivi.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)", paddingTop: 10 }}>Nessun comune con immobili attivi.</div>}
+
+          {comuniAttivi.map(c => {
+            const impostaAttiva = !c.regola || c.regola.imposta_attiva !== false;
+            const pImposta = impostaAttiva ? ultimiPeriodi(c.regola ? c.regola.cadenza_tipo : "trimestrale") : [];
+            const pIstat = ultimiPeriodi("mensile");
+            const riga = { id: c.comune, label: c.comune };
+            const casella = (tipo, p) => {
+              const presenti = docsSlot(tipo, p.k, c.comune);
+              const pieno = presenti.length > 0;
+              const passato = periodoPassato(p.k);
+              const selez = slot && slot.tipo === tipo && slot.periodo === p.k && slot.ambitoId === c.comune;
+              return (
+                <button key={tipo + p.k}
+                  onClick={() => pieno
+                    ? setSlot(selez ? null : { tipo, periodo: p.k, ambito: c.comune, ambitoId: c.comune, vista: true })
+                    : scegliFile(tipo, p.k, riga)}
+                  title={pieno ? `${presenti.length} document${presenti.length === 1 ? "o" : "i"} — clicca per vedere` : passato ? "Mancante — clicca per caricare" : "Periodo futuro"}
+                  style={{
+                    minWidth: 36, padding: "4px 7px", fontSize: 10.5, fontWeight: 600,
+                    border: selez ? "1.5px solid var(--gold)" : "1px solid " + (pieno ? "rgba(45,106,79,.4)" : passato ? "rgba(225,29,72,.35)" : "var(--gl)"),
+                    background: pieno ? "rgba(45,106,79,.1)" : passato ? "rgba(225,29,72,.06)" : "var(--cream)",
+                    color: pieno ? "#2d6a4f" : passato ? "var(--red)" : "var(--gray)",
+                    borderRadius: 8,
+                  }}
+                >{p.label}{pieno ? " ✓" : ""}</button>
+              );
+            };
+            return (
+              <Fragment key={c.comune}>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderTop: "1px solid var(--cd)" }}>
+                  <div style={{ flex: "1 1 180px", minWidth: 150 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600 }}>{c.comune}</span>
+                    <span style={{ fontSize: 10.5, color: "var(--gray)", marginLeft: 6 }}>{c.n} immobil{c.n === 1 ? "e" : "i"}</span>
+                  </div>
+                  <div style={{ flex: "0 0 auto", minWidth: 150, display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {impostaAttiva ? pImposta.map(p => casella("imposta_soggiorno", p))
+                      : <span style={{ fontSize: 10.5, color: "var(--gray)" }}>non dovuta</span>}
+                  </div>
+                  <div style={{ flex: "0 0 auto", minWidth: 150, display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {pIstat.map(p => casella("istat", p))}
+                  </div>
+                </div>
+                {slot && slot.vista && slot.ambitoId === c.comune && (() => {
+                  const presenti = docsSlot(slot.tipo, slot.periodo, c.comune);
+                  return (
+                    <div style={{ background: "var(--cream)", border: "1px solid var(--gl)", borderRadius: 10, padding: "10px 12px", margin: "0 0 8px" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>
+                        {c.comune} · {slot.tipo === "istat" ? "ISTAT" : "Imposta"} {slot.periodo} {anno}
+                      </div>
+                      {presenti.map(d => (
+                        <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, padding: "4px 0" }}>
+                          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.nome_file}</span>
+                          <button className="bg" onClick={() => apri(d)} style={{ fontSize: 10.5, padding: "3px 8px" }}>Apri</button>
+                          <button className="bd" onClick={() => elimina(d)} style={{ fontSize: 10.5, padding: "3px 8px" }}>×</button>
+                        </div>
+                      ))}
+                      <button className="bg" onClick={() => scegliFile(slot.tipo, slot.periodo, riga)} style={{ fontSize: 10.5, padding: "4px 10px", marginTop: 6 }}>+ Aggiungi documento</button>
+                    </div>
+                  );
+                })()}
+              </Fragment>
+            );
+          })}
+        </div>
+      )}
 
       {caricando ? (
         <div style={{ padding: 40, textAlign: "center", color: "var(--gray)", fontSize: 13 }}>Carico gli adempimenti…</div>
