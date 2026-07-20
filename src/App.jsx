@@ -247,6 +247,67 @@ const ST = ({ children }) => (
     <div className="gl" style={{ width: 60 }} />
   </div>
 );
+/* Selettore con ricerca: sostituisce le tendine lunghe (proprietari, immobili).
+   Le voci sono sempre ordinate alfabeticamente e filtrabili scrivendo. */
+const SelectRicerca = ({ value, onChange, opzioni, placeholder = "— Seleziona —", vuoto = "— Nessuno —" }) => {
+  const [aperto, setAperto] = useState(false);
+  const [q, setQ] = useState("");
+  const box = useRef(null);
+  const ordinate = useMemo(
+    () => [...opzioni].sort((a, b) => String(a.label).localeCompare(String(b.label), "it", { sensitivity: "base" })),
+    [opzioni]
+  );
+  const filtrate = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    return t ? ordinate.filter(o => String(o.label).toLowerCase().includes(t)) : ordinate;
+  }, [ordinate, q]);
+  const selezionata = opzioni.find(o => String(o.value) === String(value));
+
+  useEffect(() => {
+    if (!aperto) return;
+    const fuori = (e) => { if (box.current && !box.current.contains(e.target)) { setAperto(false); setQ(""); } };
+    document.addEventListener("mousedown", fuori);
+    return () => document.removeEventListener("mousedown", fuori);
+  }, [aperto]);
+
+  const scegli = (v) => { onChange(v); setAperto(false); setQ(""); };
+
+  return (
+    <div ref={box} style={{ position: "relative" }}>
+      <button type="button" onClick={() => setAperto(a => !a)}
+        style={{ width: "100%", textAlign: "left", padding: "10px 13px", fontSize: 13, background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 10, color: selezionata ? "var(--black)" : "#A2ACBD", display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selezionata ? selezionata.label : placeholder}</span>
+        <span style={{ fontSize: 10, color: "var(--gray)" }}>▾</span>
+      </button>
+      {aperto && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 1100, background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "0 12px 40px rgba(15,23,42,.18)", overflow: "hidden" }}>
+          <div style={{ padding: 8, borderBottom: "1px solid var(--cd)" }}>
+            <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Cerca…"
+              onKeyDown={e => { if (e.key === "Enter" && filtrate.length) { e.preventDefault(); scegli(filtrate[0].value); } if (e.key === "Escape") setAperto(false); }} />
+          </div>
+          <div style={{ maxHeight: 260, overflowY: "auto" }}>
+            <button type="button" onClick={() => scegli("")}
+              style={{ width: "100%", textAlign: "left", padding: "9px 13px", fontSize: 12.5, background: "transparent", border: "none", color: "var(--gray)", borderRadius: 0 }}>{vuoto}</button>
+            {filtrate.map(o => {
+              const sel = String(o.value) === String(value);
+              return (
+                <button key={o.value} type="button" onClick={() => scegli(o.value)}
+                  style={{ width: "100%", textAlign: "left", padding: "9px 13px", fontSize: 12.5, background: sel ? "#EEF2FF" : "transparent", border: "none", color: sel ? "#4F46E5" : "var(--black)", fontWeight: sel ? 600 : 400, borderRadius: 0, display: "flex", alignItems: "center", gap: 8 }}
+                  onMouseEnter={e => { if (!sel) e.currentTarget.style.background = "var(--cream)"; }}
+                  onMouseLeave={e => { if (!sel) e.currentTarget.style.background = "transparent"; }}>
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.label}</span>
+                  {sel && <span style={{ fontSize: 11 }}>✓</span>}
+                </button>
+              );
+            })}
+            {filtrate.length === 0 && <div style={{ padding: "12px 13px", fontSize: 12, color: "var(--gray)" }}>Nessun risultato per "{q}"</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Modal = ({ title, onClose, children }) => (
   <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={e => e.target === e.currentTarget && onClose()}>
     <div style={{ background: "var(--cream)", width: "100%", maxWidth: 680, maxHeight: "90vh", overflow: "auto", borderRadius: 16, boxShadow: "0 24px 70px rgba(0,0,0,.28)" }} className="fi">
@@ -605,7 +666,11 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading }) => {
       )}
       <ST>Dati Proprietà</ST><FG>
         <FF label="Nome" span={2}><input value={f.nome} onChange={e => s("nome", e.target.value)} /></FF>
-        <FF label="Proprietario" span={2}><select value={f.proprietario_id} onChange={e => s("proprietario_id", e.target.value)}><option value="">— Seleziona —</option>{owners.map(o => <option key={o.id} value={o.id}>{o.cognome} {o.nome}</option>)}</select></FF>
+        <FF label="Proprietario" span={2}>
+          <SelectRicerca value={f.proprietario_id} onChange={v => s("proprietario_id", v)}
+            opzioni={owners.map(o => ({ value: o.id, label: `${o.cognome || ""} ${o.nome || ""}`.trim() }))}
+            placeholder="— Seleziona —" vuoto="— Nessun proprietario —" />
+        </FF>
         <FF label="Tipo Contratto"><select value={f.tipo_contratto} onChange={e => s("tipo_contratto", e.target.value)}>{CONTRATTI.map(c => <option key={c}>{c}</option>)}</select></FF>
         <FF label="Stato"><select value={f.stato} onChange={e => s("stato", e.target.value)}>{STATI.map(ss => <option key={ss}>{ss}</option>)}</select></FF>
         <FF label="Gestore"><select value={f.gestore_interno} onChange={e => s("gestore_interno", e.target.value)}>{GESTORI.map(g => <option key={g}>{g}</option>)}</select></FF>
@@ -1104,7 +1169,7 @@ function categoriaDoc(nome) {
   return DOC_CATEGORIE[DOC_CATEGORIE.length - 1];
 }
 
-function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaIds }) {
+function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaIds, etichette }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1122,8 +1187,11 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
     const ids = idsKey ? idsKey.split(",") : [];
     // Quali "caselle" interrogare: se è un immobile solo lui; se è un proprietario, lui + tutti i suoi immobili
     const targets = [];
-    if (proprietaId) targets.push({ proprieta_id: proprietaId });
-    else if (proprietarioId) {
+    if (proprietaId) {
+      targets.push({ proprieta_id: proprietaId });
+      // Includi anche i documenti del proprietario collegato (es. carta d'identità, CF)
+      if (linkProprietarioId) targets.push({ proprietario_id: linkProprietarioId });
+    } else if (proprietarioId) {
       targets.push({ proprietario_id: proprietarioId });
       ids.forEach((pid) => targets.push({ proprieta_id: pid }));
     }
@@ -1272,6 +1340,15 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
                 <div key={f.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 10px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", borderLeft: `3px solid ${cat.color}`, marginBottom: 6 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, wordBreak: "break-all" }}>{f.nome_file}</div>
+                    {(() => {
+                      // Etichetta di provenienza: da quale appartamento o proprietario arriva il documento
+                      if (!etichette) return null;
+                      const nomeP = f.proprieta_id && etichette.prop && etichette.prop[String(f.proprieta_id)];
+                      const nomeO = !f.proprieta_id && f.proprietario_id && etichette.own && etichette.own[String(f.proprietario_id)];
+                      const testo = nomeP ? `🏠 ${nomeP}` : nomeO ? `👤 ${nomeO}` : null;
+                      if (!testo) return null;
+                      return <span className="tag" style={{ marginTop: 4, background: nomeP ? "#EEF2FF" : "#FEF3C7", color: nomeP ? "#4F46E5" : "#92400E", borderColor: "transparent" }}>{testo}</span>;
+                    })()}
                     {f.ai_descrizione && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 2 }}><span style={{ color: "var(--gold)" }} title="Descrizione generata dall'AI">✨</span> {f.ai_descrizione}</div>}
                   </div>
                   <button onClick={() => apri(f.path)} style={{ background: "none", border: "none", color: "var(--gold)", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>Apri</button>
@@ -1869,8 +1946,16 @@ const FatturaForm = ({ init, proprieta, owners, onSave, onClose, loading }) => {
       <ST>Documento</ST><FG>
         <FF label="Numero"><input value={f.numero || ""} onChange={e => s("numero", e.target.value)} placeholder="Es. 12/2026" /></FF>
         <FF label="Data"><input type="date" value={f.data || ""} onChange={e => s("data", e.target.value)} /></FF>
-        <FF label="Cliente (proprietario)" span={2}><select value={f.proprietario_id || ""} onChange={e => s("proprietario_id", e.target.value)}><option value="">— Altro cliente —</option>{owners.map(o => <option key={o.id} value={o.id}>{o.cognome} {o.nome}</option>)}</select></FF>
-        <FF label="Immobile (opzionale)" span={2}><select value={f.proprieta_id || ""} onChange={e => s("proprieta_id", e.target.value)}><option value="">—</option>{proprieta.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}</select></FF>
+        <FF label="Cliente (proprietario)" span={2}>
+          <SelectRicerca value={f.proprietario_id || ""} onChange={v => s("proprietario_id", v)}
+            opzioni={owners.map(o => ({ value: o.id, label: `${o.cognome || ""} ${o.nome || ""}`.trim() }))}
+            placeholder="— Altro cliente —" vuoto="— Altro cliente —" />
+        </FF>
+        <FF label="Immobile (opzionale)" span={2}>
+          <SelectRicerca value={f.proprieta_id || ""} onChange={v => s("proprieta_id", v)}
+            opzioni={proprieta.map(p => ({ value: p.id, label: p.nome }))}
+            placeholder="— Nessun immobile —" vuoto="— Nessun immobile —" />
+        </FF>
         <FF label="Descrizione" span={2}><input value={f.descrizione || ""} onChange={e => s("descrizione", e.target.value)} placeholder="Es. compensi di gestione maggio 2026" /></FF>
         <FF label="Periodo da"><input type="date" value={f.periodo_da || ""} onChange={e => s("periodo_da", e.target.value)} /></FF>
         <FF label="Periodo a"><input type="date" value={f.periodo_a || ""} onChange={e => s("periodo_a", e.target.value)} /></FF>
@@ -3363,7 +3448,11 @@ function App() {
             {detP.piattaforme?.length > 0 && <div style={{ padding: "8px 0", borderBottom: "1px solid var(--cd)" }}><span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", display: "block", marginBottom: 6 }}>Piattaforme</span><div style={{ display: "flex", gap: 6 }}>{detP.piattaforme.map(pp => <span key={pp} className="tag">{pp}</span>)}</div></div>}
             <DR label="Pulizie" val={[detP.personale_pulizie, detP.telefono_pulizie].filter(Boolean).join(" · ") || null} />
             {detP.note && <DR label="Note" val={detP.note} />}
-            <Allegati proprietaId={detP.id} linkProprietarioId={detP.proprietario_id} />
+            <Allegati proprietaId={detP.id} linkProprietarioId={detP.proprietario_id}
+              etichette={{
+                prop: Object.fromEntries(proprieta.map(p => [String(p.id), p.nome])),
+                own: Object.fromEntries(owners.map(o => [String(o.id), `${o.cognome || ""} ${o.nome || ""}`.trim()])),
+              }} />
             <div style={{ display: "flex", gap: 10, marginTop: 28 }}>
               <button className="bp" style={{ flex: 1 }} onClick={() => { setModalP(detP); setDetP(null); }}>Modifica</button>
               <button className="bd" onClick={() => delP(detP.id)}>Elimina</button>
@@ -3424,7 +3513,11 @@ function App() {
                 );
               })()}
             </div>
-            <Allegati proprietarioId={detO.id} proprietaIds={proprieta.filter(p => p.proprietario_id === detO.id).map(p => p.id)} />
+            <Allegati proprietarioId={detO.id} proprietaIds={proprieta.filter(p => p.proprietario_id === detO.id).map(p => p.id)}
+              etichette={{
+                prop: Object.fromEntries(proprieta.map(p => [String(p.id), p.nome])),
+                own: Object.fromEntries(owners.map(o => [String(o.id), `${o.cognome || ""} ${o.nome || ""}`.trim()])),
+              }} />
             <div style={{ display: "flex", gap: 10, marginTop: 28 }}>
               <button className="bp" style={{ flex: 1 }} onClick={() => { setModalO(detO); setDetO(null); }}>Modifica</button>
               <button className="bd" onClick={() => delO(detO.id)}>Elimina</button>
