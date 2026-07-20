@@ -3226,7 +3226,7 @@ function App({ utente, onLogout }) {
   // Chi non vede tutto parte dai propri immobili: la dashboard non fa parte del suo menu
   useEffect(() => {
     if (!ruoloLetto) return;
-    if (!vedoTutto && ["home", "notifiche", "gestione", "lead", "lancio", "smistamento", "ricorrenti", "team"].includes(view)) {
+    if (!vedoTutto && ["home", "notifiche", "gestione", "lead", "lancio", "smistamento", "ricorrenti", "archivio", "team"].includes(view)) {
       setView("proprieta");
     }
   }, [vedoTutto, ruoloLetto, view]);
@@ -3358,7 +3358,7 @@ function App({ utente, onLogout }) {
     { id: "ricorrenti", label: "Ricorrenti", icon: "📅", count: null, group: "Documenti" },
     { id: "guida", label: "Guida", icon: "📚", count: null, group: "Documenti" },
     // Solo il titolare gestisce accessi e permessi
-  ].filter(i => vedoTutto || ["proprieta", "proprietari", "compliance", "archivio", "guida"].includes(i.id));
+  ].filter(i => vedoTutto || ["proprieta", "proprietari", "compliance", "guida"].includes(i.id));
 
   return (
     <>
