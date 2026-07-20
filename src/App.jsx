@@ -653,6 +653,18 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading }) => {
   );
 };
 
+// ── Team: helper condiviso per collaboratori e task ──────────────────────────
+async function fnTeam(payload) {
+  const r = await fetch("/.netlify/functions/team", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.error) throw new Error(d.error || "Errore.");
+  return d;
+}
+const COLORI_COLL = ["#6366F1", "#0891b2", "#e07b39", "#2d6a4f", "#8b5cf6", "#b8860b", "#c0392b", "#1d6fa4"];
+
 // ── Workflow Lancio ──────────────────────────────────────────────────────────
 const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
   const [saving, setSaving] = useState(null);
@@ -661,6 +673,60 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteSalvate, setNoteSalvate] = useState(false);
   const [fPersona, setFPersona] = useState(""); // filtro per assegnatario
+  const [collaboratori, setCollaboratori] = useState([]);
+  const [task, setTask] = useState([]);
+  const [nuovoColl, setNuovoColl] = useState(null); // { nome, ruolo } quando si crea un collaboratore
+  const [taskAperti, setTaskAperti] = useState(null); // id proprietà con i task aperti
+  const [nuovoTask, setNuovoTask] = useState({ titolo: "", assegnato_a: "", scadenza: "" });
+
+  const caricaTeam = useCallback(async () => {
+    try {
+      const [c, t] = await Promise.all([fnTeam({ action: "list_collaboratori" }), fnTeam({ action: "list_task" })]);
+      setCollaboratori(c.collaboratori || []);
+      setTask(t.task || []);
+    } catch { /* silenzioso */ }
+  }, []);
+  useEffect(() => { caricaTeam(); }, [caricaTeam]);
+
+  const attivi = collaboratori.filter(c => c.attivo !== false);
+  const collDi = (nome) => collaboratori.find(c => c.nome === nome);
+  const taskDi = (propId) => task.filter(t => String(t.proprieta_id) === String(propId));
+
+  const creaCollaboratore = async () => {
+    if (!nuovoColl || !nuovoColl.nome.trim()) return;
+    try {
+      const usati = collaboratori.map(c => c.colore);
+      const colore = COLORI_COLL.find(c => !usati.includes(c)) || COLORI_COLL[collaboratori.length % COLORI_COLL.length];
+      const d = await fnTeam({ action: "save_collaboratore", nome: nuovoColl.nome.trim(), ruolo: nuovoColl.ruolo.trim() || null, colore });
+      setCollaboratori(cs => [...cs, d.collaboratore].sort((a, b) => a.nome.localeCompare(b.nome)));
+      setNuovoColl(null);
+    } catch (e) { alert(e.message); }
+  };
+
+  const salvaTask = async (payload) => {
+    const d = await fnTeam({ action: "save_task", ...payload });
+    setTask(ts => {
+      const altri = ts.filter(x => x.id !== d.task.id);
+      return [d.task, ...altri];
+    });
+    return d.task;
+  };
+  const aggiungiTask = async (p) => {
+    if (!nuovoTask.titolo.trim()) return;
+    try {
+      await salvaTask({ titolo: nuovoTask.titolo.trim(), assegnato_a: nuovoTask.assegnato_a || p.gestore_interno || null, proprieta_id: p.id, scadenza: nuovoTask.scadenza || null, stato: "da fare" });
+      setNuovoTask({ titolo: "", assegnato_a: "", scadenza: "" });
+    } catch (e) { alert(e.message); }
+  };
+  const toggleTask = async (t) => {
+    try { await salvaTask({ id: t.id, stato: t.stato === "fatto" ? "da fare" : "fatto" }); }
+    catch (e) { alert(e.message); }
+  };
+  const eliminaTask = async (t) => {
+    if (!confirm(`Eliminare il task "${t.titolo}"?`)) return;
+    try { await fnTeam({ action: "delete_task", id: t.id }); setTask(ts => ts.filter(x => x.id !== t.id)); }
+    catch (e) { alert(e.message); }
+  };
   const tutteInLancio = proprieta.filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato));
   const inLancio = fPersona
     ? tutteInLancio.filter(p => fPersona === "__nessuno" ? !p.gestore_interno : p.gestore_interno === fPersona)
@@ -708,8 +774,8 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
     setSaving(null);
   };
   const coloreGestore = (g) => {
-    const map = { Tommaso: "#6366F1", Francesco: "#0891b2", Jacopo: "#e07b39" };
-    return map[g] || "#94A3B8";
+    const c = collaboratori.find(x => x.nome === g);
+    return (c && c.colore) || "#94A3B8";
   };
   return (
     <div>
@@ -722,7 +788,7 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
       {/* Filtro per persona assegnata */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 20 }}>
         <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", marginRight: 2 }}>Chi ci lavora</span>
-        {[["", `Tutti (${tutteInLancio.length})`], ...GESTORI.map(g => [g, `${g} (${tutteInLancio.filter(p => p.gestore_interno === g).length})`]), ["__nessuno", `Non assegnate (${tutteInLancio.filter(p => !p.gestore_interno).length})`]].map(([v, l]) => (
+        {[["", `Tutti (${tutteInLancio.length})`], ...attivi.map(c => [c.nome, `${c.nome} (${tutteInLancio.filter(p => p.gestore_interno === c.nome).length})`]), ["__nessuno", `Non assegnate (${tutteInLancio.filter(p => !p.gestore_interno).length})`]].map(([v, l]) => (
           <button key={v || "tutti"} onClick={() => setFPersona(v)}
             style={{
               padding: "5px 12px", fontSize: 11.5, fontWeight: 600,
@@ -771,22 +837,24 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
                 {/* Assegnazione a chi ci lavora */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)" }}>Assegnata a</span>
-                  {GESTORI.map(g => {
-                    const attivo = p.gestore_interno === g;
+                  {attivi.map(c => {
+                    const sel = p.gestore_interno === c.nome;
                     return (
-                      <button key={g} onClick={() => assegna(p, attivo ? "" : g)} disabled={busy}
-                        title={attivo ? "Clic per togliere l'assegnazione" : `Assegna a ${g}`}
+                      <button key={c.id} onClick={() => assegna(p, sel ? "" : c.nome)} disabled={busy}
+                        title={sel ? "Clic per togliere l'assegnazione" : `Assegna a ${c.nome}${c.ruolo ? " · " + c.ruolo : ""}`}
                         style={{
                           display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", fontSize: 11.5, fontWeight: 600,
-                          border: `1.5px solid ${attivo ? coloreGestore(g) : "var(--gl)"}`,
-                          background: attivo ? coloreGestore(g) : "transparent",
-                          color: attivo ? "#fff" : "var(--gray)",
+                          border: `1.5px solid ${sel ? (c.colore || "#94A3B8") : "var(--gl)"}`,
+                          background: sel ? (c.colore || "#94A3B8") : "transparent",
+                          color: sel ? "#fff" : "var(--gray)",
                         }}>
-                        <span style={{ width: 16, height: 16, borderRadius: "50%", background: attivo ? "rgba(255,255,255,.25)" : coloreGestore(g), color: "#fff", fontSize: 9, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{g[0]}</span>
-                        {g}
+                        <span style={{ width: 16, height: 16, borderRadius: "50%", background: sel ? "rgba(255,255,255,.25)" : (c.colore || "#94A3B8"), color: "#fff", fontSize: 9, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{c.nome[0]}</span>
+                        {c.nome}
                       </button>
                     );
                   })}
+                  <button onClick={() => setNuovoColl({ nome: "", ruolo: "" })} title="Aggiungi un collaboratore"
+                    style={{ padding: "5px 10px", fontSize: 11.5, fontWeight: 600, border: "1px dashed var(--gl)", background: "transparent", color: "var(--gray)" }}>+ Collaboratore</button>
                   {!p.gestore_interno && <span style={{ fontSize: 11, color: "var(--red)" }}>non assegnata</span>}
                 </div>
 
@@ -795,8 +863,53 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
                   <button className="bg" onClick={() => apriNote(p)} disabled={busy}>
                     📝 Note{p.note ? " ✓" : ""}
                   </button>
+                  {(() => {
+                    const ts = taskDi(p.id);
+                    const aperti = ts.filter(t => t.stato !== "fatto").length;
+                    return (
+                      <button className="bg" onClick={() => setTaskAperti(taskAperti === p.id ? null : p.id)} disabled={busy}>
+                        ☑︎ Task{ts.length ? ` ${ts.length - aperti}/${ts.length}` : ""}
+                        {aperti > 0 && <span style={{ marginLeft: 6, background: "var(--red)", color: "#fff", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10 }}>{aperti}</span>}
+                      </button>
+                    );
+                  })()}
                   <button className="bp" onClick={() => rendiAttiva(p)} disabled={busy} style={{ marginLeft: "auto" }}>✓ Rendi attiva</button>
                 </div>
+
+                {/* Task assegnabili */}
+                {taskAperti === p.id && (
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--cd)" }}>
+                    <label style={{ display: "block", fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", marginBottom: 8 }}>Task</label>
+                    {taskDi(p.id).length === 0 && <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 8 }}>Nessun task. Aggiungine uno qui sotto.</div>}
+                    {taskDi(p.id).sort((a, b) => (a.stato === "fatto" ? 1 : 0) - (b.stato === "fatto" ? 1 : 0)).map(t => {
+                      const fatto = t.stato === "fatto";
+                      const c = collDi(t.assegnato_a);
+                      const scaduto = !fatto && t.scadenza && new Date(t.scadenza) < new Date(new Date().toDateString());
+                      return (
+                        <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--cd)" }}>
+                          <input type="checkbox" checked={fatto} onChange={() => toggleTask(t)} style={{ width: 15, height: 15, accentColor: "var(--gold)", flexShrink: 0 }} />
+                          <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, textDecoration: fatto ? "line-through" : "none", color: fatto ? "var(--gray)" : "var(--black)" }}>{t.titolo}</span>
+                          {t.assegnato_a && (
+                            <span className="tag" style={{ background: (c && c.colore) || "#94A3B8", color: "#fff", borderColor: "transparent" }}>{t.assegnato_a}</span>
+                          )}
+                          {t.scadenza && <span style={{ fontSize: 10.5, color: scaduto ? "var(--red)" : "var(--gray)", fontWeight: scaduto ? 700 : 400, whiteSpace: "nowrap" }}>{scaduto ? "⚠ " : ""}{t.scadenza}</span>}
+                          <button onClick={() => eliminaTask(t)} style={{ background: "none", border: "none", color: "var(--red)", fontSize: 14, padding: "0 4px" }}>×</button>
+                        </div>
+                      );
+                    })}
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                      <input value={nuovoTask.titolo} onChange={e => setNuovoTask(v => ({ ...v, titolo: e.target.value }))}
+                        onKeyDown={e => { if (e.key === "Enter") aggiungiTask(p); }}
+                        placeholder="Nuovo task… (es. Richiedere CIN sul portale)" style={{ flex: "1 1 220px" }} />
+                      <select value={nuovoTask.assegnato_a} onChange={e => setNuovoTask(v => ({ ...v, assegnato_a: e.target.value }))} style={{ width: "auto", minWidth: 130 }}>
+                        <option value="">{p.gestore_interno ? `${p.gestore_interno} (default)` : "Non assegnato"}</option>
+                        {attivi.map(c => <option key={c.id} value={c.nome}>{c.nome}</option>)}
+                      </select>
+                      <input type="date" value={nuovoTask.scadenza} onChange={e => setNuovoTask(v => ({ ...v, scadenza: e.target.value }))} style={{ width: "auto", minWidth: 140 }} />
+                      <button className="bp" onClick={() => aggiungiTask(p)}>+ Aggiungi</button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Note e descrizioni dell'immobile in lancio */}
                 {noteAperte === p.id ? (
@@ -827,6 +940,28 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
             );
           })}
         </div>
+      )}
+
+      {/* Creazione rapida collaboratore */}
+      {nuovoColl && (
+        <Modal title="Nuovo collaboratore" onClose={() => setNuovoColl(null)}>
+          <FG>
+            <FF label="Nome" span={2}>
+              <input autoFocus value={nuovoColl.nome} onChange={e => setNuovoColl(v => ({ ...v, nome: e.target.value }))}
+                onKeyDown={e => { if (e.key === "Enter") creaCollaboratore(); }} placeholder="es. Giulia" />
+            </FF>
+            <FF label="Ruolo" span={2}>
+              <input value={nuovoColl.ruolo} onChange={e => setNuovoColl(v => ({ ...v, ruolo: e.target.value }))} placeholder="es. Compliance manager, Contabile, Property manager" />
+            </FF>
+          </FG>
+          <p style={{ fontSize: 11.5, color: "var(--gray)", marginTop: 12 }}>
+            Il collaboratore comparirà subito tra le persone assegnabili, con un colore assegnato in automatico.
+          </p>
+          <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+            <button className="bg" onClick={() => setNuovoColl(null)}>Annulla</button>
+            <button className="bp" onClick={creaCollaboratore}>Crea collaboratore</button>
+          </div>
+        </Modal>
       )}
     </div>
   );
@@ -919,16 +1054,36 @@ const PropRow = ({ p, o, onClick }) => (
   </div>
 );
 
-const OwnerRow = ({ o, pc, onClick }) => (
-  <div className="fi" onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 14px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", cursor: "pointer" }}
+const OwnerRow = ({ o, pc, props = [], onClick, onApriProp }) => (
+  <div className="fi" onClick={onClick} style={{ padding: "10px 14px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", cursor: "pointer" }}
     onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--gold)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--gl)"; }}>
-    <div style={{ width: 30, height: 30, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: "Inter", fontSize: 11, fontWeight: 700, color: "var(--gold)" }}>{o.cognome?.[0]}{o.nome?.[0]}</span></div>
-    <div style={{ flex: "1.4 1 0", minWidth: 0, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.cognome} {o.nome}</div>
-    <div style={{ flex: "1 1 0", minWidth: 0, fontSize: 11, fontFamily: "monospace", letterSpacing: ".04em", color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.codice_fiscale || "—"}</div>
-    <div style={{ flex: "1.3 1 0", minWidth: 0, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.email || "—"}</div>
-    <div style={{ width: 125, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>{o.telefono || "—"}</div>
-    <div style={{ width: 110, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>{o.citta || "—"}</div>
-    <span className="tag" style={{ flexShrink: 0 }}>{pc} prop.</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ width: 30, height: 30, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: "Inter", fontSize: 11, fontWeight: 700, color: "var(--gold)" }}>{o.cognome?.[0]}{o.nome?.[0]}</span></div>
+      <div style={{ flex: "1.4 1 0", minWidth: 0, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.cognome} {o.nome}</div>
+      <div style={{ flex: "1 1 0", minWidth: 0, fontSize: 11, fontFamily: "monospace", letterSpacing: ".04em", color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.codice_fiscale || "—"}</div>
+      <div style={{ flex: "1.3 1 0", minWidth: 0, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.email || "—"}</div>
+      <div style={{ width: 125, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>{o.telefono || "—"}</div>
+      <div style={{ width: 110, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>{o.citta || "—"}</div>
+      <span className="tag" style={{ flexShrink: 0, background: pc ? "#EEF2FF" : "var(--cd)", color: pc ? "#4F46E5" : "var(--gray)" }}>{pc === 0 ? "nessun immobile" : `${pc} immobil${pc === 1 ? "e" : "i"}`}</span>
+    </div>
+    {/* Appartamenti del proprietario: cliccabili singolarmente */}
+    {props.length > 0 && (
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, paddingLeft: 42 }}>
+        {props.map(p => (
+          <span key={p.id}
+            onClick={e => { e.stopPropagation(); onApriProp && onApriProp(p); }}
+            title={`${p.nome} · ${p.citta || ""} · ${p.stato || ""}${p.cin ? "" : " · CIN mancante"}`}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, padding: "3px 9px", borderRadius: 7,
+              background: "var(--cream)", border: "1px solid var(--gl)", color: "var(--black)",
+            }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: STATI_COLOR[p.stato] || "#888", flexShrink: 0 }} />
+            {p.nome}
+            {!p.cin && <span style={{ color: "var(--red)", fontWeight: 700 }} title="CIN mancante">!</span>}
+          </span>
+        ))}
+      </div>
+    )}
   </div>
 );
 
@@ -3099,7 +3254,10 @@ function App() {
                 </div>
                 {ownVista === "elenco" ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {filtO.map(o => <OwnerRow key={o.id} o={o} pc={proprieta.filter(p => p.proprietario_id === o.id).length} onClick={() => setDetO(o)} />)}
+                    {filtO.map(o => {
+                      const suoi = proprieta.filter(p => p.proprietario_id === o.id);
+                      return <OwnerRow key={o.id} o={o} pc={suoi.length} props={suoi} onClick={() => setDetO(o)} onApriProp={setDetP} />;
+                    })}
                     {filtO.length === 0 && <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessun proprietario trovato.</div>}
                   </div>
                 ) : (
@@ -3233,15 +3391,38 @@ function App() {
             <DR label="Indirizzo" val={`${detO.indirizzo || ""}${detO.citta ? ", " + detO.citta : ""}`} />
             {detO.note && <DR label="Note" val={detO.note} />}
             <div style={{ marginTop: 24 }}>
-              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 12 }}>Proprietà Gestite</p>
-              {proprieta.filter(p => p.proprietario_id === detO.id).map(p => (
-                <div key={p.id} onClick={() => { setDetO(null); setDetP(p); }} style={{ padding: "10px 12px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", marginBottom: 6, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = "var(--gold)"}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = "var(--gl)"}>
-                  <div><p style={{ fontSize: 13, fontWeight: 600 }}>{p.nome}</p><p style={{ fontSize: 11, color: "var(--gray)" }}>{p.citta}</p></div>
-                  <SB stato={p.stato} />
-                </div>
-              ))}
+              {(() => {
+                const suoi = proprieta.filter(p => p.proprietario_id === detO.id);
+                const senzaCin = suoi.filter(p => !String(p.cin || "").trim()).length;
+                return (
+                  <>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
+                      <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)" }}>
+                        Appartamenti ({suoi.length})
+                      </p>
+                      {senzaCin > 0 && <span style={{ fontSize: 10.5, color: "var(--red)", fontWeight: 600 }}>{senzaCin} senza CIN</span>}
+                    </div>
+                    {suoi.length === 0 && <p style={{ fontSize: 12, color: "var(--gray)" }}>Nessun appartamento associato a questo proprietario.</p>}
+                    {suoi.map(p => (
+                      <div key={p.id} onClick={() => { setDetO(null); setDetP(p); }} style={{ padding: "10px 12px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", marginBottom: 6, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}
+                        onMouseEnter={e => e.currentTarget.style.borderColor = "var(--gold)"}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = "var(--gl)"}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <p style={{ fontSize: 13, fontWeight: 600 }}>{p.nome}</p>
+                          <p style={{ fontSize: 11, color: "var(--gray)" }}>
+                            {[p.citta, p.provincia && `(${p.provincia})`].filter(Boolean).join(" ")}
+                            {p.gestore_interno ? ` · ${p.gestore_interno}` : ""}
+                          </p>
+                          <p style={{ fontSize: 10.5, marginTop: 3, fontFamily: "monospace", color: p.cin ? "var(--gray)" : "var(--red)" }}>
+                            {p.cin ? `CIN ${p.cin}` : "CIN mancante"}{p.cir ? ` · CIR ${p.cir}` : ""}
+                          </p>
+                        </div>
+                        <SB stato={p.stato} />
+                      </div>
+                    ))}
+                  </>
+                );
+              })()}
             </div>
             <Allegati proprietarioId={detO.id} proprietaIds={proprieta.filter(p => p.proprietario_id === detO.id).map(p => p.id)} />
             <div style={{ display: "flex", gap: 10, marginTop: 28 }}>
