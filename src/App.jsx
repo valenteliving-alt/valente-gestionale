@@ -667,7 +667,7 @@ const OwnerForm = ({ init = EP, onSave, onClose, loading }) => {
 
 // ── Form Proprietà ───────────────────────────────────────────────────────────
 const EP2 = { nome: "", indirizzo: "", citta: "", cap: "", provincia: "", proprietario_id: "", tipo_contratto: "gestione", stato: "in lancio", cin: "", cir: "", commissione: "", commissione_iva_inclusa: true, posti_letto: "", camere: "", bagni: "", mq: "", catasto_foglio: "", catasto_mappale: "", catasto_sub: "", categoria_catastale: "", gestore_interno: "Tommaso", piattaforme: [], note: "", data_inizio: "", personale_pulizie: "", telefono_pulizie: "" };
-const PropForm = ({ init = EP2, owners, onSave, onClose, loading }) => {
+const PropForm = ({ init = EP2, owners, onSave, onClose, loading, gestori = GESTORI }) => {
   const [f, setF] = useState(init);
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
   const tp = p => setF(prev => ({ ...prev, piattaforme: prev.piattaforme?.includes(p) ? prev.piattaforme.filter(x => x !== p) : [...(prev.piattaforme || []), p] }));
@@ -729,7 +729,12 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading }) => {
         </FF>
         <FF label="Tipo Contratto"><select value={f.tipo_contratto} onChange={e => s("tipo_contratto", e.target.value)}>{CONTRATTI.map(c => <option key={c}>{c}</option>)}</select></FF>
         <FF label="Stato"><select value={f.stato} onChange={e => s("stato", e.target.value)}>{STATI.map(ss => <option key={ss}>{ss}</option>)}</select></FF>
-        <FF label="Gestore"><select value={f.gestore_interno} onChange={e => s("gestore_interno", e.target.value)}>{GESTORI.map(g => <option key={g}>{g}</option>)}</select></FF>
+        <FF label="Gestore">
+          <select value={f.gestore_interno || ""} onChange={e => s("gestore_interno", e.target.value)}>
+            <option value="">— Non assegnato —</option>
+            {gestori.map(g => <option key={g}>{g}</option>)}
+          </select>
+        </FF>
         <FF label="Data Inizio"><input type="date" value={f.data_inizio} onChange={e => s("data_inizio", e.target.value)} /></FF>
       </FG>
       <div style={{ marginTop: 20 }}><ST>Indirizzo</ST><FG>
@@ -1165,18 +1170,50 @@ const PropTile = ({ p, o, onClick }) => (
   </div>
 );
 
-const PropRow = ({ p, o, onClick }) => (
+const PropRow = ({ p, o, onClick, gestori = [], coloreGestore, onAssegna }) => (
   <div className="fi" onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", cursor: "pointer" }}
     onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--gold)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--gl)"; }}>
-    <span style={{ width: 9, height: 9, borderRadius: "50%", background: STATI_COLOR[p.stato] || "#ccc", flexShrink: 0 }} />
+    <span style={{ width: 9, height: 9, borderRadius: "50%", background: STATI_COLOR[p.stato] || "#ccc", flexShrink: 0 }} title={p.stato} />
     <div style={{ flex: 2, minWidth: 0 }}>
       <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.nome}</div>
       <div style={{ fontSize: 11, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.indirizzo}{p.citta ? `, ${p.citta}` : ""}{p.provincia ? ` (${p.provincia})` : ""}</div>
     </div>
-    <div style={{ flex: 1, minWidth: 0, fontSize: 11, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o ? `${o.cognome} ${o.nome}` : "—"}</div>
-    <div style={{ width: 50, textAlign: "right", fontSize: 11, color: "var(--gray)", flexShrink: 0 }}>{p.commissione ? `${p.commissione}%` : "—"}</div>
-    <div style={{ width: 130, textAlign: "right", flexShrink: 0, display: "flex", justifyContent: "flex-end", gap: 6, alignItems: "center" }}>
-      {!p.cin && p.stato === "attivo" && <span className="tag" style={{ fontSize: 9, color: "var(--red)", borderColor: "var(--red)" }}>No CIN</span>}
+
+    {/* Proprietario */}
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ fontSize: 11.5, color: "var(--black)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o ? `${o.cognome} ${o.nome}` : "—"}</div>
+      <div style={{ fontSize: 10, color: "var(--gray)" }}>proprietario</div>
+    </div>
+
+    {/* Codici e posti letto */}
+    <div style={{ width: 120, flexShrink: 0, minWidth: 0 }}>
+      <div style={{ fontSize: 10.5, fontFamily: "monospace", color: p.cin ? "var(--gray)" : "var(--red)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        {p.cin ? p.cin : "CIN mancante"}
+      </div>
+      <div style={{ fontSize: 10, color: "var(--gray)" }}>
+        {[p.posti_letto && `${p.posti_letto} letti`, p.camere && `${p.camere} cam`].filter(Boolean).join(" · ") || "—"}
+      </div>
+    </div>
+
+    {/* Gestore: assegnabile al volo */}
+    <div style={{ width: 130, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+      <select
+        value={p.gestore_interno || ""}
+        onChange={e => onAssegna && onAssegna(p, e.target.value)}
+        title="Assegna il property manager"
+        style={{
+          fontSize: 11, padding: "5px 8px", borderRadius: 8,
+          borderColor: p.gestore_interno ? (coloreGestore ? coloreGestore(p.gestore_interno) : "var(--gl)") : "#FBCFE0",
+          color: p.gestore_interno ? "var(--black)" : "var(--red)",
+          fontWeight: p.gestore_interno ? 600 : 400,
+        }}>
+        <option value="">Non assegnato</option>
+        {gestori.map(g => <option key={g} value={g}>{g}</option>)}
+      </select>
+    </div>
+
+    <div style={{ width: 46, textAlign: "right", fontSize: 11, color: "var(--gray)", flexShrink: 0 }}>{p.commissione ? `${p.commissione}%` : "—"}</div>
+    <div style={{ width: 120, textAlign: "right", flexShrink: 0, display: "flex", justifyContent: "flex-end", gap: 6, alignItems: "center" }}>
       <SB stato={p.stato} />
     </div>
   </div>
@@ -3168,6 +3205,29 @@ function App({ utente, onLogout }) {
 
   const [sonoMaster, setSonoMaster] = useState(false);   // gestisce accessi
   const [vedoTutto, setVedoTutto] = useState(false);     // master o socio
+  const [gestori, setGestori] = useState(GESTORI);       // nomi dall'anagrafica collaboratori
+
+  const [coloriGestori, setColoriGestori] = useState({});
+
+  // Elenco assegnatari sempre allineato a chi è davvero nel team
+  useEffect(() => {
+    sb.get("collaboratori", "?select=nome,attivo,colore&order=nome.asc").then(({ data }) => {
+      if (Array.isArray(data) && data.length) {
+        const vivi = data.filter(c => c.attivo !== false);
+        setGestori(vivi.map(c => c.nome));
+        setColoriGestori(Object.fromEntries(vivi.map(c => [c.nome, c.colore || "#94A3B8"])));
+      }
+    }).catch(() => {});
+  }, [utente]);
+
+  const coloreGestore = useCallback((n) => coloriGestori[n] || "#94A3B8", [coloriGestori]);
+
+  // Assegna il property manager direttamente dall'elenco, senza aprire la scheda
+  const assegnaGestore = useCallback(async (p, nome) => {
+    setProprieta(ps => ps.map(x => x.id === p.id ? { ...x, gestore_interno: nome || null } : x)); // risposta immediata
+    const { ok } = await sb.patch("proprieta", p.id, { gestore_interno: nome || null });
+    if (!ok) { alert("Assegnazione non riuscita."); load(); }
+  }, [load]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -3468,7 +3528,7 @@ function App({ utente, onLogout }) {
                   <input placeholder="Cerca nome, città, proprietario, CIN..." value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 300, flex: 1 }} />
                   <select value={fStato} onChange={e => setFStato(e.target.value)} style={{ width: 150 }}><option value="">Tutti gli stati</option>{STATI.map(s => <option key={s}>{s}</option>)}</select>
                   <select value={fContratto} onChange={e => setFContratto(e.target.value)} style={{ width: 140 }}><option value="">Tutti contratti</option>{CONTRATTI.map(c => <option key={c}>{c}</option>)}</select>
-                  <select value={fGestore} onChange={e => setFGestore(e.target.value)} style={{ width: 130 }}><option value="">Tutti gestori</option>{GESTORI.map(g => <option key={g}>{g}</option>)}</select>
+                  <select value={fGestore} onChange={e => setFGestore(e.target.value)} style={{ width: 130 }}><option value="">Tutti gestori</option>{gestori.map(g => <option key={g}>{g}</option>)}</select>
                   <div style={{ display: "flex", gap: 6, marginLeft: "auto", alignItems: "stretch" }}>
                     <button onClick={() => setPropVista("griglia")} title="Vista a griglia" style={{ padding: "0 14px", border: "1px solid var(--gl)", background: propVista === "griglia" ? "var(--black)" : "var(--white)", color: propVista === "griglia" ? "var(--white)" : "var(--gray)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Griglia</button>
                     <button onClick={() => setPropVista("elenco")} title="Vista a elenco" style={{ padding: "0 14px", border: "1px solid var(--gl)", background: propVista === "elenco" ? "var(--black)" : "var(--white)", color: propVista === "elenco" ? "var(--white)" : "var(--gray)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Elenco</button>
@@ -3504,7 +3564,8 @@ function App({ utente, onLogout }) {
                         </div>
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          {g.items.map(p => <PropRow key={p.id} p={p} o={owners.find(x => x.id === p.proprietario_id)} onClick={() => setDetP(p)} />)}
+                          {g.items.map(p => <PropRow key={p.id} p={p} o={owners.find(x => x.id === p.proprietario_id)} onClick={() => setDetP(p)}
+                            gestori={gestori} coloreGestore={coloreGestore} onAssegna={assegnaGestore} />)}
                         </div>
                       )}
                     </div>
@@ -3618,7 +3679,7 @@ function App({ utente, onLogout }) {
       )}
 
       {/* Modals */}
-      {modalP && <Modal title={modalP === "new" ? "Nuova Proprietà" : `Modifica — ${modalP.nome}`} onClose={() => setModalP(null)}><PropForm init={modalP === "new" ? EP2 : modalP} owners={owners} onSave={saveP} onClose={() => setModalP(null)} loading={saving} /></Modal>}
+      {modalP && <Modal title={modalP === "new" ? "Nuova Proprietà" : `Modifica — ${modalP.nome}`} onClose={() => setModalP(null)}><PropForm init={modalP === "new" ? EP2 : modalP} owners={owners} gestori={gestori} onSave={saveP} onClose={() => setModalP(null)} loading={saving} /></Modal>}
       {modalO && <Modal title={modalO === "new" ? "Nuovo Proprietario" : `Modifica — ${modalO.cognome} ${modalO.nome}`} onClose={() => setModalO(null)}><OwnerForm init={modalO === "new" ? EP : modalO} onSave={saveO} onClose={() => setModalO(null)} loading={saving} /></Modal>}
 
       {/* AI Panel */}

@@ -27,6 +27,8 @@ export default function Team({ proprieta = [], sonoMaster }) {
   const [invito, setInvito] = useState(null);   // { id, nome, email } persona da invitare
   const [inviando, setInviando] = useState(false);
   const [esito, setEsito] = useState("");
+  const [linkInvito, setLinkInvito] = useState(null); // { link, nome, messaggio }
+  const [copiato, setCopiato] = useState(false);
 
   const carica = useCallback(async () => {
     setCaricando(true); setErrore("");
@@ -69,8 +71,30 @@ export default function Team({ proprieta = [], sonoMaster }) {
       setCollaboratori(cs => cs.map(x => x.id === d.collaboratore.id ? d.collaboratore : x));
       setEsito(d.messaggio);
       setInvito(null);
-    } catch (e) { setErrore(e.message); }
+    } catch (e) {
+      // Il servizio email di Supabase ha limiti stretti: ripiego sul link da copiare
+      if (/rate limit|429|email/i.test(e.message)) {
+        setErrore("");
+        await generaLink(invito.id, invito.email.trim(), invito.nome);
+      } else setErrore(e.message);
+    }
     setInviando(false);
+  };
+
+  // Link da mandare a mano: nessuna email, nessun limite
+  const generaLink = async (id, email, nome) => {
+    setErrore(""); setEsito(""); setCopiato(false);
+    try {
+      const d = await fnTeam({ action: "genera_link", id, email });
+      setLinkInvito({ link: d.link, nome, messaggio: d.messaggio });
+      setInvito(null);
+      carica();
+    } catch (e) { setErrore(e.message); }
+  };
+
+  const copiaLink = async () => {
+    try { await navigator.clipboard.writeText(linkInvito.link); setCopiato(true); setTimeout(() => setCopiato(false), 3000); }
+    catch { setErrore("Copia non riuscita: seleziona il link a mano."); }
   };
 
   const reinvita = async (c) => {
@@ -175,11 +199,13 @@ export default function Team({ proprieta = [], sonoMaster }) {
                       <span style={{ fontSize: 11.5, color: "#e07b39" }}>⚠ Nessun accesso</span>
                       <button className="bp" onClick={() => { setInvito({ id: c.id, nome: c.nome, email: c.email || "" }); setEsito(""); setErrore(""); }}
                         style={{ fontSize: 11, padding: "5px 12px" }}>✉ Invita nel CRM</button>
+                      {c.email && <button className="bg" onClick={() => generaLink(c.id, c.email, c.nome)} style={{ fontSize: 10.5, padding: "4px 9px" }} title="Genera un link da mandare tu su WhatsApp">🔗 Link</button>}
                     </div>
                   ) : (
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <span style={{ fontSize: 11.5, color: "#2d6a4f" }}>✓ {c.email_accesso}</span>
-                      <button className="bg" onClick={() => reinvita(c)} style={{ fontSize: 10.5, padding: "3px 8px" }} title="Rimanda l'email di invito/reset">↻ Rimanda invito</button>
+                      <button className="bg" onClick={() => reinvita(c)} style={{ fontSize: 10.5, padding: "3px 8px" }} title="Rimanda l'email di invito/reset">↻ Rimanda</button>
+                      <button className="bg" onClick={() => generaLink(c.id, c.email_accesso, c.nome)} style={{ fontSize: 10.5, padding: "3px 8px" }} title="Genera un link da mandare tu, senza email">🔗 Link</button>
                       <button className="bg" onClick={() => revoca(c)} style={{ fontSize: 10.5, padding: "3px 8px", color: "var(--red)" }} title="Toglie l'accesso, la persona resta in anagrafica">Revoca</button>
                     </div>
                   )}
@@ -228,6 +254,29 @@ export default function Team({ proprieta = [], sonoMaster }) {
           </div>
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
             {nonAssegnati.map(p => <span key={p.id} className="tag">{p.nome}</span>)}
+          </div>
+        </div>
+      )}
+
+      {/* Link d'invito da mandare a mano */}
+      {linkInvito && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          onClick={e => e.target === e.currentTarget && setLinkInvito(null)}>
+          <div style={{ background: "var(--cream)", width: "100%", maxWidth: 560, borderRadius: 16, boxShadow: "0 24px 70px rgba(0,0,0,.28)", padding: 28 }} className="fi">
+            <h2 style={{ fontSize: 18, marginBottom: 6 }}>Link per {linkInvito.nome}</h2>
+            <p style={{ fontSize: 12.5, color: "var(--gray)", marginBottom: 16, lineHeight: 1.6 }}>
+              {linkInvito.messaggio} Cliccandolo sceglierà <strong>da sé</strong> la sua password.
+            </p>
+            <div style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 10, padding: 12, fontSize: 11, fontFamily: "monospace", wordBreak: "break-all", maxHeight: 120, overflowY: "auto", color: "var(--black)" }}>
+              {linkInvito.link}
+            </div>
+            <div style={{ background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 10, padding: "10px 12px", marginTop: 12, fontSize: 11.5, color: "#92400E", lineHeight: 1.6 }}>
+              ⚠️ Trattalo come una password: chi ha questo link entra nel CRM. Mandalo solo alla persona giusta e su un canale privato. <strong>Scade dopo 24 ore.</strong>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+              <button className="bg" onClick={() => setLinkInvito(null)}>Chiudi</button>
+              <button className="bp" onClick={copiaLink}>{copiato ? "✓ Copiato" : "📋 Copia link"}</button>
+            </div>
           </div>
         </div>
       )}
