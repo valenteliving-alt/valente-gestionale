@@ -4,6 +4,7 @@ import Guida from "./Guida";
 import Compliance from "./Compliance";
 import Ricorrenti from "./Ricorrenti";
 import Team from "./Team";
+import PortaleAgente from "./PortaleAgente";
 
 const SUPABASE_URL = "https://heabtbdmwbjlgujsisor.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
@@ -3206,6 +3207,9 @@ function App({ utente, onLogout }) {
   const [sonoMaster, setSonoMaster] = useState(false);   // gestisce accessi
   const [vedoTutto, setVedoTutto] = useState(false);     // master o socio
   const [ruoloLetto, setRuoloLetto] = useState(false);   // ruolo già verificato sul database
+  const [sonoAgente, setSonoAgente] = useState(false);   // agente esterno: vista ridotta
+  const [inAttesa, setInAttesa] = useState(false);       // registrato ma non ancora approvato
+  const [mioNome, setMioNome] = useState("");            // nome con cui firmo i documenti caricati
   const [gestori, setGestori] = useState(GESTORI);       // nomi dall'anagrafica collaboratori
 
   const [coloriGestori, setColoriGestori] = useState({});
@@ -3226,10 +3230,11 @@ function App({ utente, onLogout }) {
   // Chi non vede tutto parte dai propri immobili: la dashboard non fa parte del suo menu
   useEffect(() => {
     if (!ruoloLetto) return;
-    if (!vedoTutto && ["home", "notifiche", "gestione", "lead", "lancio", "smistamento", "ricorrenti", "archivio", "team"].includes(view)) {
+    if (sonoAgente) { if (view !== "portale") setView("portale"); return; }
+    if (!vedoTutto && ["home", "notifiche", "gestione", "lead", "lancio", "smistamento", "ricorrenti", "archivio", "team", "portale"].includes(view)) {
       setView("proprieta");
     }
-  }, [vedoTutto, ruoloLetto, view]);
+  }, [vedoTutto, sonoAgente, ruoloLetto, view]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -3251,10 +3256,15 @@ function App({ utente, onLogout }) {
   // Livello di accesso dell'utente collegato: decide cosa può vedere
   useEffect(() => {
     if (!utente) return;
-    sb.get("collaboratori", `?select=ruolo_accesso&user_id=eq.${utente.id}`).then(({ data }) => {
-      const r = Array.isArray(data) && data[0] ? data[0].ruolo_accesso : null;
-      setSonoMaster(r === "master");
-      setVedoTutto(r === "master" || r === "socio");
+    sb.get("collaboratori", `?select=nome,ruolo_accesso,stato_approvazione&user_id=eq.${utente.id}`).then(({ data }) => {
+      const c = Array.isArray(data) && data[0] ? data[0] : null;
+      const r = c ? c.ruolo_accesso : null;
+      setMioNome(c ? c.nome : "");
+      const attesa = c && c.stato_approvazione === "in_attesa";
+      setSonoMaster(r === "master" && !attesa);
+      setVedoTutto((r === "master" || r === "socio") && !attesa);
+      setSonoAgente(r === "agente");
+      setInAttesa(!!attesa);
       setRuoloLetto(true);
     }).catch(() => { setSonoMaster(false); setVedoTutto(false); setRuoloLetto(true); });
   }, [utente]);
@@ -3358,7 +3368,13 @@ function App({ utente, onLogout }) {
     { id: "ricorrenti", label: "Ricorrenti", icon: "📅", count: null, group: "Documenti" },
     { id: "guida", label: "Guida", icon: "📚", count: null, group: "Documenti" },
     // Solo il titolare gestisce accessi e permessi
-  ].filter(i => vedoTutto || ["proprieta", "proprietari", "compliance", "guida"].includes(i.id));
+    // L'agente esterno ha un'unica sezione: i suoi immobili con la checklist documenti
+    ...(sonoAgente ? [{ id: "portale", label: "I miei immobili", icon: "🏠", count: proprieta.length || null }] : []),
+  ].filter(i => vedoTutto
+    ? true
+    : sonoAgente
+      ? i.id === "portale"
+      : ["proprieta", "proprietari", "compliance", "guida"].includes(i.id)); // property manager
 
   return (
     <>
@@ -3440,7 +3456,16 @@ function App({ utente, onLogout }) {
 
         {/* Main */}
         <main className="main">
-          {loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
+          {inAttesa ? (
+            <div className="fi" style={{ maxWidth: 520, margin: "60px auto", textAlign: "center", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 16, boxShadow: "var(--shadow)", padding: 40 }}>
+              <div style={{ fontSize: 34, marginBottom: 12 }}>⏳</div>
+              <h2 style={{ fontSize: 19, marginBottom: 8 }}>Accesso in attesa di approvazione</h2>
+              <p style={{ fontSize: 13, color: "var(--gray)", lineHeight: 1.6 }}>
+                La tua registrazione è arrivata. Valente Living deve approvarla e collegarti agli immobili di tua competenza:
+                appena fatto, entrando qui li troverai. Per sollecitare, scrivi al tuo referente.
+              </p>
+            </div>
+          ) : loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
             view === "home" ? <HomeView proprieta={proprieta} owners={owners} stats={stats} onVai={(v) => setView(v)} onApriProp={setDetP} /> :
             view === "gestione" ? <ContabilitaView proprieta={proprieta} owners={owners} /> :
             view === "notifiche" ? <NotificheView onDataChanged={load} /> :
@@ -3450,7 +3475,8 @@ function App({ utente, onLogout }) {
             view === "guida" ? <Guida /> :
             view === "compliance" ? <Compliance proprieta={proprieta} owners={owners} onPatch={(id, patch) => sb.patch("proprieta", id, patch)} onDataChanged={load} /> :
             view === "ricorrenti" ? <Ricorrenti proprieta={proprieta} owners={owners} /> :
-            view === "team" ? <Team proprieta={proprieta} sonoMaster={sonoMaster} /> :
+            view === "team" ? <Team proprieta={proprieta} sonoMaster={sonoMaster} onDataChanged={load} /> :
+            view === "portale" ? <PortaleAgente proprieta={proprieta} nomeAgente={mioNome} /> :
             view === "lead" ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
@@ -3782,6 +3808,7 @@ export default function Gate() {
   const [busy, setBusy] = useState(false);
   const [recupero, setRecupero] = useState("");
   const [reset, setReset] = useState(() => leggiTokenDaUrl());
+  const [registrazione, setRegistrazione] = useState(false);
 
   // All'avvio: se c'è una sessione salvata la rinnovo, così non serve rifare il login ogni volta
   useEffect(() => {
@@ -3804,6 +3831,8 @@ export default function Gate() {
   }
 
   if (utente) return <App utente={utente} onLogout={async () => { await auth.logout(); setUtente(null); }} />;
+
+  if (registrazione) return <RegistrazioneAgente onIndietro={() => setRegistrazione(false)} />;
 
   const entra = async () => {
     if (!email.trim() || !pw) { setErr("Inserisci email e password."); return; }
@@ -3856,6 +3885,87 @@ export default function Gate() {
           style={{ width: "100%", marginTop: 10, padding: "8px", background: "transparent", border: "none", color: "#64748B", fontSize: 12, cursor: "pointer" }}>
           Password dimenticata?
         </button>
+        <div style={{ borderTop: "1px solid #E2E8F0", marginTop: 16, paddingTop: 14, textAlign: "center" }}>
+          <span style={{ fontSize: 12, color: "#64748B" }}>Sei un agente? </span>
+          <button onClick={() => setRegistrazione(true)}
+            style={{ background: "transparent", border: "none", color: "#6366F1", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}>
+            Registrati qui
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Registrazione agenti: serve il codice aziendale, e l'accesso resta
+   in attesa finché il titolare non lo approva. */
+function RegistrazioneAgente({ onIndietro }) {
+  const [f, setF] = useState({ nome: "", email: "", codice: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [fatto, setFatto] = useState(null); // { link, messaggio }
+  const [copiato, setCopiato] = useState(false);
+
+  const invia = async () => {
+    if (!f.nome.trim() || !f.email.trim() || !f.codice.trim()) { setErr("Compila tutti i campi."); return; }
+    setBusy(true); setErr("");
+    try {
+      const r = await fetch("/.netlify/functions/team", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "registra_agente", ...f }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.error) throw new Error(d.error || "Registrazione non riuscita.");
+      setFatto(d);
+    } catch (e) { setErr(e.message); }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F6F7F9", fontFamily: "'Inter', sans-serif", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 420, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, boxShadow: "0 8px 30px rgba(15,23,42,.08)", padding: "36px 32px" }}>
+        <div style={{ width: 44, height: 44, borderRadius: 12, background: "linear-gradient(135deg, #6366F1, #818CF8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 20, fontWeight: 800, margin: "0 auto 16px" }}>V</div>
+
+        {fatto ? (
+          <>
+            <h1 style={{ fontSize: 21, fontWeight: 700, color: "#0F172A", textAlign: "center", marginBottom: 10 }}>Registrazione ricevuta</h1>
+            <p style={{ fontSize: 12.5, color: "#64748B", lineHeight: 1.6, marginBottom: 14 }}>{fatto.messaggio}</p>
+            {fatto.link && (
+              <>
+                <div style={{ background: "#F6F7F9", border: "1px solid #E2E8F0", borderRadius: 10, padding: 10, fontSize: 10.5, fontFamily: "monospace", wordBreak: "break-all", maxHeight: 100, overflowY: "auto" }}>{fatto.link}</div>
+                <button onClick={async () => { try { await navigator.clipboard.writeText(fatto.link); setCopiato(true); } catch { /* ignora */ } }}
+                  style={{ width: "100%", marginTop: 10, padding: "11px", background: "#6366F1", color: "#fff", border: "none", fontSize: 13.5, fontWeight: 600, borderRadius: 10, cursor: "pointer" }}>
+                  {copiato ? "✓ Copiato" : "📋 Copia il link per la password"}
+                </button>
+                <a href={fatto.link} style={{ display: "block", textAlign: "center", marginTop: 10, fontSize: 12, color: "#6366F1" }}>Oppure aprilo adesso →</a>
+              </>
+            )}
+            <button onClick={onIndietro} style={{ width: "100%", marginTop: 14, padding: "9px", background: "transparent", border: "1px solid #E2E8F0", borderRadius: 10, color: "#64748B", fontSize: 12.5, cursor: "pointer" }}>Torna all'accesso</button>
+          </>
+        ) : (
+          <>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: "#0F172A", textAlign: "center", marginBottom: 6, letterSpacing: "-.02em" }}>Registrazione agenti</h1>
+            <p style={{ fontSize: 12.5, color: "#64748B", textAlign: "center", marginBottom: 20, lineHeight: 1.6 }}>
+              Ti serve il codice fornito da Valente Living. L'accesso sarà attivo dopo l'approvazione.
+            </p>
+            <input value={f.nome} autoFocus placeholder="Nome e cognome"
+              onChange={e => { setF(v => ({ ...v, nome: e.target.value })); setErr(""); }}
+              style={{ width: "100%", padding: "12px 14px", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 15, marginBottom: 10, boxSizing: "border-box", outline: "none" }} />
+            <input type="email" value={f.email} placeholder="Email"
+              onChange={e => { setF(v => ({ ...v, email: e.target.value })); setErr(""); }}
+              style={{ width: "100%", padding: "12px 14px", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 15, marginBottom: 10, boxSizing: "border-box", outline: "none" }} />
+            <input value={f.codice} placeholder="Codice agenzia"
+              onChange={e => { setF(v => ({ ...v, codice: e.target.value })); setErr(""); }}
+              onKeyDown={e => e.key === "Enter" && invia()}
+              style={{ width: "100%", padding: "12px 14px", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 15, marginBottom: 12, boxSizing: "border-box", outline: "none" }} />
+            {err && <p style={{ color: "#E11D48", fontSize: 12, marginBottom: 12, textAlign: "center" }}>{err}</p>}
+            <button onClick={invia} disabled={busy}
+              style={{ width: "100%", padding: "12px", background: busy ? "#A5B4FC" : "#6366F1", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: busy ? "default" : "pointer", borderRadius: 10 }}>
+              {busy ? "Invio…" : "Richiedi l'accesso"}
+            </button>
+            <button onClick={onIndietro} style={{ width: "100%", marginTop: 10, padding: "8px", background: "transparent", border: "none", color: "#64748B", fontSize: 12, cursor: "pointer" }}>← Torna all'accesso</button>
+          </>
+        )}
       </div>
     </div>
   );

@@ -17,6 +17,53 @@ async function fnTeam(payload) {
   return d;
 }
 
+/* Codice che gli agenti usano per registrarsi: modificabile, così se si diffonde
+   basta cambiarlo e i vecchi tentativi non funzionano più. */
+function CodiceAgenti({ onErrore, onEsito }) {
+  const [codice, setCodice] = useState("");
+  const [bozza, setBozza] = useState("");
+  const [modifica, setModifica] = useState(false);
+  const [copiato, setCopiato] = useState(false);
+
+  useEffect(() => {
+    fnTeam({ action: "codice_agenti" }).then(d => { setCodice(d.codice || ""); setBozza(d.codice || ""); }).catch(() => {});
+  }, []);
+
+  const salva = async () => {
+    try {
+      const d = await fnTeam({ action: "codice_agenti", nuovo: bozza });
+      setCodice(d.codice); setModifica(false);
+      onEsito && onEsito("Codice aggiornato: da ora vale solo il nuovo.");
+    } catch (e) { onErrore && onErrore(e.message); }
+  };
+
+  return (
+    <div style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 16, marginBottom: 20 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 8 }}>
+        🔑 Codice registrazione agenti
+      </div>
+      {modifica ? (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input value={bozza} onChange={e => setBozza(e.target.value)} style={{ flex: "1 1 240px" }} />
+          <button className="bp" onClick={salva}>Salva</button>
+          <button className="bg" onClick={() => { setBozza(codice); setModifica(false); }}>Annulla</button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <code style={{ fontSize: 14, fontWeight: 700, background: "var(--cream)", border: "1px solid var(--gl)", borderRadius: 8, padding: "7px 14px", letterSpacing: ".02em" }}>{codice || "—"}</code>
+          <button className="bg" onClick={async () => { try { await navigator.clipboard.writeText(codice); setCopiato(true); setTimeout(() => setCopiato(false), 2500); } catch { /* ignora */ } }}
+            style={{ fontSize: 11, padding: "5px 10px" }}>{copiato ? "✓ Copiato" : "📋 Copia"}</button>
+          <button className="bg" onClick={() => setModifica(true)} style={{ fontSize: 11, padding: "5px 10px" }}>✎ Cambia</button>
+        </div>
+      )}
+      <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 8, lineHeight: 1.6 }}>
+        Gli agenti lo inseriscono su <strong>Registrati qui</strong> nella pagina di accesso. Il codice da solo non basta:
+        ogni richiesta resta in attesa finché non la approvi tu. Se il codice gira troppo, cambialo — i vecchi accessi già approvati restano validi.
+      </p>
+    </div>
+  );
+}
+
 export default function Team({ proprieta = [], sonoMaster, onDataChanged }) {
   const [collaboratori, setCollaboratori] = useState([]);
   const [task, setTask] = useState([]);
@@ -42,6 +89,18 @@ export default function Team({ proprieta = [], sonoMaster, onDataChanged }) {
   useEffect(() => { carica(); }, [carica]);
 
   const immobiliDi = useCallback((nome) => proprieta.filter(p => p.gestore_interno === nome), [proprieta]);
+  const immobiliAgente = useCallback((nome) => proprieta.filter(p => p.agente === nome), [proprieta]);
+
+  const inAttesa = useMemo(() => collaboratori.filter(c => c.stato_approvazione === "in_attesa"), [collaboratori]);
+
+  const approva = async (c, ok = true) => {
+    setErrore(""); setEsito("");
+    try {
+      const d = await fnTeam({ action: "approva", id: c.id, approva: ok });
+      setCollaboratori(cs => cs.map(x => x.id === d.collaboratore.id ? d.collaboratore : x));
+      setEsito(ok ? `${c.nome} approvato: ora manca solo assegnargli gli immobili.` : `${c.nome} sospeso: non vede più nulla.`);
+    } catch (e) { setErrore(e.message); }
+  };
   const taskDi = useCallback((nome) => task.filter(t => t.assegnato_a === nome), [task]);
 
   const [immobiliScelti, setImmobiliScelti] = useState([]);
@@ -50,7 +109,12 @@ export default function Team({ proprieta = [], sonoMaster, onDataChanged }) {
   const nuovo = () => { setForm({ ...VUOTO, colore: COLORI[collaboratori.length % COLORI.length] }); setImmobiliScelti([]); setCercaImm(""); };
   const modifica = (c) => {
     setForm({ ...VUOTO, ...c });
-    setImmobiliScelti(proprieta.filter(p => p.gestore_interno === c.nome).map(p => p.id));
+    // L'agente è collegato tramite il campo "agente", il property manager tramite "gestore_interno"
+    setImmobiliScelti(
+      c.ruolo_accesso === "agente"
+        ? proprieta.filter(p => p.agente === c.nome).map(p => p.id)
+        : proprieta.filter(p => p.gestore_interno === c.nome).map(p => p.id)
+    );
     setCercaImm("");
   };
 
@@ -71,9 +135,13 @@ export default function Team({ proprieta = [], sonoMaster, onDataChanged }) {
         const altri = cs.filter(x => x.id !== d.collaboratore.id);
         return [...altri, d.collaboratore].sort((a, b) => a.nome.localeCompare(b.nome));
       });
-      // Salva anche quali immobili gestisce (solo per chi non vede già tutto)
-      if (d.collaboratore.ruolo_accesso === "manager") {
-        const r = await fnTeam({ action: "assegna_immobili", nome: d.collaboratore.nome, immobili: immobiliScelti });
+      // Salva anche quali immobili gli competono (solo per chi non vede già tutto)
+      const ra = d.collaboratore.ruolo_accesso;
+      if (ra === "manager" || ra === "agente") {
+        const r = await fnTeam({
+          action: ra === "agente" ? "assegna_immobili_agente" : "assegna_immobili",
+          nome: d.collaboratore.nome, immobili: immobiliScelti,
+        });
         setEsito(`${d.collaboratore.nome}: ${r.assegnati} immobil${r.assegnati === 1 ? "e" : "i"} assegnat${r.assegnati === 1 ? "o" : "i"}${r.liberati ? `, ${r.liberati} tolt${r.liberati === 1 ? "o" : "i"}` : ""}.`);
         onDataChanged && onDataChanged();
       }
@@ -181,8 +249,35 @@ export default function Team({ proprieta = [], sonoMaster, onDataChanged }) {
         <strong>Socio</strong> — vede e modifica tutto come il titolare, contabilità inclusa, ma <em>non</em> può gestire accessi e permessi.<br />
         <strong>Property manager</strong> — vede solo gli immobili di cui è assegnatario, i proprietari collegati e i relativi documenti: può modificarli,
         ma non vede né gli immobili altrui né la contabilità.<br />
+        <strong>Agente esterno</strong> — vede solo gli immobili che gli hai collegato e il loro stato burocratico, e può <em>caricare</em> documenti.
+        Non vede i dati dei proprietari, né i documenti caricati da voi.<br />
         Il filtro è applicato dal database, non dalla schermata: chi non ha i permessi non riceve proprio i dati.
       </div>
+
+      {/* Codice di registrazione per gli agenti */}
+      <CodiceAgenti onErrore={setErrore} onEsito={setEsito} />
+
+      {/* Agenti in attesa di approvazione */}
+      {inAttesa.length > 0 && (
+        <div style={{ background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 12, padding: 16, marginBottom: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#92400E", marginBottom: 10 }}>
+            ⏳ {inAttesa.length} richiest{inAttesa.length === 1 ? "a" : "e"} di accesso in attesa
+          </div>
+          {inAttesa.map(c => (
+            <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 10, padding: "10px 12px", marginBottom: 6, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{c.nome}</div>
+                <div style={{ fontSize: 11, color: "var(--gray)" }}>{c.email_accesso} · {c.ruolo || "Agente"}</div>
+              </div>
+              <button className="bg" onClick={() => { modifica(c); }} style={{ fontSize: 11, padding: "5px 10px" }}>Vedi</button>
+              <button className="bp" onClick={() => approva(c, true)} style={{ fontSize: 11, padding: "5px 12px" }}>✓ Approva</button>
+            </div>
+          ))}
+          <p style={{ fontSize: 11, color: "#92400E", marginTop: 4 }}>
+            Finché non li approvi non vedono nulla. Dopo l'approvazione ricordati di assegnargli gli immobili.
+          </p>
+        </div>
+      )}
 
       {caricando ? (
         <div style={{ padding: 40, textAlign: "center", color: "var(--gray)", fontSize: 13 }}>Carico il team…</div>
@@ -341,6 +436,7 @@ export default function Team({ proprieta = [], sonoMaster, onDataChanged }) {
               <div style={{ gridColumn: "1 / -1" }}>
                 <label style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)" }}>Livello di accesso</label>
                 <select value={form.ruolo_accesso || "manager"} onChange={e => setForm(f => ({ ...f, ruolo_accesso: e.target.value }))} style={{ marginTop: 4 }}>
+                  <option value="agente">Agente esterno — solo i suoi immobili, può caricare documenti</option>
                   <option value="manager">Property manager — solo i suoi immobili</option>
                   <option value="socio">Socio — vede tutto, non gestisce accessi</option>
                   <option value="master">Titolare — vede tutto e gestisce accessi</option>
@@ -370,7 +466,7 @@ export default function Team({ proprieta = [], sonoMaster, onDataChanged }) {
             </div>
 
             {/* Quali immobili gestisce e vede — solo per i property manager */}
-            {(form.ruolo_accesso || "manager") === "manager" ? (
+            {["manager", "agente"].includes(form.ruolo_accesso || "manager") ? (
               <div style={{ marginTop: 18 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
                   <label style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)" }}>
