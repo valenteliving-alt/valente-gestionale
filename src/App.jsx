@@ -3,6 +3,7 @@ import Archivio from "./Archivio";
 import Guida from "./Guida";
 import Compliance from "./Compliance";
 import Ricorrenti from "./Ricorrenti";
+import Team from "./Team";
 
 const SUPABASE_URL = "https://heabtbdmwbjlgujsisor.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
@@ -3165,6 +3166,9 @@ function App({ utente, onLogout }) {
   const [notifStato, setNotifStato] = useState("idle"); // idle|loading|on|denied|unsupported (v20)
   const [notifCount, setNotifCount] = useState(0); // notifiche email non gestite
 
+  const [sonoMaster, setSonoMaster] = useState(false);   // gestisce accessi
+  const [vedoTutto, setVedoTutto] = useState(false);     // master o socio
+
   const load = useCallback(async () => {
     setLoading(true);
     const [rP, rO, rN] = await Promise.all([sb.get("proprieta", "?select=*&order=created_at.desc"), sb.get("proprietari", "?select=*&order=created_at.desc"), sb.get("email_notifiche", "?select=thread_id&gestita=is.false&limit=999")]);
@@ -3173,6 +3177,16 @@ function App({ utente, onLogout }) {
     if (Array.isArray(rN.data)) setNotifCount(rN.data.length);
     setLoading(false);
   }, []);
+
+  // Livello di accesso dell'utente collegato: decide cosa può vedere
+  useEffect(() => {
+    if (!utente) return;
+    sb.get("collaboratori", `?select=ruolo_accesso&user_id=eq.${utente.id}`).then(({ data }) => {
+      const r = Array.isArray(data) && data[0] ? data[0].ruolo_accesso : null;
+      setSonoMaster(r === "master");
+      setVedoTutto(r === "master" || r === "socio");
+    }).catch(() => { setSonoMaster(false); setVedoTutto(false); });
+  }, [utente]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -3268,7 +3282,9 @@ function App({ utente, onLogout }) {
     { id: "archivio", label: "Archivio", icon: "🗂️", count: null, group: "Documenti" },
     { id: "ricorrenti", label: "Ricorrenti", icon: "📅", count: null, group: "Documenti" },
     { id: "guida", label: "Guida", icon: "📚", count: null, group: "Documenti" },
-  ];
+    // Solo il titolare gestisce accessi e permessi
+    ...(sonoMaster ? [{ id: "team", label: "Team & Accessi", icon: "👥", count: null, group: "Amministrazione" }] : []),
+  ].filter(i => vedoTutto || !["gestione"].includes(i.id));
 
   return (
     <>
@@ -3360,6 +3376,7 @@ function App({ utente, onLogout }) {
             view === "guida" ? <Guida /> :
             view === "compliance" ? <Compliance proprieta={proprieta} owners={owners} onPatch={(id, patch) => sb.patch("proprieta", id, patch)} onDataChanged={load} /> :
             view === "ricorrenti" ? <Ricorrenti proprieta={proprieta} owners={owners} /> :
+            view === "team" ? <Team proprieta={proprieta} sonoMaster={sonoMaster} /> :
             view === "lead" ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
