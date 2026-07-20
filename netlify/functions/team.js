@@ -105,6 +105,22 @@ const handler = async (event) => {
         }),
       });
 
+      // Avvisa subito: una registrazione che resta ferma in attesa non serve a nessuno.
+      // Se la notifica non parte, la registrazione resta comunque valida.
+      try {
+        const base = process.env.URL || process.env.DEPLOY_PRIME_URL || "";
+        if (base) {
+          await fetch(`${base}/.netlify/functions/invia-notifica`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: "Nuovo agente da approvare",
+              body: `${nome} (${mail}) si è registrato e aspetta il tuo via libera.`,
+              url: "/",
+            }),
+          });
+        }
+      } catch (_) { /* la notifica è un di più: non deve far fallire la registrazione */ }
+
       return {
         statusCode: 200, headers: CORS,
         body: JSON.stringify({

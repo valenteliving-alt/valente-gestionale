@@ -28,12 +28,26 @@ exports.handler = async (event) => {
       : 'https://atlas.bnbcalc.com/v1/external/analysis/create/arb';
 
     const apiKey = process.env.BNBCALC_API_KEY;
+
+    // Senza chiave qui, giriamo la richiesta all'app valutazioni che ce l'ha già:
+    // così l'analisi funziona subito, senza spostare a mano nessuna credenziale.
+    // Appena BNBCALC_API_KEY viene impostata anche su questo sito, si passa dalla via diretta.
     if (!apiKey) {
-      return {
-        statusCode: 500,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: 'API key non configurata. Controlla le environment variables di Netlify.' })
-      };
+      const origine = process.env.BNBCALC_PROXY_URL || 'https://valutazionivalente.netlify.app/.netlify/functions/bnbcalc';
+      try {
+        const r = await fetch(origine, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: event.body || '{}'
+        });
+        return { statusCode: r.status, headers: corsHeaders, body: await r.text() };
+      } catch (e) {
+        return {
+          statusCode: 502,
+          headers: corsHeaders,
+          body: JSON.stringify({ error: 'BNBCalc non raggiungibile: ' + (e.message || 'errore di rete') })
+        };
+      }
     }
 
     // Chiamata server-side a BNBCalc (nessun CORS perché è server-to-server)
