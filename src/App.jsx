@@ -3205,6 +3205,7 @@ function App({ utente, onLogout }) {
 
   const [sonoMaster, setSonoMaster] = useState(false);   // gestisce accessi
   const [vedoTutto, setVedoTutto] = useState(false);     // master o socio
+  const [ruoloLetto, setRuoloLetto] = useState(false);   // ruolo già verificato sul database
   const [gestori, setGestori] = useState(GESTORI);       // nomi dall'anagrafica collaboratori
 
   const [coloriGestori, setColoriGestori] = useState({});
@@ -3221,6 +3222,14 @@ function App({ utente, onLogout }) {
   }, [utente]);
 
   const coloreGestore = useCallback((n) => coloriGestori[n] || "#94A3B8", [coloriGestori]);
+
+  // Chi non vede tutto parte dai propri immobili: la dashboard non fa parte del suo menu
+  useEffect(() => {
+    if (!ruoloLetto) return;
+    if (!vedoTutto && ["home", "notifiche", "gestione", "lead", "lancio", "smistamento", "ricorrenti", "team"].includes(view)) {
+      setView("proprieta");
+    }
+  }, [vedoTutto, ruoloLetto, view]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -3246,7 +3255,8 @@ function App({ utente, onLogout }) {
       const r = Array.isArray(data) && data[0] ? data[0].ruolo_accesso : null;
       setSonoMaster(r === "master");
       setVedoTutto(r === "master" || r === "socio");
-    }).catch(() => { setSonoMaster(false); setVedoTutto(false); });
+      setRuoloLetto(true);
+    }).catch(() => { setSonoMaster(false); setVedoTutto(false); setRuoloLetto(true); });
   }, [utente]);
 
   useEffect(() => { load(); }, [load]);
@@ -3335,6 +3345,8 @@ function App({ utente, onLogout }) {
     { id: "notifiche", label: "Notifiche", icon: "🔔", count: notifCount, alert: true },
     // Gestione accessi: subito in alto, visibile solo al titolare
     ...(sonoMaster ? [{ id: "team", label: "Team & Accessi", icon: "👥", count: null }] : []),
+    /* I property manager hanno una vista essenziale: solo i loro immobili,
+       i proprietari collegati, i documenti e la compliance. */
     { id: "gestione", label: "Gestione & Contabilità", icon: "📊", count: null, group: "Operativo" },
     { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale, group: "Operativo" },
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length, group: "Operativo" },
@@ -3346,7 +3358,7 @@ function App({ utente, onLogout }) {
     { id: "ricorrenti", label: "Ricorrenti", icon: "📅", count: null, group: "Documenti" },
     { id: "guida", label: "Guida", icon: "📚", count: null, group: "Documenti" },
     // Solo il titolare gestisce accessi e permessi
-  ].filter(i => vedoTutto || !["gestione"].includes(i.id));
+  ].filter(i => vedoTutto || ["proprieta", "proprietari", "compliance", "archivio", "guida"].includes(i.id));
 
   return (
     <>
@@ -3420,7 +3432,7 @@ function App({ utente, onLogout }) {
         </aside>
 
         {/* Campanella notifiche in alto al centro */}
-        {view !== "notifiche" && notifCount > 0 && (
+        {vedoTutto && view !== "notifiche" && notifCount > 0 && (
           <button className="notif-top" onClick={() => { setView("notifiche"); setSidebarOpen(false); }} title="Apri le notifiche">
             🔔 Notifiche <span className="nbadge">{notifCount}</span>
           </button>

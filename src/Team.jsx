@@ -17,7 +17,7 @@ async function fnTeam(payload) {
   return d;
 }
 
-export default function Team({ proprieta = [], sonoMaster }) {
+export default function Team({ proprieta = [], sonoMaster, onDataChanged }) {
   const [collaboratori, setCollaboratori] = useState([]);
   const [task, setTask] = useState([]);
   const [caricando, setCaricando] = useState(true);
@@ -44,8 +44,22 @@ export default function Team({ proprieta = [], sonoMaster }) {
   const immobiliDi = useCallback((nome) => proprieta.filter(p => p.gestore_interno === nome), [proprieta]);
   const taskDi = useCallback((nome) => task.filter(t => t.assegnato_a === nome), [task]);
 
-  const nuovo = () => setForm({ ...VUOTO, colore: COLORI[collaboratori.length % COLORI.length] });
-  const modifica = (c) => setForm({ ...VUOTO, ...c });
+  const [immobiliScelti, setImmobiliScelti] = useState([]);
+  const [cercaImm, setCercaImm] = useState("");
+
+  const nuovo = () => { setForm({ ...VUOTO, colore: COLORI[collaboratori.length % COLORI.length] }); setImmobiliScelti([]); setCercaImm(""); };
+  const modifica = (c) => {
+    setForm({ ...VUOTO, ...c });
+    setImmobiliScelti(proprieta.filter(p => p.gestore_interno === c.nome).map(p => p.id));
+    setCercaImm("");
+  };
+
+  const immobiliFiltrati = useMemo(() => {
+    const q = cercaImm.trim().toLowerCase();
+    return [...proprieta]
+      .sort((a, b) => String(a.citta || "").localeCompare(String(b.citta || "")) || String(a.nome).localeCompare(String(b.nome)))
+      .filter(p => !q || [p.nome, p.citta, p.provincia].filter(Boolean).join(" ").toLowerCase().includes(q));
+  }, [proprieta, cercaImm]);
 
   const salva = async () => {
     if (!form.nome.trim()) { setErrore("Il nome è obbligatorio."); return; }
@@ -57,6 +71,12 @@ export default function Team({ proprieta = [], sonoMaster }) {
         const altri = cs.filter(x => x.id !== d.collaboratore.id);
         return [...altri, d.collaboratore].sort((a, b) => a.nome.localeCompare(b.nome));
       });
+      // Salva anche quali immobili gestisce (solo per chi non vede già tutto)
+      if (d.collaboratore.ruolo_accesso === "manager") {
+        const r = await fnTeam({ action: "assegna_immobili", nome: d.collaboratore.nome, immobili: immobiliScelti });
+        setEsito(`${d.collaboratore.nome}: ${r.assegnati} immobil${r.assegnati === 1 ? "e" : "i"} assegnat${r.assegnati === 1 ? "o" : "i"}${r.liberati ? `, ${r.liberati} tolt${r.liberati === 1 ? "o" : "i"}` : ""}.`);
+        onDataChanged && onDataChanged();
+      }
       setForm(null);
     } catch (e) { setErrore(e.message); }
     setSalvando(false);
@@ -349,9 +369,48 @@ export default function Team({ proprieta = [], sonoMaster }) {
               </div>
             </div>
 
+            {/* Quali immobili gestisce e vede — solo per i property manager */}
+            {(form.ruolo_accesso || "manager") === "manager" ? (
+              <div style={{ marginTop: 18 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+                  <label style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)" }}>
+                    Immobili che gestisce e vede
+                  </label>
+                  <span className="tag" style={{ background: "#EEF2FF", color: "#4F46E5", borderColor: "transparent" }}>{immobiliScelti.length} selezionati</span>
+                  <div style={{ flex: 1 }} />
+                  <button type="button" onClick={() => setImmobiliScelti(immobiliFiltrati.map(p => p.id))} style={{ fontSize: 10.5, padding: "3px 8px", background: "transparent", border: "1px solid var(--gl)", color: "var(--gray)" }}>Tutti i mostrati</button>
+                  <button type="button" onClick={() => setImmobiliScelti([])} style={{ fontSize: 10.5, padding: "3px 8px", background: "transparent", border: "1px solid var(--gl)", color: "var(--gray)" }}>Nessuno</button>
+                </div>
+                <input value={cercaImm} onChange={e => setCercaImm(e.target.value)} placeholder="Filtra per nome o città… (es. Napoli)" style={{ marginBottom: 8 }} />
+                <div style={{ maxHeight: 220, overflowY: "auto", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 10, padding: 6 }}>
+                  {immobiliFiltrati.map(p => {
+                    const sel = immobiliScelti.includes(p.id);
+                    const altrui = p.gestore_interno && p.gestore_interno !== form.nome;
+                    return (
+                      <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "6px 8px", borderRadius: 8, cursor: "pointer", background: sel ? "#EEF2FF" : "transparent" }}>
+                        <input type="checkbox" checked={sel} style={{ width: 15, height: 15, flexShrink: 0 }}
+                          onChange={e => setImmobiliScelti(v => e.target.checked ? [...v, p.id] : v.filter(x => x !== p.id))} />
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {p.nome} <span style={{ color: "var(--gray)" }}>· {p.citta}</span>
+                        </span>
+                        {altrui && <span className="tag" style={{ fontSize: 9 }}>ora: {p.gestore_interno}</span>}
+                      </label>
+                    );
+                  })}
+                  {immobiliFiltrati.length === 0 && <div style={{ padding: 12, fontSize: 12, color: "var(--gray)" }}>Nessun immobile trovato.</div>}
+                </div>
+                <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 8, lineHeight: 1.6 }}>
+                  Vedrà <strong>solo</strong> questi immobili, i loro proprietari e documenti. Spuntando un immobile già di un altro, glielo togli.
+                </p>
+              </div>
+            ) : (
+              <div style={{ background: "#EEF2FF", border: "1px solid rgba(99,102,241,.25)", borderRadius: 10, padding: 12, marginTop: 18, fontSize: 11.5, color: "var(--black)", lineHeight: 1.6 }}>
+                Con questo livello vede <strong>tutti</strong> gli immobili: non serve selezionarli.
+              </div>
+            )}
+
             <div style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 10, padding: 12, marginTop: 14, fontSize: 11.5, color: "var(--gray)", lineHeight: 1.6 }}>
-              <strong style={{ color: "var(--black)" }}>Dopo aver salvato</strong>, usa il pulsante <em>✉ Invita nel CRM</em> sulla sua scheda:
-              riceverà un'email per scegliere <strong>da sé</strong> la password. Poi assegnale gli immobili dal Workflow.
+              <strong style={{ color: "var(--black)" }}>Per l'accesso</strong>: usa <em>✉ Invita nel CRM</em> o <em>🔗 Link</em> sulla sua scheda — sceglierà <strong>da sé</strong> la password.
             </div>
 
             <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
