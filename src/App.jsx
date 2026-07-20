@@ -3272,6 +3272,8 @@ function App({ utente, onLogout }) {
   const navItems = [
     { id: "home", label: "Home", icon: "🏛️", count: null },
     { id: "notifiche", label: "Notifiche", icon: "🔔", count: notifCount, alert: true },
+    // Gestione accessi: subito in alto, visibile solo al titolare
+    ...(sonoMaster ? [{ id: "team", label: "Team & Accessi", icon: "👥", count: null }] : []),
     { id: "gestione", label: "Gestione & Contabilità", icon: "📊", count: null, group: "Operativo" },
     { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale, group: "Operativo" },
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length, group: "Operativo" },
@@ -3283,7 +3285,6 @@ function App({ utente, onLogout }) {
     { id: "ricorrenti", label: "Ricorrenti", icon: "📅", count: null, group: "Documenti" },
     { id: "guida", label: "Guida", icon: "📚", count: null, group: "Documenti" },
     // Solo il titolare gestisce accessi e permessi
-    ...(sonoMaster ? [{ id: "team", label: "Team & Accessi", icon: "👥", count: null, group: "Amministrazione" }] : []),
   ].filter(i => vedoTutto || !["gestione"].includes(i.id));
 
   return (
