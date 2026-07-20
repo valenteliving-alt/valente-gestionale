@@ -3222,13 +3222,6 @@ function App({ utente, onLogout }) {
 
   const coloreGestore = useCallback((n) => coloriGestori[n] || "#94A3B8", [coloriGestori]);
 
-  // Assegna il property manager direttamente dall'elenco, senza aprire la scheda
-  const assegnaGestore = useCallback(async (p, nome) => {
-    setProprieta(ps => ps.map(x => x.id === p.id ? { ...x, gestore_interno: nome || null } : x)); // risposta immediata
-    const { ok } = await sb.patch("proprieta", p.id, { gestore_interno: nome || null });
-    if (!ok) { alert("Assegnazione non riuscita."); load(); }
-  }, [load]);
-
   const load = useCallback(async () => {
     setLoading(true);
     const [rP, rO, rN] = await Promise.all([sb.get("proprieta", "?select=*&order=created_at.desc"), sb.get("proprietari", "?select=*&order=created_at.desc"), sb.get("email_notifiche", "?select=thread_id&gestita=is.false&limit=999")]);
@@ -3237,6 +3230,14 @@ function App({ utente, onLogout }) {
     if (Array.isArray(rN.data)) setNotifCount(rN.data.length);
     setLoading(false);
   }, []);
+
+  // Assegna il property manager direttamente dall'elenco, senza aprire la scheda
+  // (definita DOPO load, altrimenti la si userebbe prima che esista)
+  const assegnaGestore = useCallback(async (p, nome) => {
+    setProprieta(ps => ps.map(x => x.id === p.id ? { ...x, gestore_interno: nome || null } : x)); // risposta immediata
+    const { ok } = await sb.patch("proprieta", p.id, { gestore_interno: nome || null });
+    if (!ok) { alert("Assegnazione non riuscita."); load(); }
+  }, [load]);
 
   // Livello di accesso dell'utente collegato: decide cosa può vedere
   useEffect(() => {
