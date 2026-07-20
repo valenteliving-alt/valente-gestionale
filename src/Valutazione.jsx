@@ -22,9 +22,6 @@ export default function Valutazione({ nomeAgente }) {
             Punteggio, margine e verdetto di acquisizione. Le valutazioni restano salvate nell'archivio.
           </p>
         </div>
-        <a href={src} target="_blank" rel="noopener" className="bg" style={{ fontSize: 11, padding: "6px 12px", textDecoration: "none" }}>
-          Apri a schermo intero ↗
-        </a>
       </div>
       <div className="gl" style={{ marginBottom: 14 }} />
 
