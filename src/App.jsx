@@ -5,6 +5,7 @@ import Compliance from "./Compliance";
 import Ricorrenti from "./Ricorrenti";
 import Team from "./Team";
 import PortaleAgente from "./PortaleAgente";
+import Valutazione from "./Valutazione";
 
 const SUPABASE_URL = "https://heabtbdmwbjlgujsisor.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
@@ -3230,7 +3231,8 @@ function App({ utente, onLogout }) {
   // Chi non vede tutto parte dai propri immobili: la dashboard non fa parte del suo menu
   useEffect(() => {
     if (!ruoloLetto) return;
-    if (sonoAgente) { if (view !== "portale") setView("portale"); return; }
+    // L'agente ha due sole sezioni: i suoi immobili e il valutatore
+    if (sonoAgente) { if (view !== "portale" && view !== "valutazione") setView("portale"); return; }
     if (!vedoTutto && ["home", "notifiche", "gestione", "lead", "lancio", "smistamento", "ricorrenti", "archivio", "team", "portale"].includes(view)) {
       setView("proprieta");
     }
@@ -3370,11 +3372,13 @@ function App({ utente, onLogout }) {
     // Solo il titolare gestisce accessi e permessi
     // L'agente esterno ha un'unica sezione: i suoi immobili con la checklist documenti
     ...(sonoAgente ? [{ id: "portale", label: "I miei immobili", icon: "🏠", count: proprieta.length || null }] : []),
+    // Il valutatore serve a tutti: l'agente lo usa prima ancora di avere immobili in gestione
+    { id: "valutazione", label: "Valuta immobile", icon: "📐", count: null, group: "Documenti" },
   ].filter(i => vedoTutto
     ? true
     : sonoAgente
-      ? i.id === "portale"
-      : ["proprieta", "proprietari", "compliance", "guida"].includes(i.id)); // property manager
+      ? (i.id === "portale" || i.id === "valutazione")
+      : ["proprieta", "proprietari", "compliance", "guida", "valutazione"].includes(i.id)); // property manager
 
   return (
     <>
@@ -3456,7 +3460,10 @@ function App({ utente, onLogout }) {
 
         {/* Main */}
         <main className="main">
-          {inAttesa ? (
+          {/* Il valutatore resta accessibile anche a chi aspetta l'approvazione:
+              un agente può valutare un immobile prima ancora di averne in gestione. */}
+          {inAttesa && view === "valutazione" ? <Valutazione nomeAgente={mioNome} /> :
+           inAttesa ? (
             <div className="fi" style={{ maxWidth: 520, margin: "60px auto", textAlign: "center", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 16, boxShadow: "var(--shadow)", padding: 40 }}>
               <div style={{ fontSize: 34, marginBottom: 12 }}>⏳</div>
               <h2 style={{ fontSize: 19, marginBottom: 8 }}>Accesso in attesa di approvazione</h2>
@@ -3464,6 +3471,9 @@ function App({ utente, onLogout }) {
                 La tua registrazione è arrivata. Valente Living deve approvarla e collegarti agli immobili di tua competenza:
                 appena fatto, entrando qui li troverai. Per sollecitare, scrivi al tuo referente.
               </p>
+              <button className="bp" onClick={() => setView("valutazione")} style={{ marginTop: 18, fontSize: 12 }}>
+                Intanto valuta un immobile →
+              </button>
             </div>
           ) : loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
             view === "home" ? <HomeView proprieta={proprieta} owners={owners} stats={stats} onVai={(v) => setView(v)} onApriProp={setDetP} /> :
@@ -3477,6 +3487,7 @@ function App({ utente, onLogout }) {
             view === "ricorrenti" ? <Ricorrenti proprieta={proprieta} owners={owners} /> :
             view === "team" ? <Team proprieta={proprieta} sonoMaster={sonoMaster} onDataChanged={load} /> :
             view === "portale" ? <PortaleAgente proprieta={proprieta} nomeAgente={mioNome} /> :
+            view === "valutazione" ? <Valutazione nomeAgente={mioNome} /> :
             view === "lead" ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
