@@ -660,7 +660,11 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteSalvate, setNoteSalvate] = useState(false);
-  const inLancio = proprieta.filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato));
+  const [fPersona, setFPersona] = useState(""); // filtro per assegnatario
+  const tutteInLancio = proprieta.filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato));
+  const inLancio = fPersona
+    ? tutteInLancio.filter(p => fPersona === "__nessuno" ? !p.gestore_interno : p.gestore_interno === fPersona)
+    : tutteInLancio;
 
   const apriNote = (p) => {
     if (noteAperte === p.id) { setNoteAperte(null); return; }
@@ -696,13 +700,38 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
     if (onDataChanged) await onDataChanged();
     setSaving(null);
   };
+  // Assegnazione della proprietà a chi ci lavora
+  const assegna = async (p, gestore) => {
+    setSaving(p.id);
+    await sb.patch("proprieta", p.id, { gestore_interno: gestore || null });
+    if (onDataChanged) await onDataChanged();
+    setSaving(null);
+  };
+  const coloreGestore = (g) => {
+    const map = { Tommaso: "#6366F1", Francesco: "#0891b2", Jacopo: "#e07b39" };
+    return map[g] || "#94A3B8";
+  };
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
-        <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Workflow Lancio</h1><p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{inLancio.length} proprietà in onboarding</p></div>
+        <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Workflow Lancio</h1><p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{inLancio.length} proprietà in onboarding{fPersona ? ` · filtro attivo` : ""}</p></div>
         <button className="bp" onClick={() => onEdit && onEdit("new")}>+ Nuova proprietà</button>
       </div>
-      <div className="gl" style={{ marginBottom: 24 }} />
+      <div className="gl" style={{ marginBottom: 16 }} />
+
+      {/* Filtro per persona assegnata */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 20 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", marginRight: 2 }}>Chi ci lavora</span>
+        {[["", `Tutti (${tutteInLancio.length})`], ...GESTORI.map(g => [g, `${g} (${tutteInLancio.filter(p => p.gestore_interno === g).length})`]), ["__nessuno", `Non assegnate (${tutteInLancio.filter(p => !p.gestore_interno).length})`]].map(([v, l]) => (
+          <button key={v || "tutti"} onClick={() => setFPersona(v)}
+            style={{
+              padding: "5px 12px", fontSize: 11.5, fontWeight: 600,
+              border: `1px solid ${fPersona === v ? "var(--black)" : "var(--gl)"}`,
+              background: fPersona === v ? "var(--black)" : "var(--white)",
+              color: fPersona === v ? "#fff" : "var(--gray)",
+            }}>{l}</button>
+        ))}
+      </div>
       {inLancio.length === 0 ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessuna proprietà in lancio.</div> : (
         <div style={{ display: "grid", gap: 14 }}>
           {inLancio.map(p => {
@@ -739,6 +768,28 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
                     );
                   })}
                 </div>
+                {/* Assegnazione a chi ci lavora */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)" }}>Assegnata a</span>
+                  {GESTORI.map(g => {
+                    const attivo = p.gestore_interno === g;
+                    return (
+                      <button key={g} onClick={() => assegna(p, attivo ? "" : g)} disabled={busy}
+                        title={attivo ? "Clic per togliere l'assegnazione" : `Assegna a ${g}`}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", fontSize: 11.5, fontWeight: 600,
+                          border: `1.5px solid ${attivo ? coloreGestore(g) : "var(--gl)"}`,
+                          background: attivo ? coloreGestore(g) : "transparent",
+                          color: attivo ? "#fff" : "var(--gray)",
+                        }}>
+                        <span style={{ width: 16, height: 16, borderRadius: "50%", background: attivo ? "rgba(255,255,255,.25)" : coloreGestore(g), color: "#fff", fontSize: 9, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{g[0]}</span>
+                        {g}
+                      </button>
+                    );
+                  })}
+                  {!p.gestore_interno && <span style={{ fontSize: 11, color: "var(--red)" }}>non assegnata</span>}
+                </div>
+
                 <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                   <button className="bg" onClick={() => onEdit && onEdit(p)} disabled={busy}>Compila dati</button>
                   <button className="bg" onClick={() => apriNote(p)} disabled={busy}>
