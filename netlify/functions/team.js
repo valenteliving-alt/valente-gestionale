@@ -122,6 +122,51 @@ const handler = async (event) => {
       };
     }
 
+    /* Genera un link d'invito da copiare e mandare a mano (WhatsApp, Slack…).
+       Non manda email: aggira del tutto i limiti del servizio email di Supabase. */
+    if (action === "genera_link") {
+      const { id, email } = body;
+      const mail = String(email || "").trim().toLowerCase();
+      if (!mail) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Serve l'email della persona." }) };
+
+      // L'utente esiste già? Allora serve un link di reimpostazione, non di invito
+      const cerca = await fetch(`${SUPABASE_URL}/auth/v1/admin/users?page=1&per_page=200`, { headers: sb });
+      const elenco = await cerca.json().catch(() => ({}));
+      const esistente = (elenco.users || []).find(u => String(u.email || "").toLowerCase() === mail);
+
+      const r = await fetch(`${SUPABASE_URL}/auth/v1/admin/generate_link`, {
+        method: "POST",
+        headers: { ...sb, "Content-Type": "application/json" },
+        body: JSON.stringify({ type: esistente ? "recovery" : "invite", email: mail }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) return { statusCode: r.status, headers: CORS, body: JSON.stringify({ error: d.msg || d.message || "Generazione del link non riuscita." }) };
+
+      const link = d.action_link || (d.properties && d.properties.action_link);
+      if (!link) return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: "Link non restituito da Supabase." }) };
+
+      // Collega l'account al collaboratore
+      const utente = esistente || d.user || d;
+      if (id && utente && utente.id) {
+        await fetch(`${SUPABASE_URL}/rest/v1/collaboratori?id=eq.${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: { ...sb, "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: utente.id, email_accesso: mail, email: mail }),
+        });
+      }
+
+      return {
+        statusCode: 200, headers: CORS,
+        body: JSON.stringify({
+          link,
+          esistente: !!esistente,
+          messaggio: esistente
+            ? "Link per reimpostare la password: mandaglielo tu."
+            : "Link d'invito: mandaglielo tu (WhatsApp, Slack, di persona).",
+        })
+      };
+    }
+
     // Rimanda l'invito a chi non ha ancora completato la registrazione
     if (action === "reinvita") {
       const mail = String(body.email || "").trim().toLowerCase();
