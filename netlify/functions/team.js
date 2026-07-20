@@ -194,6 +194,35 @@ const handler = async (event) => {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ collaboratore: Array.isArray(rec) ? rec[0] : rec }) };
     }
 
+    /* Assegna a una persona esattamente gli immobili scelti:
+       mette il suo nome su quelli selezionati e lo toglie dagli altri suoi. */
+    if (action === "assegna_immobili") {
+      const { nome, immobili } = body;
+      if (!nome) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Manca il nome della persona." }) };
+      const scelti = Array.isArray(immobili) ? immobili : [];
+
+      // 1) Libera gli immobili che aveva ma che non sono più selezionati
+      const attuali = await fetch(`${SUPABASE_URL}/rest/v1/proprieta?select=id&gestore_interno=eq.${encodeURIComponent(nome)}`, { headers: sb });
+      const avevano = await attuali.json().catch(() => []);
+      const daLiberare = (Array.isArray(avevano) ? avevano : []).map(p => p.id).filter(id => !scelti.includes(id));
+      for (const id of daLiberare) {
+        await fetch(`${SUPABASE_URL}/rest/v1/proprieta?id=eq.${encodeURIComponent(id)}`, {
+          method: "PATCH", headers: { ...sb, "Content-Type": "application/json" },
+          body: JSON.stringify({ gestore_interno: null }),
+        });
+      }
+
+      // 2) Assegna quelli scelti
+      for (const id of scelti) {
+        await fetch(`${SUPABASE_URL}/rest/v1/proprieta?id=eq.${encodeURIComponent(id)}`, {
+          method: "PATCH", headers: { ...sb, "Content-Type": "application/json" },
+          body: JSON.stringify({ gestore_interno: nome }),
+        });
+      }
+
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ assegnati: scelti.length, liberati: daLiberare.length }) };
+    }
+
     // ── Task ──
     if (action === "list_task") {
       let q = "select=*&order=created_at.desc&limit=1000";
