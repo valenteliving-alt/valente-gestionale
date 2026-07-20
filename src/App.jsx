@@ -656,7 +656,23 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading }) => {
 // ── Workflow Lancio ──────────────────────────────────────────────────────────
 const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
   const [saving, setSaving] = useState(null);
+  const [noteAperte, setNoteAperte] = useState(null); // id proprietà con le note aperte
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteSalvate, setNoteSalvate] = useState(false);
   const inLancio = proprieta.filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato));
+
+  const apriNote = (p) => {
+    if (noteAperte === p.id) { setNoteAperte(null); return; }
+    setNoteAperte(p.id); setNoteDraft(p.note || ""); setNoteSalvate(false);
+  };
+  const salvaNote = async (p) => {
+    setNoteSaving(true); setNoteSalvate(false);
+    await sb.patch("proprieta", p.id, { note: noteDraft.trim() || null });
+    if (onDataChanged) await onDataChanged();
+    setNoteSaving(false); setNoteSalvate(true);
+    setTimeout(() => setNoteSalvate(false), 2500);
+  };
   const parseSteps = p => { try { return p.workflow_steps ? JSON.parse(p.workflow_steps) : {}; } catch { return {}; } };
   const stepDone = (p, stepId) => {
     if (stepId === "cin") return !!(p.cin && String(p.cin).trim());
@@ -723,10 +739,39 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
                     );
                   })}
                 </div>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                   <button className="bg" onClick={() => onEdit && onEdit(p)} disabled={busy}>Compila dati</button>
+                  <button className="bg" onClick={() => apriNote(p)} disabled={busy}>
+                    📝 Note{p.note ? " ✓" : ""}
+                  </button>
                   <button className="bp" onClick={() => rendiAttiva(p)} disabled={busy} style={{ marginLeft: "auto" }}>✓ Rendi attiva</button>
                 </div>
+
+                {/* Note e descrizioni dell'immobile in lancio */}
+                {noteAperte === p.id ? (
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--cd)" }}>
+                    <label style={{ display: "block", fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", marginBottom: 6 }}>
+                      Note e descrizione
+                    </label>
+                    <textarea
+                      value={noteDraft}
+                      onChange={e => setNoteDraft(e.target.value)}
+                      rows={5}
+                      placeholder={"Appunti sul lancio: cosa manca, contatti utili, accordi col proprietario, stato lavori, arredo, foto da fare…"}
+                      style={{ lineHeight: 1.5 }}
+                    />
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+                      <button className="bp" onClick={() => salvaNote(p)} disabled={noteSaving}>{noteSaving ? "Salvo…" : "Salva note"}</button>
+                      <button className="bg" onClick={() => setNoteAperte(null)}>Chiudi</button>
+                      {noteSalvate && <span style={{ fontSize: 11.5, color: "#2d6a4f", fontWeight: 600 }}>✓ Salvate</span>}
+                    </div>
+                  </div>
+                ) : p.note ? (
+                  <div onClick={() => apriNote(p)} title="Clicca per modificare le note"
+                    style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--cd)", fontSize: 12, color: "var(--gray)", lineHeight: 1.5, whiteSpace: "pre-wrap", cursor: "pointer" }}>
+                    {p.note.length > 220 ? p.note.slice(0, 220) + "…" : p.note}
+                  </div>
+                ) : null}
               </div>
             );
           })}
