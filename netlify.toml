@@ -19,6 +19,12 @@
   to = "/.netlify/functions/ai-agent"
   status = 200
 
+# Valutatore immobili: pagina a sé, servita dallo stesso dominio del CRM
+[[redirects]]
+  from = "/valutazione"
+  to = "/valutazione.html"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
