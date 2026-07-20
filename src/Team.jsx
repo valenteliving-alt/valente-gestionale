@@ -347,21 +347,23 @@ export default function Team({ proprieta = [], sonoMaster, onDataChanged }) {
                   )}
                 </div>
 
-                {/* Cosa vede */}
-                <div style={{ borderTop: "1px solid var(--cd)", paddingTop: 10, marginBottom: 10 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)", marginBottom: 6 }}>
-                    {vedeTutto ? `Vede tutti gli immobili${socio ? " · non gestisce accessi" : ""}` : `Vede ${suoi.length} immobil${suoi.length === 1 ? "e" : "i"}`}
-                  </div>
-                  {!vedeTutto && (
-                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                      {suoi.slice(0, 6).map(p => (
-                        <span key={p.id} className="tag" style={{ background: "var(--cream)", color: "var(--black)" }}>{p.nome}</span>
-                      ))}
-                      {suoi.length > 6 && <span className="tag">+{suoi.length - 6}</span>}
-                      {suoi.length === 0 && <span style={{ fontSize: 11, color: "var(--gray)" }}>Nessun immobile assegnato</span>}
+                {/* Cosa vede — o si elencano gli immobili, o non si scrive nulla */}
+                {(vedeTutto || suoi.length > 0) && (
+                  <div style={{ borderTop: "1px solid var(--cd)", paddingTop: 10, marginBottom: 10 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)", marginBottom: 6 }}>
+                      {vedeTutto
+                        ? `Vede tutti gli immobili${socio ? " · non gestisce accessi" : ""}`
+                        : `${agente ? "Ha portato" : "Gestisce"} ${suoi.length} immobil${suoi.length === 1 ? "e" : "i"}`}
                     </div>
-                  )}
-                </div>
+                    {!vedeTutto && (
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                        {suoi.map(p => (
+                          <span key={p.id} className="tag" style={{ background: "var(--cream)", color: "var(--black)" }}>{p.nome}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Task */}
                 <div style={{ fontSize: 11.5, color: "var(--gray)" }}>
