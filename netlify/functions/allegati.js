@@ -86,7 +86,7 @@ const handler = async (event) => {
     }
 
     if (action === "upload") {
-      const { proprieta_id, proprietario_id, nome_file, tipo, data, categoria, tags, note, ric_tipo, ric_anno, ric_periodo, ric_ambito } = body;
+      const { proprieta_id, proprietario_id, nome_file, tipo, data, categoria, tags, note, ric_tipo, ric_anno, ric_periodo, ric_ambito, caricato_da } = body;
       if (!data || !nome_file) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "File mancante." }) };
       const safeName = nome_file.replace(/[^a-zA-Z0-9._-]/g, "_");
       const catFolder = String(categoria || "Generale").replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -122,6 +122,7 @@ const handler = async (event) => {
           ric_anno: ric_anno ? parseInt(ric_anno) : null,
           ric_periodo: ric_periodo || null,
           ric_ambito: ric_ambito || null,
+          caricato_da: caricato_da || null,
         }),
       });
       const rec = await ins.json();
