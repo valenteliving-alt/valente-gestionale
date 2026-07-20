@@ -113,7 +113,7 @@ const WORKFLOW_COLUMNS = [
   { id: "mandato", label: "Mandato", color: "#1d6fa4" },
   { id: "scia", label: "SCIA", color: "#e07b39" },
   { id: "cin", label: "CIN", color: "#8b5cf6" },
-  { id: "cir", label: "CIR/Ross1000", color: "#0891b2" },
+  { id: "cir", label: "ISTAT", color: "#0891b2" },
   { id: "geis", label: "GEIS", color: "#6366F1" },
   { id: "alloggiati", label: "Alloggiati Web", color: "#059669" },
   { id: "annunci", label: "Annunci Online", color: "#2d6a4f" },
