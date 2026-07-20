@@ -7,6 +7,14 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 const COLORI = ["#6366F1", "#0891b2", "#e07b39", "#2d6a4f", "#8b5cf6", "#b8860b", "#c0392b", "#1d6fa4"];
 const VUOTO = { nome: "", ruolo: "", email: "", telefono: "", colore: "#6366F1", attivo: true, ruolo_accesso: "manager", note: "" };
 
+/* Le persone sono divise per che cosa fanno, non per ordine alfabetico:
+   chi guida l'azienda, chi gestisce gli immobili, chi li porta. */
+const GRUPPI = [
+  { id: "direzione", titolo: "Direzione", nota: "Vedono e modificano tutto il portafoglio, contabilità compresa.", match: r => r === "master" || r === "socio" },
+  { id: "manager", titolo: "Property manager", nota: "Vedono solo gli immobili di cui sono assegnatari, e possono modificarli.", match: r => r === "manager" || !r },
+  { id: "agenti", titolo: "Agenti esterni", nota: "Vedono gli immobili che portano loro: caricano documenti e seguono l'avvio, senza toccare il resto.", match: r => r === "agente" },
+];
+
 async function fnTeam(payload) {
   const r = await fetch("/.netlify/functions/team", {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -282,16 +290,29 @@ export default function Team({ proprieta = [], sonoMaster, onDataChanged }) {
       {caricando ? (
         <div style={{ padding: 40, textAlign: "center", color: "var(--gray)", fontSize: 13 }}>Carico il team…</div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))", gap: 12 }}>
-          {collaboratori.map(c => {
-            const suoi = immobiliDi(c.nome);
-            const ts = taskDi(c.nome);
-            const aperti = ts.filter(t => t.stato !== "fatto").length;
+        <div style={{ display: "flex", flexDirection: "column", gap: 26 }}>
+          {GRUPPI.map(g => {
+          const lista = collaboratori.filter(c => g.match(c.ruolo_accesso));
+          if (!lista.length) return null;
+          return (
+          <div key={g.id}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 2 }}>
+              <h2 style={{ fontSize: 13, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gold)" }}>{g.titolo}</h2>
+              <span style={{ fontSize: 11, color: "var(--gray)" }}>{lista.length}</span>
+            </div>
+            <p style={{ fontSize: 11.5, color: "var(--gray)", marginBottom: 12 }}>{g.nota}</p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))", gap: 12 }}>
+          {lista.map(c => {
             const master = c.ruolo_accesso === "master";
             const socio = c.ruolo_accesso === "socio";
+            const agente = c.ruolo_accesso === "agente";
+            // L'agente è collegato agli immobili tramite il campo "agente", non "gestore_interno"
+            const suoi = agente ? immobiliAgente(c.nome) : immobiliDi(c.nome);
+            const ts = taskDi(c.nome);
+            const aperti = ts.filter(t => t.stato !== "fatto").length;
             const vedeTutto = master || socio;
             const senzaAccount = !c.user_id;
-            const etichettaRuolo = master ? "Titolare" : socio ? "Socio" : "Property manager";
+            const etichettaRuolo = master ? "Titolare" : socio ? "Socio" : agente ? "Agente esterno" : "Property manager";
             return (
               <div key={c.id} style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 16, opacity: c.attivo === false ? .55 : 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
@@ -354,6 +375,10 @@ export default function Team({ proprieta = [], sonoMaster, onDataChanged }) {
                 </div>
               </div>
             );
+          })}
+            </div>
+          </div>
+          );
           })}
         </div>
       )}

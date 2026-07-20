@@ -28,12 +28,25 @@ async function fnAllegati(payload) {
   return d;
 }
 
-export default function PortaleAgente({ proprieta = [], nomeAgente }) {
+/* Le tappe dell'avvio, in ordine. Ogni tappa si accende da sola quando
+   arrivano i documenti che la compongono: l'agente non deve spuntare nulla. */
+const FASI = [
+  { id: "segnalata", label: "Immobile segnalato", nota: "La scheda esiste: da qui parte tutto", serve: [] },
+  { id: "mandato", label: "Mandato firmato", nota: "Il contratto di gestione", serve: ["mandato"] },
+  { id: "proprietario", label: "Dati del proprietario", nota: "Identità, codice fiscale, IBAN", serve: ["identita", "cf", "iban"] },
+  { id: "immobile", label: "Documenti dell'immobile", nota: "Planimetria e visura catastale", serve: ["planimetria", "visura"] },
+  { id: "extra", label: "Foto e APE", nota: "Utili per gli annunci — facoltativi", serve: ["ape", "foto"], facoltativa: true },
+  { id: "presa", label: "Presa in gestione", nota: "Valente Living assegna il property manager", serve: [] },
+];
+
+export default function PortaleAgente({ proprieta = [], nomeAgente, sb, onDataChanged }) {
   const [docs, setDocs] = useState([]);
   const [caricando, setCaricando] = useState(true);
   const [errore, setErrore] = useState("");
   const [aperto, setAperto] = useState(null);      // immobile espanso
   const [inCorso, setInCorso] = useState("");      // etichetta del documento in caricamento
+  const [nuovo, setNuovo] = useState(null);        // form "segnala immobile"
+  const [salvando, setSalvando] = useState(false);
   const fileRef = useRef(null);
   const bersaglio = useRef(null);                  // { propId, tipo }
 
@@ -58,6 +71,51 @@ export default function PortaleAgente({ proprieta = [], nomeAgente }) {
     const fatte = obbligatorie.filter(v => v.ok).length;
     return { voci, fatte, totale: obbligatorie.length, pct: Math.round((fatte / obbligatorie.length) * 100) };
   }, [docsDi]);
+
+  // Le tappe dell'avvio per un immobile, calcolate dai documenti già presenti
+  const fasiDi = useCallback((p, s) => {
+    const fatto = (id) => (s.voci.find(v => v.id === id) || {}).ok;
+    return FASI.map(f => {
+      let ok;
+      if (f.id === "segnalata") ok = true;
+      else if (f.id === "presa") ok = !!p.gestore_interno;
+      else ok = f.serve.every(fatto);
+      const parziali = f.serve.filter(fatto).length;
+      return { ...f, ok, parziali, totale: f.serve.length };
+    });
+  }, []);
+
+  // L'agente che porta l'immobile apre lui la scheda: da lì parte l'onboarding
+  const creaImmobile = async (e) => {
+    e.preventDefault();
+    if (!nuovo || !nuovo.nome.trim()) { setErrore("Serve almeno il nome dell'immobile."); return; }
+    setSalvando(true); setErrore("");
+    try {
+      let proprietarioId = null;
+      if (nuovo.proprietario.trim()) {
+        const { data } = await sb.post("proprietari", {
+          nome: nuovo.proprietario.trim(),
+          email: nuovo.email.trim() || null,
+          telefono: nuovo.telefono.trim() || null,
+        });
+        if (Array.isArray(data) && data[0]) proprietarioId = data[0].id;
+      }
+      const { ok } = await sb.post("proprieta", {
+        nome: nuovo.nome.trim(),
+        indirizzo: nuovo.indirizzo.trim() || null,
+        citta: nuovo.citta.trim() || null,
+        provincia: nuovo.provincia.trim() ? nuovo.provincia.trim().toUpperCase() : null,
+        tipo_contratto: nuovo.tipo_contratto || null,
+        proprietario_id: proprietarioId,
+        stato: "in lancio",
+        agente: nomeAgente,
+      });
+      if (!ok) throw new Error("Non è stato possibile creare l'immobile.");
+      setNuovo(null);
+      if (onDataChanged) await onDataChanged();
+    } catch (err) { setErrore(err.message); }
+    setSalvando(false);
+  };
 
   const scegli = (p, tipo) => {
     bersaglio.current = { prop: p, tipo };
@@ -112,14 +170,62 @@ export default function PortaleAgente({ proprieta = [], nomeAgente }) {
             Per ogni immobile carica i documenti richiesti: servono a noi per attivare la gestione.
           </p>
         </div>
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 26, fontWeight: 700, color: complessivo.completi === complessivo.totale && complessivo.totale ? "#2d6a4f" : "var(--gold)" }}>
-            {complessivo.completi}/{complessivo.totale}
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 26, fontWeight: 700, color: complessivo.completi === complessivo.totale && complessivo.totale ? "#2d6a4f" : "var(--gold)" }}>
+              {complessivo.completi}/{complessivo.totale}
+            </div>
+            <div style={{ fontSize: 10, color: "var(--gray)", textTransform: "uppercase", letterSpacing: ".05em" }}>pratiche complete</div>
           </div>
-          <div style={{ fontSize: 10, color: "var(--gray)", textTransform: "uppercase", letterSpacing: ".05em" }}>pratiche complete</div>
+          <button className="bp" onClick={() => setNuovo(nuovo ? null : { nome: "", indirizzo: "", citta: "", provincia: "", tipo_contratto: "gestione", proprietario: "", email: "", telefono: "" })}>
+            {nuovo ? "Annulla" : "+ Segnala un immobile"}
+          </button>
         </div>
       </div>
       <div className="gl" style={{ marginBottom: 20 }} />
+
+      {nuovo && (
+        <form onSubmit={creaImmobile} style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 20, marginBottom: 18 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 3 }}>Nuovo immobile che porti tu</div>
+          <p style={{ fontSize: 11.5, color: "var(--gray)", marginBottom: 16, lineHeight: 1.5 }}>
+            Bastano il nome e due dati di contatto: la scheda si apre subito e puoi cominciare a caricare il mandato.
+            Il resto lo completiamo insieme.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
+            <label style={{ fontSize: 11, color: "var(--gray)" }}>Nome immobile *
+              <input value={nuovo.nome} autoFocus onChange={e => setNuovo({ ...nuovo, nome: e.target.value })} placeholder="es. Casa Rossi — Trastevere" style={{ width: "100%", marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 11, color: "var(--gray)" }}>Indirizzo
+              <input value={nuovo.indirizzo} onChange={e => setNuovo({ ...nuovo, indirizzo: e.target.value })} style={{ width: "100%", marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 11, color: "var(--gray)" }}>Città
+              <input value={nuovo.citta} onChange={e => setNuovo({ ...nuovo, citta: e.target.value })} style={{ width: "100%", marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 11, color: "var(--gray)" }}>Provincia
+              <input value={nuovo.provincia} maxLength={2} onChange={e => setNuovo({ ...nuovo, provincia: e.target.value })} placeholder="RM" style={{ width: "100%", marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 11, color: "var(--gray)" }}>Tipo di accordo
+              <select value={nuovo.tipo_contratto} onChange={e => setNuovo({ ...nuovo, tipo_contratto: e.target.value })} style={{ width: "100%", marginTop: 4 }}>
+                <option value="gestione">Gestione per conto terzi</option>
+                <option value="sublocazione">Sublocazione</option>
+              </select>
+            </label>
+            <label style={{ fontSize: 11, color: "var(--gray)" }}>Proprietario
+              <input value={nuovo.proprietario} onChange={e => setNuovo({ ...nuovo, proprietario: e.target.value })} placeholder="Nome e cognome" style={{ width: "100%", marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 11, color: "var(--gray)" }}>Email proprietario
+              <input value={nuovo.email} onChange={e => setNuovo({ ...nuovo, email: e.target.value })} style={{ width: "100%", marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 11, color: "var(--gray)" }}>Telefono proprietario
+              <input value={nuovo.telefono} onChange={e => setNuovo({ ...nuovo, telefono: e.target.value })} style={{ width: "100%", marginTop: 4 }} />
+            </label>
+          </div>
+          <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
+            <button className="bp" type="submit" disabled={salvando}>{salvando ? "Creo…" : "Crea e inizia l'avvio"}</button>
+            <button className="bg" type="button" onClick={() => setNuovo(null)}>Annulla</button>
+          </div>
+        </form>
+      )}
 
       {errore && <div style={{ fontSize: 12, color: "var(--red)", marginBottom: 12 }}>{errore}</div>}
       {inCorso && <div style={{ fontSize: 12, color: "var(--gold)", fontWeight: 600, marginBottom: 12 }}>Carico “{inCorso}”…</div>}
@@ -131,7 +237,8 @@ export default function PortaleAgente({ proprieta = [], nomeAgente }) {
         <div style={{ padding: 50, textAlign: "center", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12 }}>
           <div style={{ fontSize: 28, marginBottom: 10 }}>🏠</div>
           <div style={{ fontSize: 13, color: "var(--gray)", lineHeight: 1.6 }}>
-            Non hai ancora immobili collegati.<br />Appena Valente Living te ne assegna uno, comparirà qui.
+            Non hai ancora immobili collegati.<br />
+            Appena Valente Living te ne assegna uno comparirà qui — oppure segnalane uno tu con il pulsante qui sopra.
           </div>
         </div>
       ) : (
@@ -162,6 +269,35 @@ export default function PortaleAgente({ proprieta = [], nomeAgente }) {
 
                 {espanso && (
                   <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--cd)" }}>
+                    {/* Linea del tempo dell'avvio: dove siamo e cosa manca */}
+                    <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)", marginBottom: 12 }}>
+                      Avvio dell'immobile
+                    </div>
+                    <div style={{ marginBottom: 20 }}>
+                      {fasiDi(p, s).map((f, i, arr) => {
+                        const colore = f.ok ? "#2d6a4f" : f.parziali > 0 ? "var(--gold)" : "var(--cd)";
+                        return (
+                          <div key={f.id} style={{ display: "flex", gap: 12, alignItems: "stretch" }}>
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 18, flexShrink: 0 }}>
+                              <div style={{ width: 11, height: 11, borderRadius: "50%", marginTop: 4, background: f.ok ? colore : "var(--white)", border: `2px solid ${colore}`, flexShrink: 0 }} />
+                              {i < arr.length - 1 && <div style={{ flex: 1, width: 2, background: f.ok ? "#2d6a4f" : "var(--cd)", minHeight: 18 }} />}
+                            </div>
+                            <div style={{ paddingBottom: i < arr.length - 1 ? 14 : 0, minWidth: 0 }}>
+                              <div style={{ fontSize: 12.5, fontWeight: f.ok ? 600 : 500, color: f.ok ? "var(--black)" : "var(--gray)" }}>
+                                {f.label}
+                                {f.facoltativa && <span style={{ fontSize: 10, fontWeight: 400, color: "var(--gray)" }}> · facoltativa</span>}
+                                {!f.ok && f.totale > 0 && <span style={{ fontSize: 10, fontWeight: 600, color: "var(--gold)" }}> · {f.parziali}/{f.totale}</span>}
+                              </div>
+                              <div style={{ fontSize: 10.5, color: "var(--gray)", marginTop: 1 }}>{f.nota}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)", marginBottom: 4 }}>
+                      Documenti da caricare
+                    </div>
                     {s.voci.map(v => (
                       <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: "1px solid var(--cd)", flexWrap: "wrap" }}>
                         <span style={{ fontSize: 15, width: 20, flexShrink: 0 }}>{v.ok ? "✅" : v.facoltativo ? "○" : "⬜️"}</span>
