@@ -3391,7 +3391,9 @@ function App({ utente, onLogout }) {
     ? true
     : sonoAgente
       ? (i.id === "portale" || i.id === "valutazione")
-      : ["proprieta", "proprietari", "compliance", "guida", "valutazione"].includes(i.id)); // property manager
+      : (ruoloLetto && !mioNome)
+        ? false // account senza scheda in Team: nessuna voce, c'è il messaggio a schermo
+        : ["proprieta", "proprietari", "compliance", "guida", "valutazione"].includes(i.id)); // property manager
 
   return (
     <>
@@ -3473,9 +3475,23 @@ function App({ utente, onLogout }) {
 
         {/* Main */}
         <main className="main">
-          {/* Il valutatore resta accessibile anche a chi aspetta l'approvazione:
-              un agente può valutare un immobile prima ancora di averne in gestione. */}
-          {inAttesa && view === "valutazione" ? <Valutazione nomeAgente={mioNome} /> :
+          {/* Account senza scheda in Team: senza un profilo collegato non vedrebbe nulla
+              e ogni salvataggio verrebbe rifiutato. Meglio dirlo che lasciarlo a vuoto. */}
+          {ruoloLetto && !mioNome && !vedoTutto && !inAttesa ? (
+            <div className="fi" style={{ maxWidth: 520, margin: "60px auto", textAlign: "center", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 16, boxShadow: "var(--shadow)", padding: 40 }}>
+              <div style={{ fontSize: 34, marginBottom: 12 }}>🔒</div>
+              <h2 style={{ fontSize: 19, marginBottom: 8 }}>Accesso non collegato a nessuna scheda</h2>
+              <p style={{ fontSize: 13, color: "var(--gray)", lineHeight: 1.6 }}>
+                Questo account esiste ma non è associato a nessuna persona del team, quindi non può vedere né salvare dati.
+                Chiedi al titolare di collegarlo da <strong>Team &amp; Accessi</strong>.
+              </p>
+              <p style={{ fontSize: 11.5, color: "var(--gray)", marginTop: 14 }}>{utente && utente.email}</p>
+              <button className="bg" onClick={onLogout} style={{ marginTop: 16, fontSize: 12 }}>Esci</button>
+            </div>
+          ) :
+          /* Il valutatore resta accessibile anche a chi aspetta l'approvazione:
+              un agente può valutare un immobile prima ancora di averne in gestione. */
+           inAttesa && view === "valutazione" ? <Valutazione nomeAgente={mioNome} /> :
            inAttesa ? (
             <div className="fi" style={{ maxWidth: 520, margin: "60px auto", textAlign: "center", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 16, boxShadow: "var(--shadow)", padding: 40 }}>
               <div style={{ fontSize: 34, marginBottom: 12 }}>⏳</div>
