@@ -84,17 +84,36 @@ export default function Team({ proprieta = [], sonoMaster, onDataChanged }) {
   const [esito, setEsito] = useState("");
   const [linkInvito, setLinkInvito] = useState(null); // { link, nome, messaggio }
   const [copiato, setCopiato] = useState(false);
+  const [accessi, setAccessi] = useState([]);   // utenze reali, collegate e non
 
   const carica = useCallback(async () => {
     setCaricando(true); setErrore("");
     try {
-      const [c, t] = await Promise.all([fnTeam({ action: "list_collaboratori" }), fnTeam({ action: "list_task" })]);
+      const [c, t, a] = await Promise.all([
+        fnTeam({ action: "list_collaboratori" }),
+        fnTeam({ action: "list_task" }),
+        fnTeam({ action: "list_accessi" }).catch(() => ({ accessi: [] })),
+      ]);
       setCollaboratori(c.collaboratori || []);
       setTask(t.task || []);
+      setAccessi(a.accessi || []);
     } catch (e) { setErrore(e.message); }
     setCaricando(false);
   }, []);
   useEffect(() => { carica(); }, [carica]);
+
+  /* Eliminare una persona dal team non cancella la sua utenza: resterebbe un accesso
+     valido che non compare in nessun elenco. Qui li vediamo e li chiudiamo. */
+  const orfani = useMemo(() => accessi.filter(a => !a.collaboratore_id), [accessi]);
+  const eliminaAccesso = async (a) => {
+    if (!window.confirm(`Eliminare definitivamente l'accesso ${a.email}?\n\nNon è collegato a nessuna persona del team. Chi lo usa non potrà più entrare.`)) return;
+    setErrore(""); setEsito("");
+    try {
+      await fnTeam({ action: "elimina_accesso", user_id: a.user_id });
+      setAccessi(as => as.filter(x => x.user_id !== a.user_id));
+      setEsito(`Accesso ${a.email} eliminato.`);
+    } catch (e) { setErrore(e.message); }
+  };
 
   const immobiliDi = useCallback((nome) => proprieta.filter(p => p.gestore_interno === nome), [proprieta]);
   const immobiliAgente = useCallback((nome) => proprieta.filter(p => p.agente === nome), [proprieta]);
@@ -382,6 +401,32 @@ export default function Team({ proprieta = [], sonoMaster, onDataChanged }) {
           </div>
           );
           })}
+        </div>
+      )}
+
+      {/* Utenze rimaste senza persona: entrano nel CRM ma non sono nessuno */}
+      {orfani.length > 0 && (
+        <div style={{ background: "var(--white)", border: "1px solid rgba(220,38,38,.35)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 16, marginTop: 20 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--red)", marginBottom: 6 }}>
+            🔓 {orfani.length} access{orfani.length === 1 ? "o" : "i"} non collegat{orfani.length === 1 ? "o" : "i"} a nessuno
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--gray)", marginBottom: 10, lineHeight: 1.6 }}>
+            Queste email possono ancora entrare nel CRM ma non corrispondono a nessuna persona del team: non vedono dati e non
+            possono salvare nulla. Succede quando si elimina una persona da qui — l'utenza resta. Collegala a una persona con
+            <strong> Invita</strong> dalla sua scheda, oppure chiudila.
+          </div>
+          {orfani.map(a => (
+            <div key={a.user_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderTop: "1px solid var(--cd)", flexWrap: "wrap" }}>
+              <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600 }}>{a.email}</div>
+                <div style={{ fontSize: 10.5, color: "var(--gray)" }}>
+                  {a.confermato ? "account attivo" : "invito mai confermato"}
+                  {a.ultimo_accesso ? ` · ultimo accesso ${new Date(a.ultimo_accesso).toLocaleDateString("it-IT")}` : " · mai entrato"}
+                </div>
+              </div>
+              <button className="bd" onClick={() => eliminaAccesso(a)} style={{ fontSize: 10.5, padding: "4px 10px" }}>Elimina accesso</button>
+            </div>
+          ))}
         </div>
       )}
 
