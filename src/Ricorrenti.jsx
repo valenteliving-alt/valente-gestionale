@@ -59,19 +59,17 @@ export default function Ricorrenti({ proprieta = [], owners = [] }) {
   }, []);
   useEffect(() => { carica(); }, [carica]);
 
-  // Comuni con almeno un immobile attivo (match su nome comune o alias della guida)
-  const comuniAttivi = useMemo(() => {
-    const attive = proprieta.filter(p => norm(p.stato).startsWith("attiv"));
-    const trovati = new Map();
-    attive.forEach(p => {
-      const c = norm(p.citta);
-      if (!c) return;
-      const reg = regole.find(r => norm(r.comune) === c || String(r.alias || "").split(",").map(norm).includes(c));
-      const nome = reg ? reg.comune : (p.citta || "").trim();
-      if (!trovati.has(nome)) trovati.set(nome, { comune: nome, regola: reg || null, n: 0 });
-      trovati.get(nome).n++;
-    });
-    return [...trovati.values()].sort((a, b) => a.comune.localeCompare(b.comune));
+  /* Gli adempimenti si fanno immobile per immobile: la dichiarazione va presentata
+     per struttura, non per città. Il comune serve solo a sapere ogni quanto. */
+  const immobiliAttivi = useMemo(() => {
+    return proprieta
+      .filter(p => norm(p.stato).startsWith("attiv"))
+      .map(p => {
+        const c = norm(p.citta);
+        const reg = regole.find(r => norm(r.comune) === c || String(r.alias || "").split(",").map(norm).includes(c));
+        return { p, comune: reg ? reg.comune : (p.citta || "").trim() || "—", regola: reg || null };
+      })
+      .sort((a, b) => a.comune.localeCompare(b.comune) || String(a.p.nome).localeCompare(String(b.p.nome)));
   }, [proprieta, regole]);
 
   // Proprietari con almeno un immobile (per le CU)
@@ -94,7 +92,7 @@ export default function Ricorrenti({ proprieta = [], owners = [] }) {
 
   const docsSlot = (tipo, periodo, ambito) => idx[[tipo, anno, periodo, norm(ambito)].join("|")] || [];
 
-  // Sezioni della griglia (imposta e ISTAT stanno nella tabella unica dei comuni)
+  // Sezioni della griglia (imposta e ISTAT stanno nella tabella degli immobili)
   const sezioni = useMemo(() => ([
     {
       tipo: "cu", icona: "📄", titolo: "Certificazioni Uniche",
@@ -110,7 +108,7 @@ export default function Ricorrenti({ proprieta = [], owners = [] }) {
         { id: "f24", label: "F24 periodici", periodi: periodiPer("mensile") },
       ],
     },
-  ]), [comuniAttivi, ownersConImmobili]);
+  ]), [ownersConImmobili]);
 
   // Avanzamento per sezione (caselle piene / totali) — i mesi/periodi futuri non contano
   const oggi = new Date();
@@ -215,7 +213,7 @@ export default function Ricorrenti({ proprieta = [], owners = [] }) {
       {!caricando && (
         <div style={{ background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 16, marginBottom: 16, overflowX: "auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>Comuni</span>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>Immobili</span>
             <span style={{ fontSize: 11, color: "var(--gray)" }}>
               {tuttoAnno ? `tutto il ${anno}` : "ultimi tre mesi"}
             </span>
@@ -225,29 +223,32 @@ export default function Ricorrenti({ proprieta = [], owners = [] }) {
           </div>
 
           <div style={{ display: "flex", gap: 10, paddingBottom: 6, borderBottom: "1px solid var(--cd)", fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)" }}>
-            <div style={{ flex: "1 1 180px", minWidth: 150 }}>Comune</div>
-            <div style={{ flex: "0 0 auto", minWidth: 150 }}>🏛️ Imposta di soggiorno</div>
-            <div style={{ flex: "0 0 auto", minWidth: 150 }}>📊 ISTAT</div>
+            <div style={{ flex: "1 1 220px", minWidth: 180 }}>Immobile</div>
+            <div style={{ flex: "0 0 auto", minWidth: 150 }}>&#127963;&#65039; Imposta di soggiorno</div>
+            <div style={{ flex: "0 0 auto", minWidth: 150 }}>&#128202; ISTAT</div>
           </div>
 
-          {comuniAttivi.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)", paddingTop: 10 }}>Nessun comune con immobili attivi.</div>}
+          {immobiliAttivi.length === 0 && <div style={{ fontSize: 12, color: "var(--gray)", paddingTop: 10 }}>Nessun immobile attivo.</div>}
 
-          {comuniAttivi.map(c => {
-            const impostaAttiva = !c.regola || c.regola.imposta_attiva !== false;
-            const pImposta = impostaAttiva ? ultimiPeriodi(c.regola ? c.regola.cadenza_tipo : "trimestrale") : [];
+          {immobiliAttivi.map((riga, i, tutte) => {
+            const { p, comune, regola } = riga;
+            const chiave = String(p.id);                       // l'archivio è per immobile
+            const impostaAttiva = !regola || regola.imposta_attiva !== false;
+            const pImposta = impostaAttiva ? ultimiPeriodi(regola ? regola.cadenza_tipo : "trimestrale") : [];
             const pIstat = ultimiPeriodi("mensile");
-            const riga = { id: c.comune, label: c.comune };
-            const casella = (tipo, p) => {
-              const presenti = docsSlot(tipo, p.k, c.comune);
+            const rigaSlot = { id: chiave, label: p.nome };
+            const nuovoComune = i === 0 || tutte[i - 1].comune !== comune;
+            const casella = (tipo, per) => {
+              const presenti = docsSlot(tipo, per.k, chiave);
               const pieno = presenti.length > 0;
-              const passato = periodoPassato(p.k);
-              const selez = slot && slot.tipo === tipo && slot.periodo === p.k && slot.ambitoId === c.comune;
+              const passato = periodoPassato(per.k);
+              const selez = slot && slot.tipo === tipo && slot.periodo === per.k && slot.ambitoId === chiave;
               return (
-                <button key={tipo + p.k}
+                <button key={tipo + per.k}
                   onClick={() => pieno
-                    ? setSlot(selez ? null : { tipo, periodo: p.k, ambito: c.comune, ambitoId: c.comune, vista: true })
-                    : scegliFile(tipo, p.k, riga)}
-                  title={pieno ? `${presenti.length} document${presenti.length === 1 ? "o" : "i"} — clicca per vedere` : passato ? "Mancante — clicca per caricare" : "Periodo futuro"}
+                    ? setSlot(selez ? null : { tipo, periodo: per.k, ambito: p.nome, ambitoId: chiave, vista: true })
+                    : scegliFile(tipo, per.k, rigaSlot)}
+                  title={pieno ? `${presenti.length} documento/i — clicca per vedere` : passato ? "Mancante — clicca per caricare" : "Periodo futuro"}
                   style={{
                     minWidth: 36, padding: "4px 7px", fontSize: 10.5, fontWeight: 600,
                     border: selez ? "1.5px solid var(--gold)" : "1px solid " + (pieno ? "rgba(45,106,79,.4)" : passato ? "rgba(225,29,72,.35)" : "var(--gl)"),
@@ -255,30 +256,35 @@ export default function Ricorrenti({ proprieta = [], owners = [] }) {
                     color: pieno ? "#2d6a4f" : passato ? "var(--red)" : "var(--gray)",
                     borderRadius: 8,
                   }}
-                >{p.label}{pieno ? " ✓" : ""}</button>
+                >{per.label}{pieno ? " \u2713" : ""}</button>
               );
             };
             return (
-              <Fragment key={c.comune}>
+              <Fragment key={chiave}>
+                {nuovoComune && (
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gold)", paddingTop: 12, paddingBottom: 2 }}>
+                    {comune}
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderTop: "1px solid var(--cd)" }}>
-                  <div style={{ flex: "1 1 180px", minWidth: 150 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 600 }}>{c.comune}</span>
-                    <span style={{ fontSize: 10.5, color: "var(--gray)", marginLeft: 6 }}>{c.n} immobil{c.n === 1 ? "e" : "i"}</span>
+                  <div style={{ flex: "1 1 220px", minWidth: 180 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600 }}>{p.nome}</div>
+                    <div style={{ fontSize: 10.5, color: "var(--gray)" }}>{p.cin || "CIN mancante"}</div>
                   </div>
                   <div style={{ flex: "0 0 auto", minWidth: 150, display: "flex", gap: 4, flexWrap: "wrap" }}>
-                    {impostaAttiva ? pImposta.map(p => casella("imposta_soggiorno", p))
+                    {impostaAttiva ? pImposta.map(per => casella("imposta_soggiorno", per))
                       : <span style={{ fontSize: 10.5, color: "var(--gray)" }}>non dovuta</span>}
                   </div>
                   <div style={{ flex: "0 0 auto", minWidth: 150, display: "flex", gap: 4, flexWrap: "wrap" }}>
-                    {pIstat.map(p => casella("istat", p))}
+                    {pIstat.map(per => casella("istat", per))}
                   </div>
                 </div>
-                {slot && slot.vista && slot.ambitoId === c.comune && (() => {
-                  const presenti = docsSlot(slot.tipo, slot.periodo, c.comune);
+                {slot && slot.vista && slot.ambitoId === chiave && (() => {
+                  const presenti = docsSlot(slot.tipo, slot.periodo, chiave);
                   return (
                     <div style={{ background: "var(--cream)", border: "1px solid var(--gl)", borderRadius: 10, padding: "10px 12px", margin: "0 0 8px" }}>
                       <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>
-                        {c.comune} · {slot.tipo === "istat" ? "ISTAT" : "Imposta"} {slot.periodo} {anno}
+                        {p.nome} · {slot.tipo === "istat" ? "ISTAT" : "Imposta"} {slot.periodo} {anno}
                       </div>
                       {presenti.map(d => (
                         <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, padding: "4px 0" }}>
@@ -287,7 +293,7 @@ export default function Ricorrenti({ proprieta = [], owners = [] }) {
                           <button className="bd" onClick={() => elimina(d)} style={{ fontSize: 10.5, padding: "3px 8px" }}>×</button>
                         </div>
                       ))}
-                      <button className="bg" onClick={() => scegliFile(slot.tipo, slot.periodo, riga)} style={{ fontSize: 10.5, padding: "4px 10px", marginTop: 6 }}>+ Aggiungi documento</button>
+                      <button className="bg" onClick={() => scegliFile(slot.tipo, slot.periodo, rigaSlot)} style={{ fontSize: 10.5, padding: "4px 10px", marginTop: 6 }}>+ Aggiungi documento</button>
                     </div>
                   );
                 })()}
