@@ -785,7 +785,7 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading, gestori = GEST
 async function fnTeam(payload) {
   const r = await fetch("/.netlify/functions/team", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, token: auth.token() }),
   });
   const d = await r.json().catch(() => ({}));
   if (!r.ok || d.error) throw new Error(d.error || "Errore.");
@@ -1177,47 +1177,213 @@ const PropTile = ({ p, o, onClick }) => (
    riempire il modello Word. */
 const LINGUE_CONTRATTO = [{ cod: "it", nome: "Italiano" }, { cod: "en", nome: "English" }];
 
+/* Carica una libreria esterna una sola volta, quando serve davvero. */
+function caricaScript(src) {
+  return new Promise((ok, ko) => {
+    if ([...document.scripts].some(s => s.src === src)) return ok();
+    const s = document.createElement("script");
+    s.src = src; s.onload = () => ok(); s.onerror = () => ko(new Error("Libreria non caricata: " + src));
+    document.head.appendChild(s);
+  });
+}
+
+const CDN = {
+  zip: "https://unpkg.com/pizzip@3.1.8/dist/pizzip.js",
+  docx: "https://unpkg.com/docxtemplater@3.62.2/build/docxtemplater.js",
+  pdf: "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+};
+
+const oggiIt = () => new Date().toLocaleDateString("it-IT");
+const traTerm = (anni) => { const d = new Date(); d.setFullYear(d.getFullYear() + anni); return d.toLocaleDateString("it-IT"); };
+
+/* Il mandato si compila qui dentro e si scarica: niente pagine intermedie.
+   Il modello Word sta in public/, i dati arrivano dalla scheda immobile. */
 function GeneraMandato({ p, o }) {
   const [lingua, setLingua] = useState("it");
+  const [aperto, setAperto] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [errore, setErrore] = useState("");
+  const [f, setF] = useState(null);
+
   if (!p) return null;
 
-  const apri = () => {
-    const q = new URLSearchParams({ mandato: "1", lingua });
-    const metti = (k, v) => { if (v) q.set(k, String(v)); };
-    metti("indirizzo", p.indirizzo);
-    metti("comune", p.citta);
-    metti("provincia", p.provincia);
-    metti("foglio", p.catasto_foglio);
-    metti("particella", p.catasto_mappale);
-    metti("subalterno", p.catasto_sub);
-    metti("categoria", p.categoria_catastale);
-    metti("mq", p.mq);
-    metti("commissione", p.commissione);
-    metti("ospiti", p.posti_letto);
-    if (o) {
-      metti("nome", o.nome);
-      metti("cognome", o.cognome);
-      metti("cf", o.codice_fiscale);
-      metti("residenza", [o.indirizzo, o.citta].filter(Boolean).join(", "));
-      metti("telefono", o.telefono);
-      metti("email", o.email);
+  const inizializza = () => {
+    setErrore("");
+    setF({
+      // proprietario
+      nome: (o && o.nome) || "", cognome: (o && o.cognome) || "", cf: (o && o.codice_fiscale) || "",
+      luogo_nascita: "", data_nascita: "",
+      residenza: o ? [o.indirizzo, o.citta].filter(Boolean).join(", ") : "",
+      telefono: (o && o.telefono) || "", email: (o && o.email) || "",
+      // immobile
+      tipo_immobile: "Appartamento",
+      indirizzo_immobile: p.indirizzo || "", comune_immobile: p.citta || "", provincia_immobile: p.provincia || "",
+      foglio: p.catasto_foglio || "", particella: p.catasto_mappale || "", subalterno: p.catasto_sub || "",
+      categoria_catastale: p.categoria_catastale || "", superficie: p.mq || "", rendita_catastale: "",
+      // contratto
+      percentuale_commissione: p.commissione != null ? String(p.commissione) : "20",
+      data_inizio: oggiIt(), data_fine: traTerm(2),
+      budget_interventi: "70", budget_interventi_lettere: "settanta",
+      max_ospiti: p.posti_letto ? String(p.posti_letto) : "6",
+      giorni_uso_proprietario: "30",
+    });
+    setAperto(true);
+  };
+
+  const campo = (k, v) => setF(x => ({ ...x, [k]: v }));
+
+  // Riempie il modello Word e restituisce lo zip pronto
+  const componi = async () => {
+    await caricaScript(CDN.zip);
+    await caricaScript(CDN.docx);
+    const file = lingua === "it" ? "/template.docx" : `/template-${lingua}.docx`;
+    const r = await fetch(file);
+    const tipo = r.headers.get("content-type") || "";
+    if (!r.ok || tipo.includes("html")) {
+      const nome = (LINGUE_CONTRATTO.find(l => l.cod === lingua) || {}).nome || lingua;
+      throw new Error(`Manca il modello di contratto in ${nome}. Per ora puoi generarlo in italiano.`);
     }
-    window.open(`/valutazione.html?${q.toString()}`, "_blank", "noopener");
+    const zip = new window.PizZip(await r.arrayBuffer());
+    const doc = new window.docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
+    doc.render({
+      proprietari: [{
+        nome: f.nome, cognome: f.cognome, cf: f.cf, luogo_nascita: f.luogo_nascita,
+        data_nascita: f.data_nascita, residenza: f.residenza, telefono: f.telefono, email: f.email, sep: ". ",
+      }],
+      tipo_immobile: f.tipo_immobile, indirizzo_immobile: f.indirizzo_immobile,
+      comune_immobile: f.comune_immobile, provincia_immobile: f.provincia_immobile,
+      foglio: f.foglio, particella: f.particella, subalterno: f.subalterno,
+      categoria_catastale: f.categoria_catastale, superficie: f.superficie, rendita_catastale: f.rendita_catastale,
+      percentuale_commissione: f.percentuale_commissione, data_inizio: f.data_inizio, data_fine: f.data_fine,
+      budget_interventi: f.budget_interventi, budget_interventi_lettere: f.budget_interventi_lettere,
+      max_ospiti: f.max_ospiti, giorni_uso_proprietario: f.giorni_uso_proprietario,
+    });
+    return doc.getZip();
+  };
+
+  const nomeFile = (est) => {
+    const chi = (f.cognome || p.nome || "mandato").replace(/[^a-zA-Z0-9]/g, "_");
+    return `Mandato_Valente_Living_${chi}_${oggiIt().replace(/\//g, "-")}.${est}`;
+  };
+
+  const scarica = (blob, nome) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = nome;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  };
+
+  const faiWord = async () => {
+    setBusy("word"); setErrore("");
+    try {
+      const zip = await componi();
+      scarica(zip.generate({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", compression: "DEFLATE" }), nomeFile("docx"));
+    } catch (e) { setErrore(e.message); }
+    setBusy("");
+  };
+
+  const faiPdf = async () => {
+    setBusy("pdf"); setErrore("");
+    try {
+      const zip = await componi();
+      await caricaScript(CDN.pdf);
+      // Dal Word compilato prendo il testo, paragrafo per paragrafo, e lo impagino
+      const xml = zip.file("word/document.xml").asText();
+      const paragrafi = xml.split(/<\/w:p>/)
+        .map(b => b.replace(/<w:tab[^>]*\/>/g, "\t").replace(/<[^>]+>/g, ""))
+        .map(s => s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").trim());
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ unit: "mm", format: "a4" });
+      const margine = 18, larghezza = 210 - margine * 2, fondo = 297 - margine;
+      let y = margine;
+      pdf.setFont("helvetica", "normal"); pdf.setFontSize(10);
+      paragrafi.forEach(par => {
+        if (!par) { y += 3; return; }
+        const righe = pdf.splitTextToSize(par, larghezza);
+        righe.forEach(riga => {
+          if (y > fondo) { pdf.addPage(); y = margine; }
+          pdf.text(riga, margine, y); y += 5;
+        });
+        y += 2;
+      });
+      pdf.save(nomeFile("pdf"));
+    } catch (e) { setErrore(e.message); }
+    setBusy("");
   };
 
   return (
     <div style={{ marginTop: 20, background: "var(--cream)", border: "1px solid var(--gl)", borderRadius: 10, padding: 14 }}>
       <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>📄 Mandato di gestione</div>
       <p style={{ fontSize: 11, color: "var(--gray)", marginBottom: 10, lineHeight: 1.5 }}>
-        Il contratto viene precompilato con i dati dell'immobile{o ? " e del proprietario" : ""}: controlli il modulo e lo scarichi in Word.
+        Precompilato con i dati dell'immobile{o ? " e del proprietario" : ""}: completi le poche righe mancanti e scarichi.
         {!o && <> Collega prima un proprietario per riempire anche la sua parte.</>}
       </p>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <select value={lingua} onChange={e => setLingua(e.target.value)} style={{ width: "auto", minWidth: 120 }}>
-          {LINGUE_CONTRATTO.map(l => <option key={l.cod} value={l.cod}>{l.nome}</option>)}
-        </select>
-        <button className="bp" onClick={apri} style={{ fontSize: 12 }}>Genera mandato →</button>
-      </div>
+
+      {!aperto ? (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <select value={lingua} onChange={e => setLingua(e.target.value)} style={{ width: "auto", minWidth: 120 }}>
+            {LINGUE_CONTRATTO.map(l => <option key={l.cod} value={l.cod}>{l.nome}</option>)}
+          </select>
+          <button className="bp" onClick={inizializza} style={{ fontSize: 12 }}>Prepara mandato</button>
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)", margin: "10px 0 6px" }}>Proprietario</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }}>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Nome<input value={f.nome} onChange={e => campo("nome", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Cognome<input value={f.cognome} onChange={e => campo("cognome", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Codice fiscale<input value={f.cf} onChange={e => campo("cf", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Luogo di nascita<input value={f.luogo_nascita} onChange={e => campo("luogo_nascita", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Data di nascita<input value={f.data_nascita} onChange={e => campo("data_nascita", e.target.value)} placeholder="gg/mm/aaaa" style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Residenza<input value={f.residenza} onChange={e => campo("residenza", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+          </div>
+
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)", margin: "12px 0 6px" }}>Immobile e catasto</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }}>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Tipo<input value={f.tipo_immobile} onChange={e => campo("tipo_immobile", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Indirizzo<input value={f.indirizzo_immobile} onChange={e => campo("indirizzo_immobile", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Comune<input value={f.comune_immobile} onChange={e => campo("comune_immobile", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Foglio<input value={f.foglio} onChange={e => campo("foglio", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Particella<input value={f.particella} onChange={e => campo("particella", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Subalterno<input value={f.subalterno} onChange={e => campo("subalterno", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Categoria<input value={f.categoria_catastale} onChange={e => campo("categoria_catastale", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Superficie (mq)<input value={f.superficie} onChange={e => campo("superficie", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Rendita catastale<input value={f.rendita_catastale} onChange={e => campo("rendita_catastale", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+          </div>
+
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)", margin: "12px 0 6px" }}>Condizioni</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }}>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Provvigione (%)<input value={f.percentuale_commissione} onChange={e => campo("percentuale_commissione", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Max ospiti<input value={f.max_ospiti} onChange={e => campo("max_ospiti", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Data inizio<input value={f.data_inizio} onChange={e => campo("data_inizio", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Data fine<input value={f.data_fine} onChange={e => campo("data_fine", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Budget interventi (€)<input value={f.budget_interventi} onChange={e => campo("budget_interventi", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>…in lettere<input value={f.budget_interventi_lettere} onChange={e => campo("budget_interventi_lettere", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Giorni uso proprietario<input value={f.giorni_uso_proprietario} onChange={e => campo("giorni_uso_proprietario", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
+            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Lingua
+              <select value={lingua} onChange={e => setLingua(e.target.value)} style={{ width: "100%", marginTop: 3 }}>
+                {LINGUE_CONTRATTO.map(l => <option key={l.cod} value={l.cod}>{l.nome}</option>)}
+              </select>
+            </label>
+          </div>
+
+          {errore && <div style={{ fontSize: 11.5, color: "var(--red)", marginTop: 10 }}>{errore}</div>}
+
+          <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+            <button className="bp" onClick={faiWord} disabled={!!busy} style={{ fontSize: 12 }}>
+              {busy === "word" ? "Preparo…" : "⬇ Scarica Word"}
+            </button>
+            <button className="bg" onClick={faiPdf} disabled={!!busy} style={{ fontSize: 12 }}>
+              {busy === "pdf" ? "Preparo…" : "⬇ Scarica PDF"}
+            </button>
+            <button className="bg" onClick={() => setAperto(false)} style={{ fontSize: 12, marginLeft: "auto" }}>Chiudi</button>
+          </div>
+          <p style={{ fontSize: 10, color: "var(--gray)", marginTop: 8, lineHeight: 1.5 }}>
+            Il Word mantiene l'impaginazione originale del contratto. Il PDF è la stessa versione compilata,
+            impaginata in modo semplice: usalo per invio e archiviazione, il Word se devi ancora ritoccare qualcosa.
+          </p>
+        </>
+      )}
     </div>
   );
 }

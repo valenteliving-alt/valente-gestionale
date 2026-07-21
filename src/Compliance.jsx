@@ -23,6 +23,7 @@ const sciaOk = (s) => s === "fatta" || s === "non richiesta";
 export default function Compliance({ proprieta = [], owners = [], onPatch, onDataChanged }) {
   const [docs, setDocs] = useState([]);
   const [docsLoading, setDocsLoading] = useState(true);
+  const [errDocs, setErrDocs] = useState("");
   const [filtro, setFiltro] = useState("attivi"); // attivi | tutti
   const [search, setSearch] = useState("");
   const [editId, setEditId] = useState(null);
@@ -40,9 +41,13 @@ export default function Compliance({ proprieta = [], owners = [], onPatch, onDat
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "list_all", token }),
       });
-      const d = await r.json();
+      const d = await r.json().catch(() => ({}));
+      // Se i documenti non arrivano bisogna dirlo: altrimenti ogni immobile sembra
+      // sprovvisto di tutto e le percentuali di compliance risultano false.
+      if (!r.ok || d.error) throw new Error(d.error || "Documenti non caricati.");
       setDocs(d.files || []);
-    } catch { setDocs([]); }
+      setErrDocs("");
+    } catch (e) { setDocs([]); setErrDocs(e.message || "Documenti non caricati."); }
     setDocsLoading(false);
   }, []);
   useEffect(() => { caricaDocs(); }, [caricaDocs]);
@@ -152,6 +157,7 @@ export default function Compliance({ proprieta = [], owners = [], onPatch, onDat
         </div>
         <button className="bg" onClick={caricaDocs}>↻ Aggiorna documenti</button>
         {docsLoading && <span style={{ fontSize: 11, color: "var(--gray)" }}>Leggo gli allegati…</span>}
+        {errDocs && <span style={{ fontSize: 11, color: "var(--red)", fontWeight: 600 }}>⚠ {errDocs} — le percentuali qui sotto non sono attendibili.</span>}
       </div>
 
       {msg && <div style={{ fontSize: 12, color: "var(--red)", marginBottom: 10 }}>{msg}</div>}

@@ -15,10 +15,16 @@ const GRUPPI = [
   { id: "agenti", titolo: "Agenti esterni", nota: "Vedono gli immobili che portano loro: caricano documenti e seguono l'avvio, senza toccare il resto.", match: r => r === "agente" },
 ];
 
+/* Il token della sessione dice alla funzione chi sta chiedendo. */
+function tokenSessione() {
+  try { return (JSON.parse(localStorage.getItem("vl_sessione") || "null") || {}).access_token || null; }
+  catch { return null; }
+}
+
 async function fnTeam(payload) {
   const r = await fetch("/.netlify/functions/team", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, token: tokenSessione() }),
   });
   const d = await r.json().catch(() => ({}));
   if (!r.ok || d.error) throw new Error(d.error || "Errore.");
