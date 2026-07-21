@@ -14,6 +14,10 @@
 [functions."agente-notturno"]
   schedule = "0 5 * * *"
 
+# Sincronizzazione Krossbooking → CRM: prenotazioni ogni notte alle 3:00 UTC
+[functions."sync-krossbooking"]
+  schedule = "0 3 * * *"
+
 [[redirects]]
   from = "/api/ai-agent"
   to = "/.netlify/functions/ai-agent"
