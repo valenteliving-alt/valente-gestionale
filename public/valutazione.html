@@ -2707,6 +2707,7 @@ let mandatoState = {
     superficie: '',
     rendita_catastale: ''
   },
+  lingua: 'it',
   contratto: {
     percentuale_commissione: '20',
     data_inizio: new Date().toLocaleDateString('it-IT'),
@@ -2717,6 +2718,45 @@ let mandatoState = {
     giorni_uso_proprietario: '30'
   }
 };
+
+/* Lingue disponibili per il mandato. Ogni voce punta al suo modello Word:
+   l'italiano usa template.docx, le altre template-<codice>.docx. */
+const LINGUE_MANDATO = [
+  { cod: 'it', nome: 'Italiano', file: 'template.docx' },
+  { cod: 'en', nome: 'English',  file: 'template-en.docx' },
+];
+function fileTemplate() {
+  const l = LINGUE_MANDATO.find(x => x.cod === (mandatoState.lingua || 'it'));
+  return (l || LINGUE_MANDATO[0]).file;
+}
+
+/* Il CRM può aprire questa pagina già pronta a generare il mandato di un immobile:
+   passa i dati nell'indirizzo e qui li mettiamo nel modulo. */
+function precompilaDaCRM() {
+  let q;
+  try { q = new URLSearchParams(location.search); } catch (e) { return false; }
+  if (q.get('mandato') !== '1') return false;
+  const im = mandatoState.immobile, pr = mandatoState.proprietari[0], co = mandatoState.contratto;
+  const set = (obj, chiave, valore) => { if (valore) obj[chiave] = valore; };
+  set(im, 'indirizzo_immobile', q.get('indirizzo'));
+  set(im, 'comune_immobile', q.get('comune'));
+  set(im, 'provincia_immobile', q.get('provincia'));
+  set(im, 'foglio', q.get('foglio'));
+  set(im, 'particella', q.get('particella'));
+  set(im, 'subalterno', q.get('subalterno'));
+  set(im, 'categoria_catastale', q.get('categoria'));
+  set(im, 'superficie', q.get('mq'));
+  set(pr, 'nome', q.get('nome'));
+  set(pr, 'cognome', q.get('cognome'));
+  set(pr, 'cf', q.get('cf'));
+  set(pr, 'residenza', q.get('residenza'));
+  set(pr, 'telefono', q.get('telefono'));
+  set(pr, 'email', q.get('email'));
+  set(co, 'percentuale_commissione', q.get('commissione'));
+  set(co, 'max_ospiti', q.get('ospiti'));
+  if (q.get('lingua')) mandatoState.lingua = q.get('lingua');
+  return true;
+}
 
 function openMandato() {
   if (state.bnbAddress && !mandatoState.immobile.indirizzo_immobile) {
@@ -2730,6 +2770,13 @@ function openMandato() {
   }
   mandatoState.open = true;
   renderMandato();
+}
+
+function updateLingua(cod) { mandatoState.lingua = cod; renderMandato(); }
+
+/* Se il CRM ci ha mandato qui per fare un mandato, apriamo direttamente il modulo */
+if (precompilaDaCRM()) {
+  setTimeout(function () { try { openMandato(); } catch (e) { /* la pagina non è ancora pronta */ } }, 300);
 }
 
 function closeMandato() {
@@ -2856,6 +2903,12 @@ function renderMandato() {
           <div class="field" style="margin-bottom:20px"><label class="field-label">Rendita catastale (€)</label><input type="text" value="${im.rendita_catastale}" oninput="updateImmobileField('rendita_catastale',this.value)" placeholder="542,28"></div>
 
           <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--g100)">Condizioni contratto</div>
+          <div class="field" style="margin-bottom:10px">
+            <label class="field-label">Lingua del contratto</label>
+            <select onchange="updateLingua(this.value)">
+              ${LINGUE_MANDATO.map(l => `<option value="${l.cod}" ${(mandatoState.lingua||'it')===l.cod?'selected':''}>${l.nome}</option>`).join('')}
+            </select>
+          </div>
           <div class="grid2" style="gap:10px;margin-bottom:10px">
             <div class="field"><label class="field-label">Provvigione (%)</label><input type="number" value="${ct.percentuale_commissione}" oninput="updateContrattoField('percentuale_commissione',this.value)" min="0" max="100"></div>
             <div class="field"><label class="field-label">Max ospiti</label><input type="number" value="${ct.max_ospiti}" oninput="updateContrattoField('max_ospiti',this.value)" min="1"></div>
@@ -2904,9 +2957,14 @@ async function generateMandato() {
 
   try {
     // Uso fetch moderno: gestisce binari correttamente anche su file:// e mobile
-    const response = await fetch('template.docx');
-    if (!response.ok) {
-      throw new Error('HTTP ' + response.status);
+    const nomeTemplate = fileTemplate();
+    const response = await fetch(nomeTemplate);
+    const tipo = response.headers.get('content-type') || '';
+    // Su un sito a pagina singola un file mancante torna la pagina HTML, non un 404:
+    // senza questo controllo l'errore sarebbe incomprensibile.
+    if (!response.ok || tipo.indexOf('html') !== -1) {
+      const l = LINGUE_MANDATO.find(x => x.cod === (mandatoState.lingua || 'it'));
+      throw new Error('MODELLO_MANCANTE:' + nomeTemplate + ':' + ((l && l.nome) || 'italiano'));
     }
     const templateBuffer = await response.arrayBuffer();
 
@@ -2947,7 +3005,12 @@ async function generateMandato() {
     mandatoState.generating = false;
     renderMandato();
     let msg = 'Errore nella generazione del mandato.';
-    if (err.message && (err.message.includes('404') || err.message.includes('HTTP 4'))) {
+    if (err.message && err.message.indexOf('MODELLO_MANCANTE:') === 0) {
+      const p = err.message.split(':');
+      msg = 'Manca il modello di contratto in ' + p[2] + ' (' + p[1] + ').\n\n'
+          + 'Il modello va caricato nella cartella public del gestionale. '
+          + 'Per ora puoi generare il mandato in italiano.';
+    } else if (err.message && (err.message.includes('404') || err.message.includes('HTTP 4'))) {
       msg = 'File template.docx non trovato sul server. Assicurati che sia caricato su Netlify accanto a index.html.';
     } else if (err.message && err.message.includes('Failed to fetch')) {
       msg = 'Impossibile caricare template.docx. Se stai testando in locale, devi aprire il file tramite un server web (non con doppio click). Su Netlify funzionerà normalmente.';
