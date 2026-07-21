@@ -42,6 +42,40 @@ const handler = async (event) => {
   try { body = JSON.parse(event.body || "{}"); } catch {}
   const action = body.action;
 
+  /* Chi sta chiedendo. La funzione gira con la chiave di servizio, che scavalca
+     i permessi del database: l'elenco documenti va quindi filtrato qui a mano,
+     altrimenti un agente riceverebbe l'archivio intero. */
+  const chiSono = async () => {
+    const token = body.token;
+    if (!token) return null;
+    const ru = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { apikey: KEY, Authorization: "Bearer " + token },
+    });
+    if (!ru.ok) return null;
+    const u = await ru.json().catch(() => null);
+    if (!u || !u.id) return null;
+    const rc = await fetch(`${SUPABASE_URL}/rest/v1/collaboratori?select=nome,ruolo_accesso,attivo,stato_approvazione&user_id=eq.${encodeURIComponent(u.id)}`, { headers: sb });
+    const righe = await rc.json().catch(() => []);
+    const c = Array.isArray(righe) && righe[0] ? righe[0] : null;
+    if (!c || c.attivo === false || (c.stato_approvazione && c.stato_approvazione !== "approvato")) return null;
+    return { nome: c.nome, ruolo: c.ruolo_accesso };
+  };
+
+  /* Gli id di immobili e proprietari che una persona ha diritto di vedere.
+     null = nessun limite (titolare e socio vedono tutto). */
+  const perimetro = async (io) => {
+    if (!io) return { props: [], owners: [] };
+    if (io.ruolo === "master" || io.ruolo === "socio") return null;
+    const campo = io.ruolo === "agente" ? "agente" : "gestore_interno";
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/proprieta?select=id,proprietario_id&${campo}=eq.${encodeURIComponent(io.nome)}`, { headers: sb });
+    const righe = await r.json().catch(() => []);
+    const lista = Array.isArray(righe) ? righe : [];
+    return {
+      props: lista.map(p => String(p.id)),
+      owners: lista.map(p => p.proprietario_id).filter(Boolean).map(String),
+    };
+  };
+
   try {
     if (action === "list") {
       const { proprieta_id, proprietario_id } = body;
@@ -57,10 +91,22 @@ const handler = async (event) => {
 
     // Archivio generale: tutti i documenti del CRM, i più recenti prima
     if (action === "list_all") {
+      const io = await chiSono();
+      if (!io) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "Sessione non valida: rientra nel CRM." }) };
       const r = await fetch(`${SUPABASE_URL}/rest/v1/documenti?select=*&order=created_at.desc&limit=2000`, { headers: sb });
       const data = await r.json();
       if (!r.ok) return { statusCode: r.status, headers: CORS, body: JSON.stringify({ error: data.message || "Errore lettura." }) };
-      return { statusCode: 200, headers: CORS, body: JSON.stringify({ files: data }) };
+
+      const p = await perimetro(io);
+      if (p === null) return { statusCode: 200, headers: CORS, body: JSON.stringify({ files: data }) };
+      const props = new Set(p.props), owners = new Set(p.owners);
+      // Il documento del proprietario conta quanto quello dell'immobile:
+      // mandato, identità, codice fiscale e IBAN sono archiviati sotto la persona.
+      const filtrati = (Array.isArray(data) ? data : []).filter(d =>
+        (d.proprieta_id && props.has(String(d.proprieta_id))) ||
+        (d.proprietario_id && owners.has(String(d.proprietario_id)))
+      );
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ files: filtrati }) };
     }
 
     // Archivio generale: modifica categoria / tag / nota / ricorrenza
