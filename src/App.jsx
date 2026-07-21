@@ -1172,6 +1172,56 @@ const PropTile = ({ p, o, onClick }) => (
   </div>
 );
 
+/* Mandato di gestione: il contratto lo compila il gestionale con i dati che ha già,
+   così non si ricopia niente a mano. Il modulo si apre nel valutatore, che sa
+   riempire il modello Word. */
+const LINGUE_CONTRATTO = [{ cod: "it", nome: "Italiano" }, { cod: "en", nome: "English" }];
+
+function GeneraMandato({ p, o }) {
+  const [lingua, setLingua] = useState("it");
+  if (!p) return null;
+
+  const apri = () => {
+    const q = new URLSearchParams({ mandato: "1", lingua });
+    const metti = (k, v) => { if (v) q.set(k, String(v)); };
+    metti("indirizzo", p.indirizzo);
+    metti("comune", p.citta);
+    metti("provincia", p.provincia);
+    metti("foglio", p.catasto_foglio);
+    metti("particella", p.catasto_mappale);
+    metti("subalterno", p.catasto_sub);
+    metti("categoria", p.categoria_catastale);
+    metti("mq", p.mq);
+    metti("commissione", p.commissione);
+    metti("ospiti", p.posti_letto);
+    if (o) {
+      metti("nome", o.nome);
+      metti("cognome", o.cognome);
+      metti("cf", o.codice_fiscale);
+      metti("residenza", [o.indirizzo, o.citta].filter(Boolean).join(", "));
+      metti("telefono", o.telefono);
+      metti("email", o.email);
+    }
+    window.open(`/valutazione.html?${q.toString()}`, "_blank", "noopener");
+  };
+
+  return (
+    <div style={{ marginTop: 20, background: "var(--cream)", border: "1px solid var(--gl)", borderRadius: 10, padding: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>📄 Mandato di gestione</div>
+      <p style={{ fontSize: 11, color: "var(--gray)", marginBottom: 10, lineHeight: 1.5 }}>
+        Il contratto viene precompilato con i dati dell'immobile{o ? " e del proprietario" : ""}: controlli il modulo e lo scarichi in Word.
+        {!o && <> Collega prima un proprietario per riempire anche la sua parte.</>}
+      </p>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <select value={lingua} onChange={e => setLingua(e.target.value)} style={{ width: "auto", minWidth: 120 }}>
+          {LINGUE_CONTRATTO.map(l => <option key={l.cod} value={l.cod}>{l.nome}</option>)}
+        </select>
+        <button className="bp" onClick={apri} style={{ fontSize: 12 }}>Genera mandato →</button>
+      </div>
+    </div>
+  );
+}
+
 /* Un immobile appena entrato resta in evidenza per una settimana: il tempo di
    accorgersene, assegnarlo e far partire la pratica. */
 const GIORNI_NOVITA = 7;
@@ -3725,7 +3775,8 @@ function App({ utente, onLogout }) {
                 prop: Object.fromEntries(proprieta.map(p => [String(p.id), p.nome])),
                 own: Object.fromEntries(owners.map(o => [String(o.id), `${o.cognome || ""} ${o.nome || ""}`.trim()])),
               }} />
-            <div style={{ display: "flex", gap: 10, marginTop: 28 }}>
+            <GeneraMandato p={detP} o={owners.find(o => String(o.id) === String(detP.proprietario_id))} />
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
               <button className="bp" style={{ flex: 1 }} onClick={() => { setModalP(detP); setDetP(null); }}>Modifica</button>
               <button className="bd" onClick={() => delP(detP.id)}>Elimina</button>
             </div>
