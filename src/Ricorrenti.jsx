@@ -18,10 +18,17 @@ function periodiPer(cadenza) {
 
 const norm = (s) => String(s || "").toLowerCase().trim();
 
+/* Il token della sessione dice alla funzione chi sta chiedendo:
+   senza, l'elenco documenti non viene filtrato per ruolo. */
+function tokenSessione() {
+  try { return (JSON.parse(localStorage.getItem("vl_sessione") || "null") || {}).access_token || null; }
+  catch { return null; }
+}
+
 async function fnAllegati(payload) {
   const r = await fetch("/.netlify/functions/allegati", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, token: tokenSessione() }),
   });
   const d = await r.json().catch(() => ({}));
   if (!r.ok || d.error) throw new Error(d.error || "Errore.");

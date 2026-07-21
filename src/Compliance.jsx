@@ -33,9 +33,12 @@ export default function Compliance({ proprieta = [], owners = [], onPatch, onDat
   const caricaDocs = useCallback(async () => {
     setDocsLoading(true);
     try {
+      // Il token dice alla funzione chi sta chiedendo: l'elenco arriva già filtrato per ruolo
+      let token = null;
+      try { token = (JSON.parse(localStorage.getItem("vl_sessione") || "null") || {}).access_token || null; } catch { /* sessione assente */ }
       const r = await fetch("/.netlify/functions/allegati", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "list_all" }),
+        body: JSON.stringify({ action: "list_all", token }),
       });
       const d = await r.json();
       setDocs(d.files || []);

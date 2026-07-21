@@ -18,10 +18,17 @@ const RICHIESTI = [
   { id: "foto", label: "Foto dell'immobile", match: /\b(foto|img|image|photo|_dsc|jpg|jpeg|png)\w*/i, nota: "Foto degli ambienti, utili per gli annunci", facoltativo: true },
 ];
 
+/* Il token della sessione dice alla funzione chi sta chiedendo:
+   senza, l'elenco documenti non viene filtrato per ruolo. */
+function tokenSessione() {
+  try { return (JSON.parse(localStorage.getItem("vl_sessione") || "null") || {}).access_token || null; }
+  catch { return null; }
+}
+
 async function fnAllegati(payload) {
   const r = await fetch("/.netlify/functions/allegati", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, token: tokenSessione() }),
   });
   const d = await r.json().catch(() => ({}));
   if (!r.ok || d.error) throw new Error(d.error || "Errore.");
@@ -58,11 +65,18 @@ export default function PortaleAgente({ proprieta = [], nomeAgente, sb, onDataCh
   }, []);
   useEffect(() => { carica(); }, [carica]);
 
-  const docsDi = useCallback((propId) => docs.filter(d => String(d.proprieta_id) === String(propId)), [docs]);
+  /* Un immobile porta con sé due fascicoli: quello dell'unità e quello del suo
+     proprietario. Mandato, identità, codice fiscale e IBAN stanno quasi sempre
+     sotto la persona: contarli solo sull'immobile faceva risultare mancanti
+     documenti già consegnati. */
+  const docsDi = useCallback((p) => docs.filter(d =>
+    (d.proprieta_id && String(d.proprieta_id) === String(p.id)) ||
+    (p.proprietario_id && d.proprietario_id && String(d.proprietario_id) === String(p.proprietario_id))
+  ), [docs]);
 
   // Stato della pratica per un immobile
   const stato = useCallback((p) => {
-    const suoi = docsDi(p.id);
+    const suoi = docsDi(p);
     const voci = RICHIESTI.map(r => {
       const trovato = suoi.find(d => r.match.test(d.nome_file || ""));
       return { ...r, ok: !!trovato, file: trovato };
@@ -114,6 +128,15 @@ export default function PortaleAgente({ proprieta = [], nomeAgente, sb, onDataCh
         agente: nomeAgente,
       });
       if (!ok) throw new Error("Non è stato possibile creare l'immobile.");
+      // Avvisa subito Valente Living: un immobile segnalato e non visto è un'occasione persa
+      fetch("/.netlify/functions/invia-notifica", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Nuovo immobile segnalato",
+          body: `${nomeAgente || "Un agente"} ha aggiunto “${nuovo.nome.trim()}”${nuovo.citta.trim() ? ` a ${nuovo.citta.trim()}` : ""}.`,
+          url: "/",
+        }),
+      }).catch(() => { /* la segnalazione resta valida anche senza notifica */ });
       setNuovo(null);
       if (onDataChanged) await onDataChanged();
     } catch (err) { setErrore(err.message); }

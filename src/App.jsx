@@ -1172,12 +1172,28 @@ const PropTile = ({ p, o, onClick }) => (
   </div>
 );
 
+/* Un immobile appena entrato resta in evidenza per una settimana: il tempo di
+   accorgersene, assegnarlo e far partire la pratica. */
+const GIORNI_NOVITA = 7;
+function appenaArrivata(p) {
+  if (!p || !p.created_at) return false;
+  return (Date.now() - new Date(p.created_at).getTime()) < GIORNI_NOVITA * 86400000;
+}
+
 const PropRow = ({ p, o, onClick, gestori = [], coloreGestore, onAssegna }) => (
   <div className="fi" onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", cursor: "pointer" }}
     onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--gold)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--gl)"; }}>
     <span style={{ width: 9, height: 9, borderRadius: "50%", background: STATI_COLOR[p.stato] || "#ccc", flexShrink: 0 }} title={p.stato} />
     <div style={{ flex: 2, minWidth: 0 }}>
-      <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.nome}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        {p.nome}
+        {appenaArrivata(p) && (
+          <span title={`Aggiunta ${new Date(p.created_at).toLocaleDateString("it-IT")}${p.agente ? ` da ${p.agente}` : ""}`}
+            style={{ marginLeft: 8, fontSize: 9, fontWeight: 700, letterSpacing: ".06em", padding: "2px 7px", borderRadius: 99, background: "#DCFCE7", color: "#166534", verticalAlign: "middle" }}>
+            NUOVA
+          </span>
+        )}
+      </div>
       <div style={{ fontSize: 11, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.indirizzo}{p.citta ? `, ${p.citta}` : ""}{p.provincia ? ` (${p.provincia})` : ""}</div>
     </div>
 
@@ -3085,6 +3101,10 @@ function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
   const inArrivo = (proprieta || []).filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato));
   const eventi = [...conData.slice(-8)];
 
+  // Arrivi recenti: restano in cima finché non li si è guardati e assegnati
+  const novita = (proprieta || []).filter(appenaArrivata)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
   const milestoneNext = [25, 40, 50, 75, 100].find(m => m > totale) || 100;
   const obiettivi = [
     inArrivo.length ? { t: `Lanciare ${inArrivo.length} immobili in pipeline`, s: "in onboarding (mandato/lancio)", c: "#6366F1", go: "lancio" } : null,
@@ -3095,6 +3115,27 @@ function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
 
   return (
     <>
+      {novita.length > 0 && (
+        <div style={{ background: "var(--white)", border: "1px solid rgba(22,101,52,.3)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#166534", marginBottom: 8 }}>
+            ✨ {novita.length} nuov{novita.length === 1 ? "o immobile" : "i immobili"} negli ultimi {GIORNI_NOVITA} giorni
+          </div>
+          {novita.map(p => (
+            <div key={p.id} onClick={() => onApriProp && onApriProp(p)}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderTop: "1px solid var(--cd)", cursor: "pointer", flexWrap: "wrap" }}>
+              <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600 }}>{p.nome}</span>
+                <span style={{ fontSize: 11, color: "var(--gray)", marginLeft: 6 }}>{[p.citta, p.provincia && `(${p.provincia})`].filter(Boolean).join(" ")}</span>
+              </div>
+              <span style={{ fontSize: 11, color: "var(--gray)" }}>
+                {p.agente ? `portato da ${p.agente}` : "inserito internamente"} · {new Date(p.created_at).toLocaleDateString("it-IT")}
+              </span>
+              {!p.gestore_interno && <span className="tag" style={{ background: "#FEF3C7", color: "#92400E", borderColor: "transparent" }}>da assegnare</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
       <div style={{ marginBottom: 8 }}>
         <h1 style={{ fontSize: 26, fontWeight: 700 }}>Valente Living · Dashboard</h1>
         <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Dove siamo e dove stiamo andando</p>
