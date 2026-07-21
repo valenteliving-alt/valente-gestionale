@@ -21,7 +21,12 @@ exports.handler = async () => {
 
     // 2) id già notificati (dal database)
     const r = await fetch(`${SUPABASE_URL}/rest/v1/notified_leads?select=lead_id`, { headers: sb });
-    const rows = r.ok ? await r.json() : [];
+    // Se non riesco a leggere quali ho già notificato, mi fermo: proseguendo li
+    // segnerei come visti senza avvisare nessuno, e non tornerebbero mai più.
+    if (!r.ok) {
+      return { statusCode: 503, body: JSON.stringify({ error: "Elenco lead già notificati non leggibile: riprovo al prossimo giro." }) };
+    }
+    const rows = await r.json();
     const visti = new Set((rows || []).map((x) => String(x.lead_id)));
     const primaVolta = visti.size === 0;
 

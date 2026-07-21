@@ -77,6 +77,11 @@ const handler = async (event) => {
   };
 
   try {
+    // Nessuna azione sui documenti senza sapere chi la chiede: la chiave di servizio
+    // scavalca i permessi, quindi il controllo deve stare qui.
+    const ioChiamo = await chiSono();
+    if (!ioChiamo) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "Sessione non valida: rientra nel CRM." }) };
+
     if (action === "list") {
       const { proprieta_id, proprietario_id } = body;
       let q;
@@ -91,8 +96,7 @@ const handler = async (event) => {
 
     // Archivio generale: tutti i documenti del CRM, i più recenti prima
     if (action === "list_all") {
-      const io = await chiSono();
-      if (!io) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "Sessione non valida: rientra nel CRM." }) };
+      const io = ioChiamo;
       const r = await fetch(`${SUPABASE_URL}/rest/v1/documenti?select=*&order=created_at.desc&limit=2000`, { headers: sb });
       const data = await r.json();
       if (!r.ok) return { statusCode: r.status, headers: CORS, body: JSON.stringify({ error: data.message || "Errore lettura." }) };

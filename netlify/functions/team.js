@@ -57,7 +57,40 @@ const handler = async (event) => {
     return true;
   };
 
+  /* Chi sta chiamando. Questa funzione usa la chiave di servizio, che scavalca ogni
+     permesso del database: senza questo controllo bastava conoscere l'indirizzo della
+     funzione per generare un link di accesso al posto del titolare. */
+  const chiSono = async () => {
+    const token = body.token;
+    if (!token) return null;
+    const ru = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { apikey: KEY, Authorization: "Bearer " + token },
+    });
+    if (!ru.ok) return null;
+    const u = await ru.json().catch(() => null);
+    if (!u || !u.id) return null;
+    const rc = await fetch(`${SUPABASE_URL}/rest/v1/collaboratori?select=nome,ruolo_accesso,attivo,stato_approvazione&user_id=eq.${encodeURIComponent(u.id)}`, { headers: sb });
+    const righe = await rc.json().catch(() => []);
+    const c = Array.isArray(righe) && righe[0] ? righe[0] : null;
+    if (!c || c.attivo === false || (c.stato_approvazione && c.stato_approvazione !== "approvato")) return null;
+    return { nome: c.nome, ruolo: c.ruolo_accesso };
+  };
+
+  // La registrazione agente è l'unica azione aperta: chi si registra non ha ancora un account
+  const AZIONI_APERTE = ["registra_agente"];
+  // Leggere l'elenco persone serve anche ai non titolari (es. assegnare un task)
+  const AZIONI_LETTURA = ["list_collaboratori", "list_task"];
+
   try {
+    if (!AZIONI_APERTE.includes(action)) {
+      const io = await chiSono();
+      if (!io) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "Sessione non valida: rientra nel CRM." }) };
+      const soloLettura = AZIONI_LETTURA.includes(action) || action === "save_task" || action === "delete_task";
+      if (!soloLettura && io.ruolo !== "master") {
+        return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: "Solo il titolare può gestire il team e gli accessi." }) };
+      }
+    }
+
     /* Registrazione agente: chiunque abbia il codice aziendale può chiedere l'accesso,
        ma resta IN ATTESA finché il titolare non lo approva. Fino ad allora non vede nulla. */
     if (action === "registra_agente") {
@@ -369,21 +402,24 @@ const handler = async (event) => {
       const attuali = await fetch(`${SUPABASE_URL}/rest/v1/proprieta?select=id&gestore_interno=eq.${encodeURIComponent(nome)}`, { headers: sb });
       const avevano = await attuali.json().catch(() => []);
       const daLiberare = (Array.isArray(avevano) ? avevano : []).map(p => p.id).filter(id => !scelti.includes(id));
-      for (const id of daLiberare) {
-        await fetch(`${SUPABASE_URL}/rest/v1/proprieta?id=eq.${encodeURIComponent(id)}`, {
+      // Le PATCH vanno verificate: senza controllo si annunciava "assegnati" anche
+      // quando il database non era cambiato.
+      const falliti = [];
+      const patch = async (id, valore) => {
+        const rp = await fetch(`${SUPABASE_URL}/rest/v1/proprieta?id=eq.${encodeURIComponent(id)}`, {
           method: "PATCH", headers: { ...sb, "Content-Type": "application/json" },
-          body: JSON.stringify({ gestore_interno: null }),
+          body: JSON.stringify({ gestore_interno: valore }),
         });
-      }
+        if (!rp.ok) falliti.push(id);
+      };
+      for (const id of daLiberare) await patch(id, null);
 
       // 2) Assegna quelli scelti
-      for (const id of scelti) {
-        await fetch(`${SUPABASE_URL}/rest/v1/proprieta?id=eq.${encodeURIComponent(id)}`, {
-          method: "PATCH", headers: { ...sb, "Content-Type": "application/json" },
-          body: JSON.stringify({ gestore_interno: nome }),
-        });
-      }
+      for (const id of scelti) await patch(id, nome);
 
+      if (falliti.length) {
+        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: `Assegnazione non riuscita per ${falliti.length} immobil${falliti.length === 1 ? "e" : "i"}. Riprova.` }) };
+      }
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ assegnati: scelti.length, liberati: daLiberare.length }) };
     }
 
