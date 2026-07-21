@@ -195,6 +195,50 @@ const handler = async (event) => {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
     }
 
+    /* Elenco degli account di accesso reali, con l'indicazione di chi rappresentano.
+       Serve perché eliminare una persona dal team NON cancella la sua utenza:
+       senza questa vista un accesso resterebbe valido senza comparire da nessuna parte. */
+    if (action === "list_accessi") {
+      const [ru, rc] = await Promise.all([
+        fetch(`${SUPABASE_URL}/auth/v1/admin/users?page=1&per_page=200`, { headers: sb }),
+        fetch(`${SUPABASE_URL}/rest/v1/collaboratori?select=id,nome,user_id`, { headers: sb }),
+      ]);
+      const du = await ru.json().catch(() => ({}));
+      const dc = await rc.json().catch(() => []);
+      if (!ru.ok) return { statusCode: ru.status, headers: CORS, body: JSON.stringify({ error: "Lettura accessi non riuscita." }) };
+      const perUtente = new Map((Array.isArray(dc) ? dc : []).filter(c => c.user_id).map(c => [c.user_id, c]));
+      const accessi = (du.users || []).map(u => {
+        const c = perUtente.get(u.id);
+        return {
+          user_id: u.id,
+          email: u.email,
+          confermato: !!u.email_confirmed_at,
+          ultimo_accesso: u.last_sign_in_at || null,
+          collaboratore_id: c ? c.id : null,
+          collaboratore: c ? c.nome : null,
+        };
+      }).sort((a, b) => String(a.email).localeCompare(String(b.email)));
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ accessi }) };
+    }
+
+    /* Cancella definitivamente un'utenza rimasta senza persona.
+       Azione distruttiva: la conferma la dà il titolare dall'interfaccia. */
+    if (action === "elimina_accesso") {
+      const { user_id } = body;
+      if (!user_id) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: "Manca l'account da eliminare." }) };
+      const collegato = await fetch(`${SUPABASE_URL}/rest/v1/collaboratori?select=id,nome&user_id=eq.${encodeURIComponent(user_id)}`, { headers: sb });
+      const righe = await collegato.json().catch(() => []);
+      if (Array.isArray(righe) && righe.length) {
+        return { statusCode: 409, headers: CORS, body: JSON.stringify({ error: `Questo accesso è collegato a ${righe[0].nome}: revocalo dalla sua scheda, non da qui.` }) };
+      }
+      const r = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(user_id)}`, { method: "DELETE", headers: sb });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        return { statusCode: r.status, headers: CORS, body: JSON.stringify({ error: d.msg || d.message || "Eliminazione non riuscita." }) };
+      }
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true }) };
+    }
+
     /* Invita una persona: manda l'email di invito e collega l'account al collaboratore.
        La password la sceglie SOLO l'invitato dal link ricevuto: non passa mai da qui. */
     if (action === "invita") {
