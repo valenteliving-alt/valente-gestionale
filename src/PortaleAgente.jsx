@@ -92,12 +92,15 @@ export default function PortaleAgente({ proprieta = [], nomeAgente, sb, onDataCh
     setSalvando(true); setErrore("");
     try {
       let proprietarioId = null;
-      if (nuovo.proprietario.trim()) {
-        const { data } = await sb.post("proprietari", {
-          nome: nuovo.proprietario.trim(),
+      if (nuovo.proprietario.trim() || nuovo.cognome.trim()) {
+        const { data, ok } = await sb.post("proprietari", {
+          nome: nuovo.proprietario.trim() || "—",
+          cognome: nuovo.cognome.trim() || "—",   // l'anagrafica li vuole entrambi
           email: nuovo.email.trim() || null,
           telefono: nuovo.telefono.trim() || null,
+          creato_da: nomeAgente,   // serve a rileggere la scheda appena creata
         });
+        if (!ok) throw new Error("Non è stato possibile creare il proprietario.");
         if (Array.isArray(data) && data[0]) proprietarioId = data[0].id;
       }
       const { ok } = await sb.post("proprieta", {
@@ -177,7 +180,7 @@ export default function PortaleAgente({ proprieta = [], nomeAgente, sb, onDataCh
             </div>
             <div style={{ fontSize: 10, color: "var(--gray)", textTransform: "uppercase", letterSpacing: ".05em" }}>pratiche complete</div>
           </div>
-          <button className="bp" onClick={() => setNuovo(nuovo ? null : { nome: "", indirizzo: "", citta: "", provincia: "", tipo_contratto: "gestione", proprietario: "", email: "", telefono: "" })}>
+          <button className="bp" onClick={() => setNuovo(nuovo ? null : { nome: "", indirizzo: "", citta: "", provincia: "", tipo_contratto: "gestione", proprietario: "", cognome: "", email: "", telefono: "" })}>
             {nuovo ? "Annulla" : "+ Segnala un immobile"}
           </button>
         </div>
@@ -210,8 +213,11 @@ export default function PortaleAgente({ proprieta = [], nomeAgente, sb, onDataCh
                 <option value="sublocazione">Sublocazione</option>
               </select>
             </label>
-            <label style={{ fontSize: 11, color: "var(--gray)" }}>Proprietario
-              <input value={nuovo.proprietario} onChange={e => setNuovo({ ...nuovo, proprietario: e.target.value })} placeholder="Nome e cognome" style={{ width: "100%", marginTop: 4 }} />
+            <label style={{ fontSize: 11, color: "var(--gray)" }}>Nome proprietario
+              <input value={nuovo.proprietario} onChange={e => setNuovo({ ...nuovo, proprietario: e.target.value })} placeholder="Mario" style={{ width: "100%", marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 11, color: "var(--gray)" }}>Cognome proprietario
+              <input value={nuovo.cognome} onChange={e => setNuovo({ ...nuovo, cognome: e.target.value })} placeholder="Rossi" style={{ width: "100%", marginTop: 4 }} />
             </label>
             <label style={{ fontSize: 11, color: "var(--gray)" }}>Email proprietario
               <input value={nuovo.email} onChange={e => setNuovo({ ...nuovo, email: e.target.value })} style={{ width: "100%", marginTop: 4 }} />
