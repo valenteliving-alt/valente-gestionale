@@ -65,9 +65,10 @@ async function login(jar) {
 
   let token = dig(j2, ["token", "tfa_token", "csrf", "_token", "hash"]);
   let id = dig(j2, ["id", "id_tfa", "tfa_id", "method_id", "id_method", "id_user"]);
-  let methods = j2 && (j2.methods || j2.tfa_methods || (j2.data && (j2.data.methods || j2.data.tfa_methods)));
+  let methods = j2 && (j2.devices || j2.methods || j2.tfa_methods || (j2.data && (j2.data.devices || j2.data.methods)));
   if (Array.isArray(methods)) {
-    const app = methods.find((m) => /auth|totp|app|google|otp/i.test(JSON.stringify(m)));
+    const app = methods.find((m) => /google|authenticator|totp/i.test(JSON.stringify(m)))
+      || methods.find((m) => /auth|app|otp/i.test(JSON.stringify(m)));
     if (app) id = app.id ?? app.id_tfa ?? app.method_id ?? id;
   }
   if (process.env.KROSS_TFA_ID) id = process.env.KROSS_TFA_ID;
