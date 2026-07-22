@@ -65,27 +65,58 @@ async function login(jar, opts = {}) {
   const t2 = await r2.text(); let j2 = null; try { j2 = JSON.parse(t2); } catch (_) {}
   rec({ step: "login-post", status: r2.status, isJson: !!j2, keys: j2 ? Object.keys(j2) : [], sample: (j2 ? JSON.stringify(j2) : t2).slice(0, 600) });
 
-  let token = dig(j2, ["token", "tfa_token", "csrf", "_token", "hash"]);
+  let token = dig(j2, ["token", "tfa_token", "csrf", "_token", "hash", "challenge"]);
   let id = dig(j2, ["id", "id_tfa", "tfa_id", "method_id", "id_method", "id_user"]);
   let methods = j2 && (j2.devices || j2.methods || j2.tfa_methods || (j2.data && (j2.data.devices || j2.data.methods)));
   if (Array.isArray(methods)) {
     rec({ step: "devices", list: methods.map((m) => ({ id: m.id ?? m.id_tfa ?? m.method_id, method: m.method ?? m.type ?? m.name ?? m.channel })) });
-    // Preferisci il metodo Authenticator (TOTP): method "google" / nome "Authenticator App"
     const app = methods.find((m) => /google|authenticator|totp/i.test(JSON.stringify(m)))
       || methods.find((m) => /auth|app|otp/i.test(JSON.stringify(m)));
     if (app) id = app.id ?? app.id_tfa ?? app.method_id ?? id;
   }
   if (process.env.KROSS_TFA_ID) id = process.env.KROSS_TFA_ID;
 
+  // Cerca un token/CSRF nella pagina di login (alcuni flussi lo richiedono in tfa-check)
+  let htmlTok = null, htmlSrc = null;
+  try {
+    const hb = await (await fetch(`${BASE}/login/v2`, { headers: { "User-Agent": UA, "Cookie": cookieHeader(jar) } })).text();
+    const pats = [
+      [/name=["']_?token["']\s+value=["']([^"']+)["']/i, "input_token"],
+      [/name=["']csrf[_-]?token["']\s+value=["']([^"']+)["']/i, "input_csrf"],
+      [/csrf[_-]?token["']?\s*[:=]\s*["']([A-Za-z0-9._-]{12,})["']/i, "js_csrf"],
+      [/["']token["']\s*:\s*["']([A-Za-z0-9._-]{12,})["']/i, "js_token"],
+      [/<meta[^>]+csrf[^>]+content=["']([^"']+)["']/i, "meta_csrf"],
+    ];
+    for (const [re, name] of pats) { const m = hb.match(re); if (m) { htmlTok = m[1]; htmlSrc = name; break; } }
+  } catch (_) {}
+
+  // Init challenge: per email manda il codice, per authenticator può restituire il token
+  let sendTok = null, sendStatus = null, sendSample = null;
+  try {
+    const rs = await fetch(`${BASE}/login/tfa-send-notif`, {
+      method: "POST",
+      headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded", "X-Requested-With": "XMLHttpRequest", "Cookie": cookieHeader(jar), "Referer": `${BASE}/login/v2` },
+      body: new URLSearchParams({ id: String(id ?? ""), username: process.env.KROSS_USER || "" }).toString(),
+    });
+    raccogliCookie(jar, rs);
+    sendStatus = rs.status;
+    const st = await rs.text(); let sj = null; try { sj = JSON.parse(st); } catch (_) {}
+    sendSample = (sj ? JSON.stringify(sj) : st).slice(0, 200);
+    sendTok = dig(sj, ["token", "tfa_token", "hash", "challenge", "csrf"]);
+  } catch (_) {}
+
+  const finalToken = token || sendTok || htmlTok || jar["csrf_token"] || jar["XSRF-TOKEN"] || "";
+  rec({ step: "token", fromBody: !!token, fromSend: !!sendTok, htmlSrc, htmlLen: htmlTok ? htmlTok.length : 0, sendStatus, sendSample, jarKeys: Object.keys(jar) });
+
   const code = totp(process.env.KROSS_TOTP_SECRET || "");
-  const q = new URLSearchParams({ token: String(token ?? ""), id: String(id ?? ""), code, trust: "1" });
+  const q = new URLSearchParams({ token: String(finalToken), id: String(id ?? ""), code, trust: "1" });
   const r3 = await fetch(`${BASE}/login/tfa-check?${q.toString()}`, {
     headers: { "User-Agent": UA, "X-Requested-With": "XMLHttpRequest", "Cookie": cookieHeader(jar), "Referer": `${BASE}/login/v2` },
     redirect: "manual",
   });
   raccogliCookie(jar, r3);
   const t3 = await r3.text(); let j3 = null; try { j3 = JSON.parse(t3); } catch (_) {}
-  rec({ step: "tfa-check", status: r3.status, usedId: String(id ?? ""), hasToken: !!token, sample: (j3 ? JSON.stringify(j3) : t3).slice(0, 300) });
+  rec({ step: "tfa-check", status: r3.status, usedId: String(id ?? ""), tokenLen: String(finalToken).length, sample: (j3 ? JSON.stringify(j3) : t3).slice(0, 300) });
 
   const rv = await fetch(`${BASE}/v2/ucrm/get-threads`, {
     method: "POST",
