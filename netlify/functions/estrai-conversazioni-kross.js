@@ -77,7 +77,11 @@ function estraiCodice(text) {
 async function imapLoginSelect() {
   const c = await imapConnect();
   const li = await c.cmd(`LOGIN "${qImap(process.env.KROSS_OTP_USER)}" "${qImap(process.env.KROSS_OTP_PASS)}"`);
-  if (li.status !== "OK") { c.close(); throw new Error("IMAP login rifiutato: app-password non valida o IMAP disattivato."); }
+  if (li.status !== "OK") {
+    c.close();
+    const msg = String(li.text || "").replace(/\s+/g, " ").slice(-220);
+    throw new Error("IMAP login rifiutato → " + msg + " (utente=" + (process.env.KROSS_OTP_USER || "?") + ", lunghezza pass=" + String(process.env.KROSS_OTP_PASS || "").length + ")");
+  }
   return c;
 }
 async function imapUltimoMessaggio() {
