@@ -215,9 +215,10 @@ function sanifica(t) {
 }
 const soloTesto = (html) => String(html || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ");
 
+// Elenca TUTTE le conversazioni (id, idr, anteprima), senza filtrare per appartamento
 async function elencoThread(jar) {
   const tutte = [];
-  for (let start = 0; start < 5000; start += 200) {
+  for (let start = 0; start < 20000; start += 200) {
     const r = await fetch(`${BASE}/v2/ucrm/get-threads`, {
       method: "POST",
       headers: { "User-Agent": UA, "Cookie": cookieHeader(jar), "X-Requested-With": "XMLHttpRequest", "Content-Type": "application/x-www-form-urlencoded" },
@@ -232,14 +233,18 @@ async function elencoThread(jar) {
       const idr = (b.match(/data-idr="(\d+)"/) || [])[1];
       if (!id) continue;
       trovati++;
-      const testo = soloTesto(b);
-      const unita = UNITA.find((u) => u.match.test(testo));
-      if (unita) tutte.push({ id, idr: idr || "", appartamento: unita.nome });
+      tutte.push({ id, idr: idr || "", anteprima: soloTesto(b) });
     }
     if (trovati < 1) break;
     if ((j.count || 0) <= start + 200) break;
   }
   return tutte;
+}
+// Riconosce l'appartamento dal testo (anteprima + conversazione), altrimenti "Non identificato"
+function riconosciApp(...testi) {
+  const t = testi.join(" ");
+  const u = UNITA.find((u) => u.match.test(t));
+  return u ? u.nome : "Non identificato";
 }
 
 async function leggiThread(jar, id, idr) {
@@ -263,12 +268,27 @@ async function scrivi(tabella, righe, onConflict) {
   return righe.length;
 }
 
+const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
+
 exports.handler = async (event) => {
+  if (event && event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
   if (!SERVICE_KEY) return { statusCode: 500, body: "Manca SUPABASE_SERVICE_ROLE_KEY." };
+  const qs = (event && event.queryStringParameters) || {};
+
+  // Ingest: riceve messaggi GIÀ RIPULITI dal browser e li salva (estrazione storico v6)
+  if (qs.ingest) {
+    let b = {}; try { b = JSON.parse(event.body || "{}"); } catch (_) {}
+    if (!process.env.INGEST_KEY || b.chiave !== process.env.INGEST_KEY) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "chiave non valida" }) };
+    const righe = Array.isArray(b.righe) ? b.righe.filter((r) => r && r.id) : [];
+    if (!righe.length) return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, scritte: 0 }) };
+    try { await scrivi("ucrm_messaggi", righe, "id"); }
+    catch (e) { return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: String(e.message || e) }) }; }
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, scritte: righe.length }) };
+  }
+
   if (!process.env.KROSS_USER || !process.env.KROSS_PASS) {
     return { statusCode: 200, body: JSON.stringify({ ok: false, motivo: "Credenziali Krossbooking non impostate." }) };
   }
-  const qs = (event && event.queryStringParameters) || {};
   const imaptest = !!qs.imaptest;
   const debug = !!qs.debug;
   try {
@@ -286,8 +306,9 @@ exports.handler = async (event) => {
     for (const t of thread) {
       const testo = await leggiThread(jar, t.id, t.idr);
       if (!testo) continue;
-      messaggi.push({ id: `t${t.id}`, thread_id: t.id, prenotazione_idr: t.idr || null, appartamento: t.appartamento, testo, mittente: "conversazione" });
-      (perApp[t.appartamento] = perApp[t.appartamento] || []).push(testo);
+      const app = riconosciApp(t.anteprima, testo);
+      messaggi.push({ id: `t${t.id}`, thread_id: t.id, prenotazione_idr: t.idr || null, appartamento: app, testo, mittente: "conversazione" });
+      (perApp[app] = perApp[app] || []).push(testo);
     }
     await scrivi("ucrm_messaggi", messaggi, "id");
 
@@ -299,7 +320,8 @@ exports.handler = async (event) => {
     }));
     await scrivi("kb_appartamenti", kb, "appartamento");
 
-    return { statusCode: 200, body: JSON.stringify({ ok: true, thread_letti: thread.length, appartamenti: Object.keys(perApp) }) };
+    const conteggi = Object.fromEntries(Object.entries(perApp).map(([a, c]) => [a, c.length]));
+    return { statusCode: 200, body: JSON.stringify({ ok: true, conversazioni_totali: thread.length, salvate: messaggi.length, per_appartamento: conteggi }) };
   } catch (e) {
     return { statusCode: 500, body: JSON.stringify({ error: String(e.message || e) }) };
   }
