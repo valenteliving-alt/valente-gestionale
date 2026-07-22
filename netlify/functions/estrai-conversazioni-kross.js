@@ -17,6 +17,7 @@
 // restituisce i passaggi senza scrivere nulla.
 
 const tls = require("tls");
+// build: email-otp v2
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://heabtbdmwbjlgujsisor.supabase.co";
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
