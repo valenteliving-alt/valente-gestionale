@@ -108,15 +108,40 @@ async function login(jar, opts = {}) {
   const finalToken = token || sendTok || htmlTok || jar["csrf_token"] || jar["XSRF-TOKEN"] || "";
   rec({ step: "token", fromBody: !!token, fromSend: !!sendTok, htmlSrc, htmlLen: htmlTok ? htmlTok.length : 0, sendStatus, sendSample, jarKeys: Object.keys(jar) });
 
-  const code = totp(process.env.KROSS_TOTP_SECRET || "");
-  const q = new URLSearchParams({ token: String(finalToken), id: String(id ?? ""), code, trust: "1" });
-  const r3 = await fetch(`${BASE}/login/tfa-check?${q.toString()}`, {
-    headers: { "User-Agent": UA, "X-Requested-With": "XMLHttpRequest", "Cookie": cookieHeader(jar), "Referer": `${BASE}/login/v2` },
-    redirect: "manual",
-  });
-  raccogliCookie(jar, r3);
-  const t3 = await r3.text(); let j3 = null; try { j3 = JSON.parse(t3); } catch (_) {}
-  rec({ step: "tfa-check", status: r3.status, usedId: String(id ?? ""), tokenLen: String(finalToken).length, sample: (j3 ? JSON.stringify(j3) : t3).slice(0, 300) });
+  const secret = process.env.KROSS_TOTP_SECRET || "";
+  const now = Math.floor(Date.now() / 1000);
+  const isOk = (jj, txt) => (jj && (jj.auth === 1 || jj.auth === true || jj.success === true || jj.logged === true)) || /"auth"\s*:\s*1/.test(txt || "");
+  async function tryCheck(method, tokenVal, code) {
+    const params = { token: String(tokenVal), id: String(id ?? ""), code, trust: "1" };
+    let rr;
+    if (method === "GET") {
+      rr = await fetch(`${BASE}/login/tfa-check?${new URLSearchParams(params).toString()}`, {
+        headers: { "User-Agent": UA, "X-Requested-With": "XMLHttpRequest", "Cookie": cookieHeader(jar), "Referer": `${BASE}/login/v2` }, redirect: "manual",
+      });
+    } else {
+      rr = await fetch(`${BASE}/login/tfa-check`, {
+        method: "POST",
+        headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded", "X-Requested-With": "XMLHttpRequest", "Cookie": cookieHeader(jar), "Referer": `${BASE}/login/v2` },
+        body: new URLSearchParams(params).toString(), redirect: "manual",
+      });
+    }
+    raccogliCookie(jar, rr);
+    const tt = await rr.text(); let jj = null; try { jj = JSON.parse(tt); } catch (_) {}
+    return { ok: isOk(jj, tt), sample: (jj ? JSON.stringify(jj) : tt).slice(0, 120) };
+  }
+  let authOk = false, winner = null, lastSample = "";
+  outer:
+  for (const off of [0, -30, 30, -60, 60, -90, 90]) {
+    const code = totp(secret, now + off);
+    for (const method of ["GET", "POST"]) {
+      for (const tv of ["0", ""]) {
+        const res = await tryCheck(method, tv, code);
+        lastSample = res.sample;
+        if (res.ok) { authOk = true; winner = { off, method, tokenVal: tv }; break outer; }
+      }
+    }
+  }
+  rec({ step: "tfa-check", serverEpoch: now, code0: totp(secret, now), authOk, winner, lastSample });
 
   const rv = await fetch(`${BASE}/v2/ucrm/get-threads`, {
     method: "POST",
