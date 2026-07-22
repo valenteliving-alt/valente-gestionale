@@ -1,17 +1,17 @@
-// Sync Krossbooking → CRM
-// Funzione notturna: fa login su Krossbooking (con verifica 2FA via Authenticator:
-// calcola da solo il codice a 6 cifre), scarica l'export prenotazioni (lo STESSO
-// file XLSX che si carica a mano dalla sezione Gestione) e lo scrive nella tabella
-// "prenotazioni". Gira sui server Netlify a orario fisso: non serve nessuno davanti.
+// Sync Krossbooking → CRM (prenotazioni)
+// Funzione notturna: fa login su Krossbooking con verifica 2FA via EMAIL (Kross
+// manda il codice a una casella dedicata, il server lo LEGGE via IMAP e completa
+// l'accesso), scarica l'export prenotazioni (lo STESSO XLSX della sezione Gestione)
+// e lo scrive nella tabella "prenotazioni". Gira sui server Netlify: niente
+// computer acceso, niente intervento umano.
 //
-// Variabili d'ambiente su Netlify (Site settings → Environment variables):
-//   KROSS_USER, KROSS_PASS, KROSS_HOTEL, KROSS_TOTP_SECRET, SUPABASE_SERVICE_ROLE_KEY
-//   KROSS_TFA_ID (opzionale) → forza l'id del metodo 2FA
-//
-// La password NON è nel codice: sta solo tra le variabili Netlify, cifrate.
+// Variabili d'ambiente su Netlify:
+//   KROSS_USER, KROSS_PASS, KROSS_HOTEL, SUPABASE_SERVICE_ROLE_KEY
+//   KROSS_OTP_USER, KROSS_OTP_PASS (app-password Gmail), KROSS_OTP_HOST (def. imap.gmail.com)
+//   KROSS_EMAIL_ID (opzionale, def. rilevato / 10)
 
 const XLSX = require("xlsx");
-const crypto = require("crypto");
+const tls = require("tls");
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://heabtbdmwbjlgujsisor.supabase.co";
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -19,24 +19,7 @@ const HOTEL = process.env.KROSS_HOTEL || "valenteitalianproperties";
 const BASE = `https://${HOTEL}.krossbooking.com`;
 const UA = "Mozilla/5.0 (compatible; ValenteCRM-sync)";
 const SITE_URL = process.env.URL || "https://valentelivingcrm.netlify.app";
-
-// ── TOTP (RFC 6238): stesso codice di Google Authenticator ──
-function base32decode(s) {
-  const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  s = String(s || "").replace(/=+$/, "").toUpperCase().replace(/[^A-Z2-7]/g, "");
-  let bits = 0, val = 0; const out = [];
-  for (const c of s) { val = (val << 5) | A.indexOf(c); bits += 5; if (bits >= 8) { out.push((val >>> (bits - 8)) & 0xff); bits -= 8; } }
-  return Buffer.from(out);
-}
-function totp(secret, forTime) {
-  const key = base32decode(secret);
-  const ctr = Math.floor((forTime !== undefined ? forTime : Date.now() / 1000) / 30);
-  const buf = Buffer.alloc(8); buf.writeBigInt64BE(BigInt(ctr));
-  const h = crypto.createHmac("sha1", key).update(buf).digest();
-  const o = h[h.length - 1] & 0x0f;
-  const code = ((h[o] & 0x7f) << 24 | (h[o + 1] & 0xff) << 16 | (h[o + 2] & 0xff) << 8 | (h[o + 3] & 0xff)) % 1000000;
-  return String(code).padStart(6, "0");
-}
+const IMAP_HOST = process.env.KROSS_OTP_HOST || "imap.gmail.com";
 
 // ── Cookie di sessione ──
 function raccogliCookie(jar, res) {
@@ -44,42 +27,114 @@ function raccogliCookie(jar, res) {
   raw.forEach((c) => { const [p] = c.split(";"); const i = p.indexOf("="); if (i > 0) jar[p.slice(0, i).trim()] = p.slice(i + 1).trim(); });
 }
 const intestaCookie = (jar) => Object.entries(jar).map(([k, v]) => `${k}=${v}`).join("; ");
-function dig(o, names) {
-  if (!o) return undefined;
-  for (const n of names) { if (o[n] != null) return o[n]; if (o.data && o.data[n] != null) return o.data[n]; if (o.result && o.result[n] != null) return o.result[n]; }
-  return undefined;
+
+// ── IMAP minimale su TLS (nessuna dipendenza) per leggere il codice OTP ──
+function imapConnect() {
+  return new Promise((resolve, reject) => {
+    const sock = tls.connect({ host: IMAP_HOST, port: 993, servername: IMAP_HOST });
+    sock.setEncoding("utf8");
+    let greet = "";
+    const to = setTimeout(() => { try { sock.destroy(); } catch (_) {} reject(new Error("IMAP: connessione lenta")); }, 8000);
+    sock.once("error", (e) => { clearTimeout(to); reject(e); });
+    const onGreet = (d) => {
+      greet += d;
+      if (/\* OK/i.test(greet)) {
+        clearTimeout(to);
+        sock.removeListener("data", onGreet);
+        let n = 0;
+        const cmd = (line, wait = 12000) => new Promise((res, rej) => {
+          n++; const tag = "Q" + n; let acc = "";
+          const re = new RegExp("^" + tag + " (OK|NO|BAD)[^\\r\\n]*", "m");
+          const t = setTimeout(() => { sock.removeListener("data", h); rej(new Error("IMAP timeout: " + line.split(" ")[0])); }, wait);
+          const h = (dd) => { acc += dd; const m = acc.match(re); if (m) { clearTimeout(t); sock.removeListener("data", h); res({ status: m[1], text: acc }); } };
+          sock.on("data", h);
+          sock.write(tag + " " + line + "\r\n");
+        });
+        resolve({ cmd, close: () => { try { sock.end(); } catch (_) {} } });
+      }
+    };
+    sock.on("data", onGreet);
+  });
+}
+const qImap = (s) => String(s || "").replace(/(["\\])/g, "\\$1");
+const contaExists = (text) => { const m = text.match(/\*\s+(\d+)\s+EXISTS/i); return m ? parseInt(m[1]) : 0; };
+function estraiCodice(text) {
+  const pulito = text.replace(/=\r?\n/g, "");
+  const blocchi = pulito.split(/\*\s+\d+\s+FETCH/i).reverse();
+  for (const b of blocchi) {
+    if (/kross|codice|verifica|verification|\bcode\b|OTP|autenticazione|two|2fa/i.test(b)) {
+      const m = b.match(/\b(\d{6})\b/);
+      if (m) return m[1];
+    }
+  }
+  const m2 = pulito.match(/\b(\d{6})\b/);
+  return m2 ? m2[1] : null;
+}
+async function imapAttendiCodice({ attesaMax, inviaEmail }) {
+  const c = await imapConnect();
+  const li = await c.cmd(`LOGIN "${qImap(process.env.KROSS_OTP_USER)}" "${qImap(process.env.KROSS_OTP_PASS)}"`);
+  if (li.status !== "OK") { c.close(); throw new Error("IMAP login rifiutato: app-password non valida."); }
+  try {
+    const baseline = contaExists((await c.cmd("SELECT INBOX")).text);
+    await inviaEmail();
+    const inizio = Date.now(); let tentativi = 0;
+    while (Date.now() - inizio < attesaMax) {
+      await new Promise((r) => setTimeout(r, 2500));
+      tentativi++;
+      const cur = contaExists((await c.cmd("SELECT INBOX")).text);
+      if (cur > baseline) {
+        const codice = estraiCodice((await c.cmd(`FETCH ${baseline + 1}:${cur} BODY[]`)).text);
+        if (codice) return { codice, tentativi };
+      }
+    }
+    return { codice: null, tentativi };
+  } finally { try { await c.cmd("LOGOUT"); } catch (_) {} c.close(); }
 }
 
-// ── Login con 2FA Authenticator ──
-async function login(jar) {
+// ── Login Krossbooking con 2FA via EMAIL ──
+async function login(jar, opts = {}) {
   const r1 = await fetch(`${BASE}/login/v2`, { headers: { "User-Agent": UA }, redirect: "manual" });
   raccogliCookie(jar, r1);
-  const b1 = new URLSearchParams({ redirect: "", username: process.env.KROSS_USER || "", password: process.env.KROSS_PASS || "" });
   const r2 = await fetch(`${BASE}/login/v2`, {
     method: "POST",
     headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded", "X-Requested-With": "XMLHttpRequest", "Cookie": intestaCookie(jar), "Referer": `${BASE}/login/v2` },
-    body: b1.toString(), redirect: "manual",
+    body: new URLSearchParams({ redirect: "", username: process.env.KROSS_USER || "", password: process.env.KROSS_PASS || "" }).toString(),
+    redirect: "manual",
   });
   raccogliCookie(jar, r2);
   const t2 = await r2.text(); let j2 = null; try { j2 = JSON.parse(t2); } catch (_) {}
 
-  let token = dig(j2, ["token", "tfa_token", "csrf", "_token", "hash"]);
-  let id = dig(j2, ["id", "id_tfa", "tfa_id", "method_id", "id_method", "id_user"]);
-  let methods = j2 && (j2.devices || j2.methods || j2.tfa_methods || (j2.data && (j2.data.devices || j2.data.methods)));
-  if (Array.isArray(methods)) {
-    const app = methods.find((m) => /google|authenticator|totp/i.test(JSON.stringify(m)))
-      || methods.find((m) => /auth|app|otp/i.test(JSON.stringify(m)));
-    if (app) id = app.id ?? app.id_tfa ?? app.method_id ?? id;
-  }
-  if (process.env.KROSS_TFA_ID) id = process.env.KROSS_TFA_ID;
+  const devices = (j2 && (j2.devices || (j2.data && j2.data.devices))) || [];
+  const emailDev = Array.isArray(devices) ? devices.find((d) => /email/i.test(d.method || d.type || d.name || "")) : null;
+  const id = process.env.KROSS_EMAIL_ID || (emailDev && emailDev.id) || "10";
 
-  const code = totp(process.env.KROSS_TOTP_SECRET || "");
-  const q = new URLSearchParams({ token: String(token ?? ""), id: String(id ?? ""), code, trust: "1" });
-  const r3 = await fetch(`${BASE}/login/tfa-check?${q.toString()}`, {
-    headers: { "User-Agent": UA, "X-Requested-With": "XMLHttpRequest", "Cookie": intestaCookie(jar), "Referer": `${BASE}/login/v2` },
-    redirect: "manual",
+  const { codice } = await imapAttendiCodice({
+    attesaMax: Number(opts.attesa || 16000),
+    inviaEmail: async () => {
+      const rs = await fetch(`${BASE}/login/tfa-send-notif`, {
+        method: "POST",
+        headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded", "X-Requested-With": "XMLHttpRequest", "Cookie": intestaCookie(jar), "Referer": `${BASE}/login/v2` },
+        body: new URLSearchParams({ id: String(id), username: process.env.KROSS_USER || "" }).toString(),
+      });
+      raccogliCookie(jar, rs);
+    },
   });
-  raccogliCookie(jar, r3);
+  if (!codice) throw new Error("Codice email non ricevuto in tempo.");
+
+  let ok = false;
+  outer:
+  for (const method of ["GET", "POST"]) {
+    for (const tv of ["0", ""]) {
+      const params = { token: tv, id: String(id), code: String(codice), trust: "1" };
+      let rr;
+      if (method === "GET") rr = await fetch(`${BASE}/login/tfa-check?${new URLSearchParams(params).toString()}`, { headers: { "User-Agent": UA, "X-Requested-With": "XMLHttpRequest", "Cookie": intestaCookie(jar), "Referer": `${BASE}/login/v2` }, redirect: "manual" });
+      else rr = await fetch(`${BASE}/login/tfa-check`, { method: "POST", headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded", "X-Requested-With": "XMLHttpRequest", "Cookie": intestaCookie(jar), "Referer": `${BASE}/login/v2` }, body: new URLSearchParams(params).toString(), redirect: "manual" });
+      raccogliCookie(jar, rr);
+      const tt = await rr.text();
+      if (/"auth"\s*:\s*1/.test(tt) || /"success"\s*:\s*true/.test(tt) || /"logged"\s*:\s*true/.test(tt)) { ok = true; break outer; }
+    }
+  }
+  if (!ok) throw new Error("Verifica 2FA (email) non riuscita.");
   return jar;
 }
 
@@ -122,20 +177,16 @@ const DG_map = (r) => ({
   note: r["Note"] || null, updated_at: new Date().toISOString(),
 });
 
-// ── Scarica l'export XLSX delle prenotazioni per un intervallo di date ──
 async function scaricaExport(jar, periodo) {
   const q = `order=&statuses=&period=${encodeURIComponent(periodo)}&d=arr&id_rooms=&cod_channel=&pagato=&fatturato=`;
-  // Prima carico l'elenco filtrato: imposta il periodo nella sessione
   await fetch(`${BASE}/admin/prenotazioni/?${q}`, { headers: { "User-Agent": UA, "Cookie": intestaCookie(jar) } });
-  // Poi l'export vero e proprio
   const r = await fetch(`${BASE}/admin/prenotazioni/export/?${q}`, { headers: { "User-Agent": UA, "Cookie": intestaCookie(jar) } });
   if (!r.ok) throw new Error(`Export non riuscito (HTTP ${r.status}).`);
   const ct = r.headers.get("content-type") || "";
-  if (ct.includes("text/html")) throw new Error("L'export ha restituito una pagina HTML invece del file: sessione probabilmente scaduta.");
+  if (ct.includes("text/html")) throw new Error("L'export ha restituito una pagina HTML: sessione probabilmente scaduta.");
   return Buffer.from(await r.arrayBuffer());
 }
 
-// ── Scrive/aggiorna in blocco nella tabella prenotazioni (dedup per id) ──
 async function upsert(righe) {
   let ok = 0;
   for (let i = 0; i < righe.length; i += 400) {
@@ -159,18 +210,18 @@ async function notifica(title, body) {
   } catch (_) { /* la notifica è un di più */ }
 }
 
-exports.handler = async () => {
+exports.handler = async (event) => {
   if (!SERVICE_KEY) return { statusCode: 500, body: "Manca SUPABASE_SERVICE_ROLE_KEY." };
   if (!process.env.KROSS_USER || !process.env.KROSS_PASS) {
     return { statusCode: 500, body: "Mancano KROSS_USER / KROSS_PASS nelle variabili Netlify." };
   }
+  const qs = (event && event.queryStringParameters) || {};
   try {
-    // Finestra: anno scorso, corrente e prossimo — copre soggiorni passati e futuri
     const anno = new Date().getFullYear();
     const periodo = `01/01/${anno - 1} - 31/12/${anno + 1}`;
 
     const jar = {};
-    await login(jar);
+    await login(jar, { attesa: qs.attesa ? Number(qs.attesa) : undefined });
     const buf = await scaricaExport(jar, periodo);
 
     const wb = XLSX.read(buf, { cellDates: true });
