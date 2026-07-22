@@ -528,7 +528,7 @@ const AiPanel = ({ onClose, proprieta, owners, onDataChanged }) => {
             try {
               const ra = await fetch("/.netlify/functions/allegati", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "upload", proprietario_id: String(nuovoId), nome_file: f.name, tipo: f.type, data: f.data }),
+                body: JSON.stringify({ action: "upload", token: auth.token(), proprietario_id: String(nuovoId), nome_file: f.name, tipo: f.type, data: f.data }),
               });
               allegatoMsg = ra.ok
                 ? " Ho anche allegato il documento alla sua scheda."
@@ -679,7 +679,7 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading, gestori = GEST
     if (!f.id) { setAiMsg("Salva prima l'immobile: poi potrò leggere i documenti che gli hai allegato."); return; }
     setAiBusy(true); setAiMsg("Cerco i documenti dell'immobile…");
     try {
-      const lr = await fetch("/.netlify/functions/allegati", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "list", proprieta_id: f.id }) });
+      const lr = await fetch("/.netlify/functions/allegati", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "list", token: auth.token(), proprieta_id: f.id }) });
       const ld = await lr.json();
       let list = ld.files || [];
       if (!list.length) { setAiMsg("Nessun documento allegato a questo immobile. Carica un mandato o una visura e riprova."); setAiBusy(false); return; }
@@ -689,7 +689,7 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading, gestori = GEST
       const files = [];
       for (const it of list) {
         try {
-          const sr = await fetch("/.netlify/functions/allegati", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "sign", path: it.path }) });
+          const sr = await fetch("/.netlify/functions/allegati", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "sign", token: auth.token(), path: it.path }) });
           const sd = await sr.json();
           if (!sd.url) continue;
           const blob = await (await fetch(sd.url)).blob();
@@ -1533,7 +1533,7 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
       const results = await Promise.all(targets.map((t) =>
         fetch("/.netlify/functions/allegati", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "list", ...t }),
+          body: JSON.stringify({ action: "list", token: auth.token(), ...t }),
         }).then((r) => (r.ok ? r.json() : { files: [] })).catch(() => ({ files: [] }))
       ));
       const merged = [];
@@ -1554,7 +1554,7 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
     try {
       const r = await fetch("/.netlify/functions/allegati", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "describe", id: f.id, path: f.path, tipo: f.tipo, nome_file: f.nome_file, data }),
+        body: JSON.stringify({ action: "describe", token: auth.token(), id: f.id, path: f.path, tipo: f.tipo, nome_file: f.nome_file, data }),
       });
       const d = await r.json().catch(() => ({}));
       if (r.ok && d.file) setFiles(fs => fs.map(x => x.id === f.id ? { ...x, ...d.file } : x));
@@ -1598,7 +1598,7 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
         });
         const r = await fetch("/.netlify/functions/allegati", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "upload", nome_file: file.name, tipo: file.type, data: base64, ...target }),
+          body: JSON.stringify({ action: "upload", token: auth.token(), nome_file: file.name, tipo: file.type, data: base64, ...target }),
         });
         if (!r.ok) falliti.push(file.name);
         else { const dd = await r.json().catch(() => ({})); if (dd.file) await descrivi(dd.file, base64); }
@@ -1618,7 +1618,7 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
     try {
       const r = await fetch("/.netlify/functions/allegati", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "sign", path }),
+        body: JSON.stringify({ action: "sign", token: auth.token(), path }),
       });
       const d = await r.json();
       if (r.ok && d.url) window.open(d.url, "_blank");
@@ -1632,7 +1632,7 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
     try {
       const r = await fetch("/.netlify/functions/allegati", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "delete", id: f.id, path: f.path }),
+        body: JSON.stringify({ action: "delete", token: auth.token(), id: f.id, path: f.path }),
       });
       if (r.ok) await carica();
       else { const d = await r.json(); setErr(d.error || "Eliminazione fallita."); }
@@ -1806,7 +1806,7 @@ function Smistamento({ proprieta, owners, onDataChanged }) {
         if (proprieta_id && proprietario_id) destNome = destNome + " (+ proprietario)";
         const ra = await fetch("/.netlify/functions/allegati", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "upload", proprieta_id, proprietario_id, nome_file: row.file.name, tipo: row.file.type, data: row.file.data }),
+          body: JSON.stringify({ action: "upload", token: auth.token(), proprieta_id, proprietario_id, nome_file: row.file.name, tipo: row.file.type, data: row.file.data }),
         });
         if (!ra.ok) throw new Error("allegato");
         setRows(rs => rs.map(x => x.rid === row.rid ? { ...x, stato: "archiviato", dest: destNome } : x));
