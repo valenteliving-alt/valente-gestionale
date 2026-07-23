@@ -182,10 +182,12 @@ export default function MessaggiAI() {
         ) : chats.map(c => {
           const daRispondere = c.ultimo_ruolo === "ospite";
           const quando = c.ultimo_ts ? new Date(c.ultimo_ts).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+          const db = d => d ? new Date(d + "T12:00").toLocaleDateString("it-IT", { day: "numeric", month: "short" }) : "";
+          const sogg = c.arrivo && c.partenza ? `📅 ${db(c.arrivo)} → ${db(c.partenza)}` : (c.arrivo ? `📅 dal ${db(c.arrivo)}` : "");
           return (
             <div key={c.id_thread} style={{ ...box, borderColor: daRispondere ? "#fcd34d" : "#e5e7eb" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
-                <div style={{ fontWeight: 700 }}>🏠 {c.appartamento || "n/d"} {c.ospite ? <span style={{ fontWeight: 400, color: "#6b7280" }}>· {c.ospite}</span> : null}</div>
+                <div style={{ fontWeight: 700 }}>🏠 {c.appartamento || "n/d"} <span style={{ fontWeight: 400, color: "#6b7280" }}>{c.ospite ? `· 👤 ${c.ospite}` : ""} {sogg ? `· ${sogg}` : ""}</span></div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   {c.canale && <span style={chip("#eef2ff", "#4338ca")}>{c.canale}</span>}
                   {quando && <span style={chip("#f3f4f6", "#6b7280")}>{quando}</span>}
