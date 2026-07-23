@@ -1,0 +1,14 @@
+{
+  "name": "Valente Chat AI",
+  "short_name": "Chat AI",
+  "description": "Monitoraggio delle conversazioni AI con gli ospiti Valente Living",
+  "start_url": "/monitor.html",
+  "scope": "/monitor",
+  "display": "standalone",
+  "background_color": "#1a1915",
+  "theme_color": "#1a1915",
+  "icons": [
+    { "src": "/monitor-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/monitor-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

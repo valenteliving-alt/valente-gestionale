@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Valente · Chat AI</title>
+<meta name="theme-color" content="#1a1915" />
+<link rel="manifest" href="/monitor.webmanifest" />
+<link rel="apple-touch-icon" href="/monitor-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Chat AI" />
+<style>
+  :root {
+    --bg: #1a1915; --card: #262521; --card2: #2e2c27; --line: #3a3833;
+    --text: #f5f4ee; --muted: #a8a496; --accent: #d97757; --accent-soft: #d9775726;
+    --ai: #e8b23a; --ai-soft: #e8b23a22; --ok: #7fb069; --ok-soft: #7fb06922;
+    --wait: #e8b23a; --danger: #c65f5f;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  body { padding-bottom: env(safe-area-inset-bottom); }
+
+  header { position: sticky; top: 0; z-index: 10; background: rgba(26,25,21,.92);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    padding: calc(14px + env(safe-area-inset-top)) 18px 10px; border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; justify-content: space-between; }
+  .brand h1 { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: -.3px;
+    font-family: Georgia, "Times New Roman", serif; }
+  .brand h1 em { color: var(--accent); font-style: normal; }
+  .stato { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .dot.off { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+
+  .filtri { display: flex; gap: 8px; margin-top: 12px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .filtri::-webkit-scrollbar { display: none; }
+  .fchip { flex-shrink: 0; border: 1px solid var(--line); background: transparent; color: var(--muted);
+    border-radius: 999px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .fchip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .fchip .n { opacity: .75; font-weight: 700; margin-left: 4px; }
+
+  main { padding: 14px 14px 40px; max-width: 640px; margin: 0 auto; }
+  .aggiornato { text-align: center; color: var(--muted); font-size: 11.5px; margin: 2px 0 12px; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 14px; margin-bottom: 12px; cursor: pointer; transition: transform .08s; }
+  .card:active { transform: scale(.985); }
+  .card.ai { border-color: #e8b23a55; background: linear-gradient(180deg, #2c2820, var(--card)); }
+  .card.wait { border-color: #d9775755; }
+  .riga1 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .apt { font-weight: 700; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .quando { color: var(--muted); font-size: 11.5px; flex-shrink: 0; }
+  .riga2 { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 3px; }
+  .ospite { color: var(--muted); font-size: 12.5px; }
+  .anteprima { color: var(--muted); font-size: 13px; margin-top: 8px; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.4; }
+  .badge { flex-shrink: 0; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 4px 10px; }
+  .b-ai { background: var(--ai-soft); color: var(--ai); border: 1px solid #e8b23a55; }
+  .b-wait { background: var(--accent-soft); color: var(--accent); border: 1px solid #d9775755; }
+  .b-ok { background: var(--ok-soft); color: var(--ok); border: 1px solid #7fb06944; }
+
+  /* dettaglio conversazione */
+  #dettaglio { position: fixed; inset: 0; background: var(--bg); z-index: 20; display: none; flex-direction: column; }
+  #dettaglio.aperto { display: flex; }
+  .d-top { position: sticky; top: 0; background: rgba(26,25,21,.95); backdrop-filter: blur(12px);
+    padding: calc(12px + env(safe-area-inset-top)) 14px 10px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px; }
+  .indietro { background: var(--card); border: 1px solid var(--line); color: var(--text);
+    border-radius: 12px; width: 38px; height: 38px; font-size: 18px; cursor: pointer; flex-shrink: 0; }
+  .d-tit { min-width: 0; }
+  .d-tit .apt { font-size: 14px; }
+  .d-tit .ospite { font-size: 12px; }
+  .d-msgs { flex: 1; overflow-y: auto; padding: 16px 14px 24px; }
+  .bolla { max-width: 82%; border-radius: 16px; padding: 10px 13px; font-size: 14.5px;
+    line-height: 1.45; margin-bottom: 10px; white-space: pre-wrap; word-break: break-word; }
+  .da-ospite { background: var(--card2); border: 1px solid var(--line); border-bottom-left-radius: 5px; margin-right: auto; }
+  .da-noi { background: #4a3f37; border: 1px solid #5a4d42; border-bottom-right-radius: 5px; margin-left: auto; }
+  .da-ai { background: #3a3120; border: 1px solid #e8b23a66; border-bottom-right-radius: 5px; margin-left: auto; }
+  .tag-ai { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 800;
+    color: var(--ai); margin-bottom: 5px; letter-spacing: .3px; }
+  .suggerita { margin: 4px 0 20px; background: var(--card); border: 1px dashed var(--accent);
+    border-radius: 14px; padding: 12px; }
+  .suggerita h4 { margin: 0 0 6px; font-size: 12px; color: var(--accent); letter-spacing: .3px; }
+  .suggerita p { margin: 0; font-size: 14px; line-height: 1.45; white-space: pre-wrap; }
+  .copia { margin-top: 10px; width: 100%; background: var(--accent); color: #fff; border: none;
+    border-radius: 12px; padding: 12px; font-size: 14.5px; font-weight: 700; cursor: pointer; }
+
+  /* login */
+  #login { position: fixed; inset: 0; background: var(--bg); z-index: 30; display: none;
+    flex-direction: column; align-items: center; justify-content: center; padding: 28px; }
+  #login.aperto { display: flex; }
+  #login .logo { font-size: 44px; margin-bottom: 8px; }
+  #login h2 { margin: 0 0 4px; font-family: Georgia, serif; font-size: 24px; }
+  #login p { margin: 0 0 26px; color: var(--muted); font-size: 13.5px; text-align: center; }
+  #login input { width: 100%; max-width: 340px; background: var(--card); border: 1px solid var(--line);
+    color: var(--text); border-radius: 12px; padding: 14px; font-size: 15px; margin-bottom: 10px; }
+  #login button { width: 100%; max-width: 340px; background: var(--accent); color: #fff; border: none;
+    border-radius: 12px; padding: 14px; font-size: 15px; font-weight: 700; cursor: pointer; margin-top: 6px; }
+  #login .err { color: var(--danger); font-size: 13px; margin-top: 10px; min-height: 18px; }
+
+  .vuoto { text-align: center; color: var(--muted); padding: 50px 20px; font-size: 14px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<div id="login" class="aperto">
+  <div class="logo">🤖</div>
+  <h2>Valente · <em style="color:var(--accent);font-style:normal">Chat AI</em></h2>
+  <p>Monitoraggio delle conversazioni con gli ospiti.<br>Accedi con il tuo account del CRM.</p>
+  <input id="email" type="email" placeholder="Email" autocomplete="username" />
+  <input id="pass" type="password" placeholder="Password" autocomplete="current-password" />
+  <button onclick="fai_login()">Entra</button>
+  <div class="err" id="login-err"></div>
+</div>
+
+<header id="testata" style="display:none">
+  <div class="brand">
+    <h1>Valente · <em>Chat AI</em></h1>
+    <div class="stato"><span class="dot" id="dot"></span><span id="stato-txt">…</span></div>
+  </div>
+  <div class="filtri" id="filtri"></div>
+</header>
+
+<main id="lista" style="display:none"></main>
+
+<div id="dettaglio">
+  <div class="d-top">
+    <button class="indietro" onclick="chiudi()">‹</button>
+    <div class="d-tit"><div class="apt" id="d-apt"></div><div class="ospite" id="d-osp"></div></div>
+  </div>
+  <div class="d-msgs" id="d-msgs"></div>
+</div>
+
+<script>
+const SB = "https://heabtbdmwbjlgujsisor.supabase.co";
+const ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
+let sess = null, chats = [], filtro = "tutte", cfg = {};
+
+function leggiSess() { try { return JSON.parse(localStorage.getItem("vlmon_sess") || "null"); } catch { return null; } }
+function salvaSess(s) { localStorage.setItem("vlmon_sess", JSON.stringify(s)); sess = s; }
+
+async function fai_login() {
+  const email = document.getElementById("email").value.trim();
+  const pass = document.getElementById("pass").value;
+  const el = document.getElementById("login-err"); el.textContent = "";
+  try {
+    const r = await fetch(`${SB}/auth/v1/token?grant_type=password`, {
+      method: "POST", headers: { apikey: ANON, "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: pass }) });
+    const j = await r.json();
+    if (!r.ok || !j.access_token) { el.textContent = "Email o password non corretti."; return; }
+    salvaSess({ at: j.access_token, rt: j.refresh_token, exp: Date.now() + (j.expires_in - 60) * 1000 });
+    avvia();
+  } catch { el.textContent = "Connessione non riuscita. Riprova."; }
+}
+
+async function rinnova() {
+  if (!sess) return false;
+  if (Date.now() < sess.exp) return true;
+  try {
+    const r = await fetch(`${SB}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST", headers: { apikey: ANON, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: sess.rt }) });
+    const j = await r.json();
+    if (!r.ok || !j.access_token) return false;
+    salvaSess({ at: j.access_token, rt: j.refresh_token, exp: Date.now() + (j.expires_in - 60) * 1000 });
+    return true;
+  } catch { return false; }
+}
+
+async function api(path) {
+  if (!(await rinnova())) { esci(); return null; }
+  const r = await fetch(`${SB}/rest/v1/${path}`, { headers: { apikey: ANON, Authorization: `Bearer ${sess.at}` } });
+  if (r.status === 401) { esci(); return null; }
+  return r.json().catch(() => null);
+}
+function esci() { localStorage.removeItem("vlmon_sess"); sess = null;
+  document.getElementById("login").classList.add("aperto");
+  document.getElementById("testata").style.display = "none";
+  document.getElementById("lista").style.display = "none"; }
+
+function tempoFa(ts) {
+  if (!ts) return ""; const d = Date.now() - Date.parse(ts);
+  const m = Math.floor(d / 60000); if (m < 1) return "adesso"; if (m < 60) return m + " min fa";
+  const h = Math.floor(m / 60); if (h < 24) return h + " h fa";
+  return new Date(ts).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+}
+function nomeCorto(a) { return String(a || "n/d").replace(/valente.*$/i, "").trim().slice(0, 44); }
+
+function statoChat(c) {
+  if (c.inviata_auto) return "ai";
+  if (c.ultimo_ruolo === "ospite") return "wait";
+  return "ok";
+}
+const BADGE = { ai: ['b-ai', '⚡ risposta AI'], wait: ['b-wait', '⏳ da rispondere'], ok: ['b-ok', '✓ risposto'] };
+
+function disegnaFiltri() {
+  const conta = { tutte: chats.length, ai: 0, wait: 0, ok: 0 };
+  chats.forEach(c => conta[statoChat(c)]++);
+  const F = [["tutte", "Tutte"], ["ai", "⚡ AI"], ["wait", "⏳ In attesa"], ["ok", "✓ Risposte"]];
+  document.getElementById("filtri").innerHTML = F.map(([k, l]) =>
+    `<button class="fchip ${filtro === k ? "on" : ""}" onclick="setFiltro('${k}')">${l}<span class="n">${conta[k]}</span></button>`).join("");
+}
+function setFiltro(f) { filtro = f; disegna(); }
+
+function disegna() {
+  disegnaFiltri();
+  const vis = chats.filter(c => filtro === "tutte" || statoChat(c) === filtro);
+  const lista = document.getElementById("lista");
+  if (!vis.length) { lista.innerHTML = `<div class="vuoto">Nessuna conversazione qui.<br>Il robot controlla Krossbooking ogni 90 secondi.</div>`; return; }
+  lista.innerHTML = vis.map((c, i) => {
+    const s = statoChat(c); const [cls, txt] = BADGE[s];
+    const ultima = (c.conversazione || "").split("\n").pop().replace(/^(OSPITE|NOI):\s*/, "");
+    return `<div class="card ${s === "ai" ? "ai" : s === "wait" ? "wait" : ""}" onclick="apri(${i})">
+      <div class="riga1"><div class="apt">${nomeCorto(c.appartamento)}</div><div class="quando">${tempoFa(c.ultimo_ts)}</div></div>
+      <div class="riga2"><div class="ospite">${c.ospite || ""} ${c.canale ? "· " + c.canale : ""}</div><span class="badge ${cls}">${txt}</span></div>
+      <div class="anteprima">${ultima}</div></div>`;
+  }).join("");
+  window._vis = vis;
+}
+
+function apri(i) {
+  const c = window._vis[i]; if (!c) return;
+  document.getElementById("d-apt").textContent = nomeCorto(c.appartamento);
+  document.getElementById("d-osp").textContent = [c.ospite, c.canale, tempoFa(c.ultimo_ts)].filter(Boolean).join(" · ");
+  const box = document.getElementById("d-msgs");
+  const righe = (c.conversazione || "").split("\n").filter(r => r.trim());
+  let html = righe.map((r, idx) => {
+    const mia = r.startsWith("NOI:"); const testo = r.replace(/^(OSPITE|NOI):\s*/, "");
+    const ultimaNostra = mia && idx === righe.length - 1 && c.inviata_auto;
+    if (ultimaNostra) return `<div class="bolla da-ai"><div class="tag-ai">⚡ INVIATA DALL'AI AL POSTO TUO</div>${testo}</div>`;
+    return `<div class="bolla ${mia ? "da-noi" : "da-ospite"}">${testo}</div>`;
+  }).join("");
+  if (c.ultimo_ruolo === "ospite" && (c.risposta_ai || "").trim()) {
+    html += `<div class="suggerita"><h4>🤖 RISPOSTA SUGGERITA DALL'AI</h4><p>${c.risposta_ai}</p>
+      <button class="copia" onclick="copia(this, ${i})">📋 Copia — poi incollala su Krossbooking</button></div>`;
+  }
+  box.innerHTML = html;
+  document.getElementById("dettaglio").classList.add("aperto");
+  box.scrollTop = box.scrollHeight;
+}
+function chiudi() { document.getElementById("dettaglio").classList.remove("aperto"); }
+function copia(btn, i) {
+  const c = window._vis[i];
+  navigator.clipboard.writeText(c.risposta_ai || "").then(() => {
+    btn.textContent = "✓ Copiata!"; setTimeout(() => btn.textContent = "📋 Copia — poi incollala su Krossbooking", 2000);
+  });
+}
+
+async function carica() {
+  const [rc, rcfg] = await Promise.all([
+    api("chat_recenti?select=*&order=ultimo_ts.desc.nullslast&limit=20"),
+    api("ai_config?id=eq.1&select=*"),
+  ]);
+  if (Array.isArray(rc)) chats = rc;
+  if (Array.isArray(rcfg) && rcfg[0]) cfg = rcfg[0];
+  const on = !!cfg.ai_globale_attiva;
+  document.getElementById("dot").className = "dot" + (on ? "" : " off");
+  document.getElementById("stato-txt").textContent = on ? (cfg.modalita === "auto" ? "AI attiva" : "AI attiva · solo bozze") : "AI spenta";
+  disegna();
+  document.querySelector(".aggiornato")?.remove();
+  document.getElementById("lista").insertAdjacentHTML("afterbegin",
+    `<div class="aggiornato">aggiornato ${new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })} · si aggiorna da solo</div>`);
+}
+
+function avvia() {
+  document.getElementById("login").classList.remove("aperto");
+  document.getElementById("testata").style.display = "";
+  document.getElementById("lista").style.display = "";
+  carica();
+}
+
+sess = leggiSess();
+if (sess) avvia();
+setInterval(() => { if (sess) carica(); }, 30000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && sess) carica(); });
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/monitor-sw.js", { scope: "/monitor" }).catch(() => {});
+</script>
+</body>
+</html>
