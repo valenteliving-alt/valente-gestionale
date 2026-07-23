@@ -205,7 +205,7 @@ export default function MessaggiAI() {
               )}
               {daRispondere && (inviate[c.id_thread] ? (
                 <div style={{ background: "#fef9c3", border: "1px solid #fde047", borderRadius: 8, padding: 10, fontSize: 13, fontWeight: 700, color: "#854d0e", textAlign: "center" }}>
-                  📤 In invio… il robot la spedisce entro 90 secondi
+                  📤 In invio… parte in pochi secondi
                 </div>
               ) : (
                 <>
