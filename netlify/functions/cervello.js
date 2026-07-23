@@ -28,14 +28,20 @@ Rispondi SOLO con JSON valido: {"azione":"invia"|"approvazione","motivo":"breve"
   const usr = `SCHEDA VERIFICATA:\n${scheda}\n\nStorico (come abbiamo risposto in passato):\n${kb || "(nessuno)"}\n\nCONVERSAZIONE (ultimo msg = domanda dell'ospite):\n${conversazione}`;
 
   try {
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST", headers: { "x-api-key": AKEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 900, system: sys, messages: [{ role: "user", content: usr }] }),
-    });
-    const j = await r.json();
-    const testo = j && j.content && j.content[0] && j.content[0].text ? j.content[0].text : "";
-    let out; try { const m = testo.match(/\{[\s\S]*\}/); out = JSON.parse(m ? m[0] : testo); }
-    catch { out = { azione: "approvazione", motivo: "output non interpretabile", risposta: testo }; }
+    let out = null, errore = "";
+    for (let tent = 0; tent < 2 && !out; tent++) {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", headers: { "x-api-key": AKEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 1400, system: sys, messages: [{ role: "user", content: usr }] }),
+      });
+      const j = await r.json().catch(() => null);
+      if (!j || j.error) { errore = j && j.error ? String(j.error.message || j.error.type) : "risposta non leggibile"; await new Promise((rr) => setTimeout(rr, 1500)); continue; }
+      const testo = (j.content && j.content[0] && j.content[0].text) ? j.content[0].text : "";
+      if (!testo) { errore = "risposta vuota dall'AI"; continue; }
+      try { const m = testo.match(/\{[\s\S]*\}/); out = JSON.parse(m ? m[0] : testo); }
+      catch { out = { azione: "approvazione", motivo: "formato inatteso", risposta: testo.slice(0, 1200) }; }
+    }
+    if (!out) out = { azione: "approvazione", motivo: "AI momentaneamente non disponibile: " + errore, risposta: "" };
     return { statusCode: 200, headers: { ...CORS, "Content-Type": "application/json" }, body: JSON.stringify(out) };
   } catch (e) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: String(e.message || e) }) };
