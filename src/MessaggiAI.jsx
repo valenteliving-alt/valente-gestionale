@@ -56,16 +56,14 @@ export default function MessaggiAI() {
   const carica = useCallback(async () => {
     setLoading(true); setErr("");
     try {
-      const [cfg, sched, toggles, coda] = await Promise.all([
+      const [cfg, toggles, coda] = await Promise.all([
         api("GET", "ai_config", "?id=eq.1&select=*"),
-        api("GET", "schede_immobili", "?select=appartamento&order=appartamento.asc"),
-        api("GET", "ai_appartamenti", "?select=*"),
+        api("GET", "ai_appartamenti", "?select=*&order=appartamento.asc"),
         api("GET", "bozze_approvazioni", "?stato=eq.in_attesa&order=creata_il.desc"),
       ]);
       if (cfg.ok && cfg.data && cfg.data[0]) setConfig(cfg.data[0]);
-      const stato = {}; (toggles.data || []).forEach(t => { stato[t.appartamento] = !!t.attiva; });
-      const nomi = Array.from(new Set([...(sched.data || []).map(s => s.appartamento), ...(toggles.data || []).map(t => t.appartamento)].filter(Boolean))).sort();
-      setApts(nomi.map(n => ({ appartamento: n, attiva: !!stato[n] })));
+      // La lista appartamenti sono i nomi VERI di Krossbooking (già puliti dai doppioni)
+      setApts((toggles.data || []).map(t => ({ appartamento: t.appartamento, attiva: !!t.attiva })));
       if (coda.ok && Array.isArray(coda.data)) setQueue(coda.data);
     } catch (e) { setErr("Impossibile caricare i dati."); }
     setLoading(false);
