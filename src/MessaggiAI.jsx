@@ -63,7 +63,7 @@ export default function MessaggiAI() {
       ]);
       if (cfg.ok && cfg.data && cfg.data[0]) setConfig(cfg.data[0]);
       // La lista appartamenti sono i nomi VERI di Krossbooking (già puliti dai doppioni)
-      setApts((toggles.data || []).map(t => ({ appartamento: t.appartamento, attiva: !!t.attiva })));
+      setApts((toggles.data || []).map(t => ({ appartamento: t.appartamento, nome: t.nome, indirizzo: t.indirizzo, citta: t.citta, attiva: !!t.attiva })));
       if (coda.ok && Array.isArray(coda.data)) setQueue(coda.data);
     } catch (e) { setErr("Impossibile caricare i dati."); }
     setLoading(false);
@@ -91,7 +91,7 @@ export default function MessaggiAI() {
   }
 
   const aptsFiltrati = useMemo(() =>
-    apts.filter(a => (a.appartamento || "").toLowerCase().includes(q.toLowerCase())),
+    apts.filter(a => ((a.nome || "") + " " + (a.appartamento || "") + " " + (a.citta || "")).toLowerCase().includes(q.toLowerCase())),
   [apts, q]);
   const attiviCount = apts.filter(a => a.attiva).length;
 
@@ -194,8 +194,14 @@ export default function MessaggiAI() {
           {aptsFiltrati.length === 0 && <div style={{ color: "#6b7280" }}>Nessun appartamento.</div>}
           {aptsFiltrati.map(a => (
             <div key={a.appartamento} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #f3f4f6" }}>
-              <div style={{ fontSize: 14 }}>{a.appartamento}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ minWidth: 0, paddingRight: 10 }}>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{a.nome || a.appartamento}</div>
+                <div style={{ fontSize: 12, color: "#9ca3af" }}>
+                  {[a.citta, a.indirizzo].filter(Boolean).join(" · ")}
+                  {a.nome && a.nome !== a.appartamento ? `  ·  Kross: ${a.appartamento}` : ""}
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
                 <span style={{ fontSize: 12, color: a.attiva ? "#16a34a" : "#9ca3af", fontWeight: 600 }}>{a.attiva ? "AI attiva" : "spenta"}</span>
                 <Switch on={a.attiva} onClick={() => toggleApt(a.appartamento, !a.attiva)} />
               </div>
