@@ -47,8 +47,10 @@ export default function MessaggiAI() {
   const [config, setConfig] = useState({ ai_globale_attiva: false, modalita: "sola_bozza" });
   const [apts, setApts] = useState([]);          // [{appartamento, attiva}]
   const [queue, setQueue] = useState([]);        // bozze_approvazioni in attesa
+  const [chats, setChats] = useState([]);        // chat_recenti (ultime 20 da Kross)
   const [q, setQ] = useState("");
-  const [tab, setTab] = useState("coda");        // coda | appartamenti
+  const [tab, setTab] = useState("chat");        // chat | coda | appartamenti
+  const [copiato, setCopiato] = useState("");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [edit, setEdit] = useState({});          // { id_thread: testo modificato }
@@ -56,15 +58,17 @@ export default function MessaggiAI() {
   const carica = useCallback(async () => {
     setLoading(true); setErr("");
     try {
-      const [cfg, toggles, coda] = await Promise.all([
+      const [cfg, toggles, coda, recenti] = await Promise.all([
         api("GET", "ai_config", "?id=eq.1&select=*"),
         api("GET", "ai_appartamenti", "?select=*&order=appartamento.asc"),
         api("GET", "bozze_approvazioni", "?stato=eq.in_attesa&order=creata_il.desc"),
+        api("GET", "chat_recenti", "?select=*&order=ultimo_ts.desc.nullslast&limit=20"),
       ]);
       if (cfg.ok && cfg.data && cfg.data[0]) setConfig(cfg.data[0]);
       // La lista appartamenti sono i nomi VERI di Krossbooking (già puliti dai doppioni)
       setApts((toggles.data || []).map(t => ({ appartamento: t.appartamento, nome: t.nome, indirizzo: t.indirizzo, citta: t.citta, attiva: !!t.attiva })));
       if (coda.ok && Array.isArray(coda.data)) setQueue(coda.data);
+      if (recenti.ok && Array.isArray(recenti.data)) setChats(recenti.data);
     } catch (e) { setErr("Impossibile caricare i dati."); }
     setLoading(false);
   }, []);
@@ -136,7 +140,10 @@ export default function MessaggiAI() {
       </div>
 
       {/* TABS */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <button onClick={() => setTab("chat")} style={btn(tab === "chat" ? "#111827" : "#e5e7eb", tab === "chat" ? "#fff" : "#374151")}>
+          💬 Chat recenti <span style={{ ...chip("#3b82f6", "#fff"), marginLeft: 6 }}>{chats.length}</span>
+        </button>
         <button onClick={() => setTab("coda")} style={btn(tab === "coda" ? "#111827" : "#e5e7eb", tab === "coda" ? "#fff" : "#374151")}>
           📥 Da approvare {queue.length > 0 && <span style={{ ...chip("#ef4444", "#fff"), marginLeft: 6 }}>{queue.length}</span>}
         </button>
@@ -147,6 +154,55 @@ export default function MessaggiAI() {
       </div>
 
       {loading && <div style={{ color: "#6b7280", padding: 20 }}>Caricamento…</div>}
+
+      {/* CHAT RECENTI (ultime 20 da Kross, sempre visibili) */}
+      {!loading && tab === "chat" && (
+        chats.length === 0 ? (
+          <div style={{ ...box, color: "#6b7280", textAlign: "center" }}>
+            Nessuna chat ancora. Il robot le sta scaricando da Krossbooking…<br />
+            <span style={{ fontSize: 13 }}>Premi ↻ Aggiorna tra un minuto.</span>
+          </div>
+        ) : chats.map(c => {
+          const daRispondere = c.ultimo_ruolo === "ospite";
+          const quando = c.ultimo_ts ? new Date(c.ultimo_ts).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+          return (
+            <div key={c.id_thread} style={{ ...box, borderColor: daRispondere ? "#fcd34d" : "#e5e7eb" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
+                <div style={{ fontWeight: 700 }}>🏠 {c.appartamento || "n/d"} {c.ospite ? <span style={{ fontWeight: 400, color: "#6b7280" }}>· {c.ospite}</span> : null}</div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  {c.canale && <span style={chip("#eef2ff", "#4338ca")}>{c.canale}</span>}
+                  {quando && <span style={chip("#f3f4f6", "#6b7280")}>{quando}</span>}
+                  {daRispondere
+                    ? <span style={chip("#fef3c7", "#92400e")}>⏳ da rispondere</span>
+                    : <span style={chip("#dcfce7", "#166534")}>✅ risposto</span>}
+                </div>
+              </div>
+              {c.conversazione && (
+                <div style={{ background: "#f9fafb", border: "1px solid #eee", borderRadius: 8, padding: 10, fontSize: 13, color: "#374151", whiteSpace: "pre-wrap", maxHeight: 180, overflow: "auto", marginBottom: 10 }}>
+                  {c.conversazione}
+                </div>
+              )}
+              {daRispondere && (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>🤖 Risposta suggerita dall'AI:</div>
+                  {c.risposta_ai ? (
+                    <>
+                      <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: 10, fontSize: 14, whiteSpace: "pre-wrap" }}>{c.risposta_ai}</div>
+                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                        <button style={btn("#2563eb")} onClick={() => { navigator.clipboard.writeText(c.risposta_ai).then(() => { setCopiato(c.id_thread); setTimeout(() => setCopiato(""), 2000); }); }}>
+                          {copiato === c.id_thread ? "✓ Copiata!" : "📋 Copia risposta"}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ color: "#9ca3af", fontSize: 13 }}>L'AI sta preparando la risposta… premi ↻ Aggiorna tra poco.</div>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })
+      )}
 
       {/* CODA APPROVAZIONI */}
       {!loading && tab === "coda" && (
