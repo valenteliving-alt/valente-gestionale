@@ -199,6 +199,9 @@ function tempoFa(ts) {
   return new Date(ts).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
 }
 function nomeCorto(a) { return String(a || "n/d").replace(/valente.*$/i, "").trim().slice(0, 44); }
+function dataBreve(d) { return d ? new Date(d + "T12:00").toLocaleDateString("it-IT", { day: "numeric", month: "short" }) : ""; }
+function soggiorno(c) { const a = dataBreve(c.arrivo), p = dataBreve(c.partenza);
+  return a && p ? `📅 ${a} → ${p}` : a ? `📅 dal ${a}` : ""; }
 
 function statoChat(c) {
   if (c.inviata_auto) return "ai";
@@ -226,7 +229,7 @@ function disegna() {
     const ultima = (c.conversazione || "").split("\n").pop().replace(/^(OSPITE|NOI):\s*/, "");
     return `<div class="card ${s === "ai" ? "ai" : s === "wait" ? "wait" : ""}" onclick="apri(${i})">
       <div class="riga1"><div class="apt">${nomeCorto(c.appartamento)}</div><div class="quando">${tempoFa(c.ultimo_ts)}</div></div>
-      <div class="riga2"><div class="ospite">${c.ospite || ""} ${c.canale ? "· " + c.canale : ""}</div><span class="badge ${cls}">${txt}</span></div>
+      <div class="riga2"><div class="ospite">👤 ${c.ospite || "?"} ${c.canale ? "· " + c.canale : ""} ${soggiorno(c) ? "· " + soggiorno(c) : ""}</div><span class="badge ${cls}">${txt}</span></div>
       <div class="anteprima">${ultima}</div></div>`;
   }).join("");
   window._vis = vis;
@@ -235,7 +238,7 @@ function disegna() {
 function apri(i) {
   const c = window._vis[i]; if (!c) return;
   document.getElementById("d-apt").textContent = nomeCorto(c.appartamento);
-  document.getElementById("d-osp").textContent = [c.ospite, c.canale, tempoFa(c.ultimo_ts)].filter(Boolean).join(" · ");
+  document.getElementById("d-osp").textContent = [c.ospite, c.canale, soggiorno(c), tempoFa(c.ultimo_ts)].filter(Boolean).join(" · ");
   const box = document.getElementById("d-msgs");
   const righe = (c.conversazione || "").split("\n").filter(r => r.trim());
   let html = righe.map((r, idx) => {
