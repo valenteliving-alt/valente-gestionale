@@ -66,7 +66,7 @@ export default function MessaggiAI() {
       ]);
       if (cfg.ok && cfg.data && cfg.data[0]) setConfig(cfg.data[0]);
       // La lista appartamenti sono i nomi VERI di Krossbooking (già puliti dai doppioni)
-      setApts((toggles.data || []).map(t => ({ appartamento: t.appartamento, nome: t.nome, indirizzo: t.indirizzo, citta: t.citta, attiva: !!t.attiva })));
+      setApts((toggles.data || []).map(t => ({ appartamento: t.appartamento, nome: t.nome, indirizzo: t.indirizzo, citta: t.citta, attiva: !!t.attiva, auto_invio: !!t.auto_invio })));
       if (coda.ok && Array.isArray(coda.data)) setQueue(coda.data);
       if (recenti.ok && Array.isArray(recenti.data)) setChats(recenti.data);
     } catch (e) { setErr("Impossibile caricare i dati."); }
@@ -85,6 +85,12 @@ export default function MessaggiAI() {
     setApts(a => a.map(x => x.appartamento === nome ? { ...x, attiva } : x));
     await api("POST", "ai_appartamenti", "?on_conflict=appartamento",
       [{ appartamento: nome, attiva, aggiornata_il: new Date().toISOString() }],
+      "resolution=merge-duplicates,return=minimal");
+  }
+  async function toggleAuto(nome, auto_invio) {
+    setApts(a => a.map(x => x.appartamento === nome ? { ...x, auto_invio } : x));
+    await api("POST", "ai_appartamenti", "?on_conflict=appartamento",
+      [{ appartamento: nome, auto_invio, aggiornata_il: new Date().toISOString() }],
       "resolution=merge-duplicates,return=minimal");
   }
   async function aggiornaBozza(row, stato, bozza) {
@@ -172,9 +178,11 @@ export default function MessaggiAI() {
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   {c.canale && <span style={chip("#eef2ff", "#4338ca")}>{c.canale}</span>}
                   {quando && <span style={chip("#f3f4f6", "#6b7280")}>{quando}</span>}
-                  {daRispondere
-                    ? <span style={chip("#fef3c7", "#92400e")}>⏳ da rispondere</span>
-                    : <span style={chip("#dcfce7", "#166534")}>✅ risposto</span>}
+                  {c.inviata_auto
+                    ? <span style={chip("#fde68a", "#92400e")}>⚡ inviata dall'AI</span>
+                    : daRispondere
+                      ? <span style={chip("#fef3c7", "#92400e")}>⏳ da rispondere</span>
+                      : <span style={chip("#dcfce7", "#166534")}>✅ risposto</span>}
                 </div>
               </div>
               {c.conversazione && (
@@ -257,9 +265,15 @@ export default function MessaggiAI() {
                   {a.nome && a.nome !== a.appartamento ? `  ·  Kross: ${a.appartamento}` : ""}
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                <span style={{ fontSize: 12, color: a.attiva ? "#16a34a" : "#9ca3af", fontWeight: 600 }}>{a.attiva ? "AI attiva" : "spenta"}</span>
-                <Switch on={a.attiva} onClick={() => toggleApt(a.appartamento, !a.attiva)} />
+              <div style={{ display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                  <span style={{ fontSize: 11, color: a.attiva ? "#16a34a" : "#9ca3af", fontWeight: 600 }}>AI</span>
+                  <Switch on={a.attiva} onClick={() => toggleApt(a.appartamento, !a.attiva)} />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }} title="Se acceso, l'AI INVIA DA SOLA le risposte alle domande di routine (wifi, indirizzi, orari). Le domande delicate restano comunque a te.">
+                  <span style={{ fontSize: 11, color: a.auto_invio && a.attiva ? "#d97706" : "#9ca3af", fontWeight: 600 }}>⚡ auto</span>
+                  <Switch on={a.auto_invio} disabled={!a.attiva} onClick={() => toggleAuto(a.appartamento, !a.auto_invio)} />
+                </div>
               </div>
             </div>
           ))}
