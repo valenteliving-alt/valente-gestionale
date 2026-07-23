@@ -266,9 +266,8 @@ tbody tr:hover{background:rgba(99,102,241,.05)}
 .backdrop{display:none;animation:fadeIn .2s ease}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 .fg{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px}
-.notif-top{position:fixed;top:12px;left:calc(50% + 120px);transform:translateX(-50%);z-index:450;display:flex;align-items:center;gap:8px;background:var(--black);color:#fff;border:1px solid var(--gold);border-radius:999px;padding:8px 18px;font-size:12.5px;font-weight:600;letter-spacing:.03em;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.25);transition:transform .15s}
-.notif-top:hover{transform:translateX(-50%) scale(1.04)}
-.notif-top .nbadge{background:var(--red);color:#fff;font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px}
+.msgai-top{position:fixed;top:14px;right:18px;z-index:450;display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,#6366F1,#818CF8);color:#fff;border:none;border-radius:999px;padding:10px 20px;font-size:12.5px;font-weight:700;letter-spacing:.02em;cursor:pointer;box-shadow:0 4px 18px rgba(99,102,241,.4);transition:transform .15s}
+.msgai-top:hover{transform:scale(1.05)}
 @media (max-width:768px){
   .sidebar{transform:translateX(-100%);transition:transform .25s ease;width:min(82vw,300px);box-shadow:0 0 40px rgba(0,0,0,.45)}
   .sidebar.open{transform:translateX(0)}
@@ -279,7 +278,7 @@ tbody tr:hover{background:rgba(99,102,241,.05)}
   .ai-panel{width:100%;right:0}
   .ai-btn{bottom:18px;right:18px;width:50px;height:50px;font-size:20px}
   .fg{grid-template-columns:1fr}
-  .notif-top{top:62px;left:50%}
+  .msgai-top{top:62px;right:12px;padding:8px 14px;font-size:11.5px}
   .home-grid{grid-template-columns:1fr !important}
   input,select,textarea{font-size:16px;padding:12px 14px}
   .bp,.bg,.bd{padding-top:11px;padding-bottom:11px}
@@ -3464,6 +3463,16 @@ function App({ utente, onLogout }) {
   const [leadsError, setLeadsError] = useState("");
   const [notifStato, setNotifStato] = useState("idle"); // idle|loading|on|denied|unsupported (v20)
   const [notifCount, setNotifCount] = useState(0); // notifiche email non gestite
+  // Tendine del menu: quali gruppi sono aperti (ricordato sul dispositivo)
+  const [gruppiAperti, setGruppiAperti] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("vl_nav_gruppi")) || { Operativo: true, Documenti: false }; }
+    catch { return { Operativo: true, Documenti: false }; }
+  });
+  const toggleGruppo = (g) => setGruppiAperti(s => {
+    const n = { ...s, [g]: !s[g] };
+    try { localStorage.setItem("vl_nav_gruppi", JSON.stringify(n)); } catch (_) {}
+    return n;
+  });
 
   const [sonoMaster, setSonoMaster] = useState(false);   // gestisce accessi
   const [vedoTutto, setVedoTutto] = useState(false);     // master o socio
@@ -3639,7 +3648,6 @@ function App({ utente, onLogout }) {
     { id: "lead", label: "Lead", icon: "🎯", count: null, group: "Operativo" },
     { id: "compliance", label: "Compliance", icon: "✅", count: stats.senzaCin > 0 ? stats.senzaCin : null, group: "Operativo" },
     { id: "schede", label: "Schede Immobili", icon: "🏠", count: null, group: "Operativo" },
-    { id: "messaggiai", label: "Messaggi AI Ospiti", icon: "🤖", count: null, group: "Operativo" },
     { id: "ecosistema", label: "Ecosistema", icon: "🌐", count: null, group: "Operativo" },
     { id: "smistamento", label: "Smistamento doc", icon: "📥", count: null, group: "Documenti" },
     { id: "archivio", label: "Archivio", icon: "🗂️", count: null, group: "Documenti" },
@@ -3690,15 +3698,38 @@ function App({ utente, onLogout }) {
             </div>
           </div>
           <nav style={{ flex: 1, padding: "0 12px" }}>
-            {navItems.map((item, i) => (
-              <Fragment key={item.id}>
-                {item.group && (i === 0 || navItems[i - 1].group !== item.group) && <div className="nav-group">{item.group}</div>}
-                <button className={view === item.id ? "nav-on" : ""} onClick={() => { setView(item.id); setSearch(""); setFStato(""); setFContratto(""); setFGestore(""); setSidebarOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", background: view === item.id ? "rgba(99,102,241,.15)" : "transparent", border: view === item.id ? "1px solid rgba(99,102,241,.3)" : "1px solid transparent", color: view === item.id ? "var(--gold)" : "rgba(255,255,255,.6)", fontSize: 13, fontWeight: view === item.id ? 600 : 400, marginBottom: 4, transition: "all .2s", textAlign: "left" }}>
+            {(() => {
+              const voce = (item) => (
+                <button key={item.id} className={view === item.id ? "nav-on" : ""} onClick={() => { setView(item.id); setSearch(""); setFStato(""); setFContratto(""); setFGestore(""); setSidebarOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", background: view === item.id ? "rgba(99,102,241,.15)" : "transparent", border: view === item.id ? "1px solid rgba(99,102,241,.3)" : "1px solid transparent", color: view === item.id ? "var(--gold)" : "rgba(255,255,255,.6)", fontSize: 13, fontWeight: view === item.id ? 600 : 400, marginBottom: 4, transition: "all .2s", textAlign: "left" }}>
                   <span>{item.icon}</span><span style={{ flex: 1 }}>{item.label}</span>
                   {item.count !== null && <span style={{ fontSize: 10, background: item.alert && item.count > 0 ? "var(--red)" : "rgba(255,255,255,.1)", color: item.alert && item.count > 0 ? "#fff" : undefined, fontWeight: item.alert && item.count > 0 ? 700 : undefined, padding: "1px 6px", borderRadius: 10 }}>{item.count}</span>}
                 </button>
-              </Fragment>
-            ))}
+              );
+              const liberi = navItems.filter(i => !i.group);
+              const gruppi = [...new Set(navItems.filter(i => i.group).map(i => i.group))];
+              return (
+                <>
+                  {liberi.map(voce)}
+                  {gruppi.map(g => {
+                    const dentro = navItems.filter(i => i.group === g);
+                    // tendina aperta anche se contiene la sezione attiva (così non "sparisce")
+                    const aperto = !!gruppiAperti[g] || dentro.some(i => i.id === view);
+                    const avvisi = dentro.reduce((s, i) => s + (i.alert && i.count > 0 ? i.count : 0), 0);
+                    return (
+                      <Fragment key={g}>
+                        <button onClick={() => toggleGruppo(g)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 6px", background: "transparent", border: "none", cursor: "pointer", color: "rgba(255,255,255,.45)", fontSize: 10.5, fontWeight: 700, letterSpacing: ".12em", textTransform: "uppercase", textAlign: "left" }}>
+                          <span style={{ display: "inline-block", transition: "transform .15s", transform: aperto ? "rotate(90deg)" : "none", fontSize: 9 }}>▶</span>
+                          <span style={{ flex: 1 }}>{g}</span>
+                          {!aperto && avvisi > 0 && <span style={{ fontSize: 9.5, background: "var(--red)", color: "#fff", fontWeight: 700, padding: "1px 6px", borderRadius: 10 }}>{avvisi}</span>}
+                          {!aperto && <span style={{ fontSize: 9.5, color: "rgba(255,255,255,.3)" }}>{dentro.length}</span>}
+                        </button>
+                        {aperto && dentro.map(voce)}
+                      </Fragment>
+                    );
+                  })}
+                </>
+              );
+            })()}
           </nav>
           {notifStato !== "unsupported" && (
             <div style={{ padding: "0 20px 4px" }}>
@@ -3729,10 +3760,10 @@ function App({ utente, onLogout }) {
           </div>
         </aside>
 
-        {/* Campanella notifiche in alto al centro */}
-        {vedoTutto && view !== "notifiche" && notifCount > 0 && (
-          <button className="notif-top" onClick={() => { setView("notifiche"); setSidebarOpen(false); }} title="Apri le notifiche">
-            🔔 Notifiche <span className="nbadge">{notifCount}</span>
+        {/* Messaggi AI Ospiti: sezione a sé, sempre a portata di mano in alto a destra */}
+        {vedoTutto && view !== "messaggiai" && (
+          <button className="msgai-top" onClick={() => { setView("messaggiai"); setSidebarOpen(false); }} title="Apri Messaggi AI Ospiti">
+            🤖 Messaggi AI Ospiti
           </button>
         )}
 
