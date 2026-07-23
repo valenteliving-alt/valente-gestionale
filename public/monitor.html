@@ -369,7 +369,7 @@ async function carica() {
   if (Array.isArray(rcfg) && rcfg[0]) cfg = rcfg[0];
   const on = !!cfg.ai_globale_attiva;
   document.getElementById("dot").className = "dot" + (on ? "" : " off");
-  document.getElementById("stato-txt").textContent = on ? (cfg.modalita === "auto" ? "AI attiva" : "AI attiva · bozze") : "AI spenta";
+  document.getElementById("stato-txt").textContent = on ? "AI attiva" : "AI spenta";
   if (Array.isArray(rc)) {
     // ridisegna SOLO se i dati sono cambiati davvero (niente "ballo" ogni 30 secondi)
     const hash = JSON.stringify(rc);
