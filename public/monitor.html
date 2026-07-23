@@ -176,7 +176,7 @@
 <script>
 const SB = "https://heabtbdmwbjlgujsisor.supabase.co";
 const ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
-let sess = null, chats = [], filtro = "tutte", cfg = {}, selezionata = null;
+let sess = null, chats = [], filtro = "tutte", cfg = {}, selezionata = null, aiMap = {};
 
 function leggiSess() { try { return JSON.parse(localStorage.getItem("vlmon_sess") || "null"); } catch { return null; } }
 function salvaSess(s) { localStorage.setItem("vlmon_sess", JSON.stringify(s)); sess = s; }
@@ -239,14 +239,23 @@ function canaleCls(c) { const k = String(c.canale || "").toUpperCase();
   if (k.includes("BOOKING") || k === "BKG") return ["c-bkg", "B"];
   if (k === "WA" || k.includes("WHATS")) return ["c-wa", "W"];
   return ["c-altro", (c.canale || "?").slice(0, 1)]; }
-function statoChat(c) { if (c.inviata_auto) return "ai"; if (c.ultimo_ruolo === "ospite") return "wait"; return "ok"; }
-const BADGE = { ai: ["b-ai", "⚡ AI"], wait: ["b-wait", "⏳ attesa"], ok: ["b-ok", "✓"] };
+function nAI(c) { return (aiMap[c.id_thread] || []).length || (c.ai_msg_count || 0) || (c.inviata_auto ? 1 : 0); }
+function statoChat(c) { if (nAI(c) > 0) return "ai"; if (c.ultimo_ruolo === "ospite") return "wait"; return "ok"; }
+function badgeDi(c) {
+  const s = statoChat(c);
+  if (s === "ai") return ["b-ai", "🤖 AI ×" + nAI(c)];
+  if (s === "wait") return ["b-wait", "⏳ attesa"];
+  return ["b-ok", "✓"];
+}
+// una bolla "NOI" è dell'AI se combacia con un intervento registrato
+function normalizza(t) { return String(t || "").replace(/\s+/g, " ").trim().toLowerCase().slice(0, 50); }
+function eDellAI(c, testo) { return (aiMap[c.id_thread] || []).some(a => normalizza(a) === normalizza(testo) || normalizza(testo).startsWith(normalizza(a).slice(0, 35))); }
 
 /* ── lista ── */
 function disegnaFiltri() {
   const conta = { tutte: chats.length, ai: 0, wait: 0, ok: 0 };
   chats.forEach(c => conta[statoChat(c)]++);
-  const F = [["tutte", "Tutte"], ["wait", "⏳ In attesa"], ["ai", "⚡ AI"], ["ok", "✓ Risposte"]];
+  const F = [["tutte", "Tutte"], ["wait", "⏳ In attesa"], ["ai", "🤖 Gestite AI"], ["ok", "✓ Risposte"]];
   document.getElementById("filtri").innerHTML = F.map(([k, l]) =>
     `<button class="fchip ${filtro === k ? "on" : ""}" onclick="setFiltro('${k}')">${l}<span class="n">${conta[k]}</span></button>`).join("");
 }
@@ -260,8 +269,9 @@ function disegna() {
   const lista = document.getElementById("lista");
   let html = `<div class="aggiornato">aggiornato ${new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })} · si aggiorna da solo</div>`;
   if (!vis.length) html += `<div class="vuoto">Nessuna conversazione qui.</div>`;
+  const st = lista.scrollTop;
   html += vis.map((c) => {
-    const s = statoChat(c); const [bcls, btxt] = BADGE[s];
+    const s = statoChat(c); const [bcls, btxt] = badgeDi(c);
     const [ccls, cini] = canaleCls(c);
     const nome = pulisciNome(c.ospite);
     const ultima = (c.conversazione || "").split("\n").pop();
@@ -277,6 +287,7 @@ function disegna() {
       </div></div>`;
   }).join("");
   lista.innerHTML = html;
+  lista.scrollTop = st;
   window._chats = chats;
 }
 
@@ -292,20 +303,24 @@ function apri(id) {
   document.getElementById("d-nome").textContent = pulisciNome(c.ospite);
   document.getElementById("d-sub").textContent = nomeCorto(c.appartamento);
   // pannellino prenotazione (stile Kross)
+  const righe = (c.conversazione || "").split("\n").filter(r => r.trim());
+  const nostre = righe.filter(r => r.startsWith("NOI:"));
+  const nostreAI = nostre.filter(r => eDellAI(c, r.replace(/^NOI:\s*/, "")) || (c.inviata_auto && r === righe[righe.length - 1]));
+  const tuttaAI = nostre.length > 0 && nostreAI.length === nostre.length && nAI(c) > 0;
   const chips = [];
   if (soggiorno(c)) chips.push(`<span class="pchip">📅 ${soggiorno(c)}</span>`);
   if (c.stato_prenotazione) chips.push(`<span class="pchip verde">✓ ${c.stato_prenotazione}</span>`);
   if (c.canale) chips.push(`<span class="pchip">${c.canale}</span>`);
-  if (c.inviata_auto) chips.push(`<span class="pchip oro">⚡ ha risposto l'AI</span>`);
+  if (tuttaAI) chips.push(`<span class="pchip oro">🤖 gestita interamente dall'AI</span>`);
+  else if (nAI(c) > 0) chips.push(`<span class="pchip oro">⚡ ${nAI(c)} rispost${nAI(c) === 1 ? "a" : "e"} dell'AI</span>`);
   chips.push(`<span class="pchip">${tempoFa(c.ultimo_ts)} fa</span>`);
   document.getElementById("d-preno").innerHTML = chips.join("");
-  // conversazione a bolle
+  // conversazione a bolle (le risposte dell'AI sono evidenziate in ambra)
   const box = document.getElementById("d-msgs");
-  const righe = (c.conversazione || "").split("\n").filter(r => r.trim());
   let html = righe.map((r, idx) => {
     const mia = r.startsWith("NOI:"); const testo = r.replace(/^(OSPITE|NOI):\s*/, "");
-    const ultimaAI = mia && idx === righe.length - 1 && c.inviata_auto;
-    if (ultimaAI) return `<div class="bolla da-ai"><span class="tag-ai">⚡ INVIATA DALL'AI AL POSTO TUO</span>${testo}</div>`;
+    const ai = mia && (eDellAI(c, testo) || (c.inviata_auto && idx === righe.length - 1));
+    if (ai) return `<div class="bolla da-ai"><span class="tag-ai">⚡ INVIATA DALL'AI AL POSTO TUO</span>${testo}</div>`;
     return `<div class="bolla ${mia ? "da-noi" : "da-ospite"}">${testo}</div>`;
   }).join("");
   if (c._inCoda) {
@@ -345,22 +360,28 @@ async function inviaMsg(btn, id) {
 
 /* ── caricamento ── */
 async function carica() {
-  const [rc, rcfg] = await Promise.all([
+  const [rc, rcfg, rai] = await Promise.all([
     api("chat_recenti?select=*&order=ultimo_ts.desc.nullslast&limit=20"),
     api("ai_config?id=eq.1&select=*"),
+    api("ai_inviati?select=id_thread,testo&order=inviato_il.desc&limit=300"),
   ]);
-  if (Array.isArray(rc)) {
-    const inCoda = new Set(chats.filter(c => c._inCoda).map(c => c.id_thread));
-    chats = rc.map(c => ({ ...c, _inCoda: inCoda.has(c.id_thread) && c.ultimo_ruolo === "ospite" }));
-  }
+  if (Array.isArray(rai)) { aiMap = {}; rai.forEach(r => { (aiMap[r.id_thread] = aiMap[r.id_thread] || []).push(r.testo); }); }
   if (Array.isArray(rcfg) && rcfg[0]) cfg = rcfg[0];
   const on = !!cfg.ai_globale_attiva;
   document.getElementById("dot").className = "dot" + (on ? "" : " off");
   document.getElementById("stato-txt").textContent = on ? (cfg.modalita === "auto" ? "AI attiva" : "AI attiva · bozze") : "AI spenta";
-  disegna();
-  if (selezionata && !document.getElementById("testo-risposta")) {
-    const c = chats.find(x => x.id_thread === selezionata);
-    if (c) apri(selezionata);
+  if (Array.isArray(rc)) {
+    // ridisegna SOLO se i dati sono cambiati davvero (niente "ballo" ogni 30 secondi)
+    const hash = JSON.stringify(rc);
+    if (hash === window._hashDati) return;
+    window._hashDati = hash;
+    const inCoda = new Set(chats.filter(c => c._inCoda).map(c => c.id_thread));
+    chats = rc.map(c => ({ ...c, _inCoda: inCoda.has(c.id_thread) && c.ultimo_ruolo === "ospite" }));
+    disegna();
+    // se la chat aperta ha dati nuovi E non stai scrivendo, aggiornala
+    const ta = document.getElementById("testo-risposta");
+    const staiScrivendo = ta && document.activeElement === ta;
+    if (selezionata && !staiScrivendo) { const c = chats.find(x => x.id_thread === selezionata); if (c) apri(selezionata); }
   }
 }
 function avvia() {
