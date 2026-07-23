@@ -165,10 +165,10 @@ export default function Ecosistema() {
       </p>
       <div ref={wrapRef} style={{ position: "relative", borderRadius: 16, overflow: "hidden", border: "1px solid #1e293b", boxShadow: "0 10px 40px rgba(2,6,23,.5)" }}>
         <canvas ref={canvasRef} style={{ display: "block", cursor: "pointer" }} />
-        <div style={{ position: "absolute", left: 14, bottom: 14, maxWidth: 320, background: "rgba(2,6,23,.82)", backdropFilter: "blur(6px)", border: `1px solid ${n.col}`, borderRadius: 12, padding: "12px 14px", color: "#e2e8f0" }}>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{n.icona} {n.label}</div>
-          <div style={{ fontSize: 13, lineHeight: 1.45, color: "#cbd5e1" }}>{n.desc}</div>
-        </div>
+      </div>
+      <div style={{ marginTop: 12, background: "#0b1220", border: `1px solid ${n.col}`, borderRadius: 12, padding: "12px 16px", color: "#e2e8f0" }}>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{n.icona} {n.label}</div>
+        <div style={{ fontSize: 13.5, lineHeight: 1.5, color: "#cbd5e1" }}>{n.desc}</div>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
         {Object.keys(NODI).map((id) => (
