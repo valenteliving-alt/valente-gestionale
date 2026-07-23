@@ -248,7 +248,7 @@ function apri(i) {
     return `<div class="bolla ${mia ? "da-noi" : "da-ospite"}">${testo}</div>`;
   }).join("");
   if (c._inCoda) {
-    html += `<div class="in-coda">📤 In invio… il robot la spedisce entro 90 secondi</div>`;
+    html += `<div class="in-coda">📤 In invio… parte in pochi secondi</div>`;
   } else if (c.ultimo_ruolo === "ospite") {
     html += `<div class="suggerita"><h4>🤖 RISPOSTA ${ (c.risposta_ai||"").trim() ? "SUGGERITA DALL'AI (modificabile)" : "— scrivila tu (l'AI la sta preparando)" }</h4>
       <textarea id="testo-risposta">${(c.risposta_ai || "").replace(/</g, "&lt;")}</textarea>
