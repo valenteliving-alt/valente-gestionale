@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 import Archivio from "./Archivio";
 import Schede from "./Schede";
+import MessaggiAI from "./MessaggiAI";
 import Guida from "./Guida";
 import Compliance from "./Compliance";
 import Ricorrenti from "./Ricorrenti";
@@ -3637,6 +3638,7 @@ function App({ utente, onLogout }) {
     { id: "lead", label: "Lead", icon: "🎯", count: null, group: "Operativo" },
     { id: "compliance", label: "Compliance", icon: "✅", count: stats.senzaCin > 0 ? stats.senzaCin : null, group: "Operativo" },
     { id: "schede", label: "Schede Immobili", icon: "🏠", count: null, group: "Operativo" },
+    { id: "messaggiai", label: "Messaggi AI Ospiti", icon: "🤖", count: null, group: "Operativo" },
     { id: "smistamento", label: "Smistamento doc", icon: "📥", count: null, group: "Documenti" },
     { id: "archivio", label: "Archivio", icon: "🗂️", count: null, group: "Documenti" },
     { id: "ricorrenti", label: "Ricorrenti", icon: "📅", count: null, group: "Documenti" },
@@ -3773,6 +3775,7 @@ function App({ utente, onLogout }) {
             view === "guida" ? <Guida /> :
             view === "compliance" ? <Compliance proprieta={proprieta} owners={owners} onPatch={(id, patch) => sb.patch("proprieta", id, patch)} onDataChanged={load} /> :
             view === "schede" ? <Schede /> :
+            view === "messaggiai" ? <MessaggiAI /> :
             view === "ricorrenti" ? <Ricorrenti proprieta={proprieta} owners={owners} /> :
             view === "team" ? <Team proprieta={proprieta} sonoMaster={sonoMaster} onDataChanged={load} /> :
             view === "portale" ? <PortaleAgente proprieta={proprieta} nomeAgente={mioNome} sb={sb} onDataChanged={load} /> :
