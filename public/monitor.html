@@ -82,9 +82,17 @@
   .suggerita { margin: 4px 0 20px; background: var(--card); border: 1px dashed var(--accent);
     border-radius: 14px; padding: 12px; }
   .suggerita h4 { margin: 0 0 6px; font-size: 12px; color: var(--accent); letter-spacing: .3px; }
-  .suggerita p { margin: 0; font-size: 14px; line-height: 1.45; white-space: pre-wrap; }
-  .copia { margin-top: 10px; width: 100%; background: var(--accent); color: #fff; border: none;
+  .suggerita textarea { width: 100%; min-height: 110px; background: var(--card2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px; font-size: 14px; line-height: 1.45;
+    font-family: inherit; resize: vertical; box-sizing: border-box; }
+  .azioni { display: flex; gap: 8px; margin-top: 10px; }
+  .invia { flex: 1; background: var(--accent); color: #fff; border: none;
     border-radius: 12px; padding: 12px; font-size: 14.5px; font-weight: 700; cursor: pointer; }
+  .invia:disabled { opacity: .6; }
+  .copia { flex-shrink: 0; background: var(--card2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px 14px; font-size: 14.5px; font-weight: 700; cursor: pointer; }
+  .in-coda { text-align: center; color: var(--ai); font-size: 13px; font-weight: 700; padding: 10px;
+    background: var(--ai-soft); border: 1px solid #e8b23a55; border-radius: 12px; margin: 4px 0 20px; }
 
   /* login */
   #login { position: fixed; inset: 0; background: var(--bg); z-index: 30; display: none;
@@ -169,10 +177,14 @@ async function rinnova() {
   } catch { return false; }
 }
 
-async function api(path) {
+async function api(path, method, body, prefer) {
   if (!(await rinnova())) { esci(); return null; }
-  const r = await fetch(`${SB}/rest/v1/${path}`, { headers: { apikey: ANON, Authorization: `Bearer ${sess.at}` } });
+  const r = await fetch(`${SB}/rest/v1/${path}`, {
+    method: method || "GET",
+    headers: { apikey: ANON, Authorization: `Bearer ${sess.at}`, "Content-Type": "application/json", Prefer: prefer || "return=minimal" },
+    body: body ? JSON.stringify(body) : undefined });
   if (r.status === 401) { esci(); return null; }
+  if (method) return r.ok;
   return r.json().catch(() => null);
 }
 function esci() { localStorage.removeItem("vlmon_sess"); sess = null;
@@ -232,9 +244,15 @@ function apri(i) {
     if (ultimaNostra) return `<div class="bolla da-ai"><div class="tag-ai">⚡ INVIATA DALL'AI AL POSTO TUO</div>${testo}</div>`;
     return `<div class="bolla ${mia ? "da-noi" : "da-ospite"}">${testo}</div>`;
   }).join("");
-  if (c.ultimo_ruolo === "ospite" && (c.risposta_ai || "").trim()) {
-    html += `<div class="suggerita"><h4>🤖 RISPOSTA SUGGERITA DALL'AI</h4><p>${c.risposta_ai}</p>
-      <button class="copia" onclick="copia(this, ${i})">📋 Copia — poi incollala su Krossbooking</button></div>`;
+  if (c._inCoda) {
+    html += `<div class="in-coda">📤 In invio… il robot la spedisce entro 90 secondi</div>`;
+  } else if (c.ultimo_ruolo === "ospite") {
+    html += `<div class="suggerita"><h4>🤖 RISPOSTA ${ (c.risposta_ai||"").trim() ? "SUGGERITA DALL'AI (modificabile)" : "— scrivila tu (l'AI la sta preparando)" }</h4>
+      <textarea id="testo-risposta">${(c.risposta_ai || "").replace(/</g, "&lt;")}</textarea>
+      <div class="azioni">
+        <button class="invia" onclick="invia(this, ${i})">📤 Invia all'ospite</button>
+        <button class="copia" onclick="copia(this, ${i})">📋</button>
+      </div></div>`;
   }
   box.innerHTML = html;
   document.getElementById("dettaglio").classList.add("aperto");
@@ -242,10 +260,23 @@ function apri(i) {
 }
 function chiudi() { document.getElementById("dettaglio").classList.remove("aperto"); }
 function copia(btn, i) {
-  const c = window._vis[i];
-  navigator.clipboard.writeText(c.risposta_ai || "").then(() => {
-    btn.textContent = "✓ Copiata!"; setTimeout(() => btn.textContent = "📋 Copia — poi incollala su Krossbooking", 2000);
+  const t = document.getElementById("testo-risposta");
+  navigator.clipboard.writeText(t ? t.value : "").then(() => {
+    btn.textContent = "✓"; setTimeout(() => btn.textContent = "📋", 2000);
   });
+}
+async function invia(btn, i) {
+  const c = window._vis[i];
+  const t = document.getElementById("testo-risposta");
+  const testo = (t ? t.value : "").trim();
+  if (!testo) { alert("Scrivi prima la risposta."); return; }
+  if (!confirm("Inviare questa risposta all'ospite?")) return;
+  btn.disabled = true; btn.textContent = "…";
+  const ok = await api("invii_pendenti?on_conflict=id_thread", "POST",
+    [{ id_thread: c.id_thread, testo, stato: "in_attesa", creato_il: new Date().toISOString() }],
+    "resolution=merge-duplicates,return=minimal");
+  if (ok) { c._inCoda = true; apri(i); }
+  else { btn.disabled = false; btn.textContent = "📤 Invia all'ospite"; alert("Invio non riuscito, riprova."); }
 }
 
 async function carica() {
