@@ -46,7 +46,6 @@ function Switch({ on, onClick, disabled }) {
 export default function MessaggiAI() {
   const [config, setConfig] = useState({ ai_globale_attiva: false, modalita: "sola_bozza" });
   const [apts, setApts] = useState([]);          // [{appartamento, attiva}]
-  const [queue, setQueue] = useState([]);        // bozze_approvazioni in attesa
   const [chats, setChats] = useState([]);        // chat_recenti (ultime 20 da Kross)
   const [inviate, setInviate] = useState({});    // { id_thread: true } messe in coda invio
   const [q, setQ] = useState("");
@@ -59,16 +58,14 @@ export default function MessaggiAI() {
   const carica = useCallback(async () => {
     setLoading(true); setErr("");
     try {
-      const [cfg, toggles, coda, recenti] = await Promise.all([
+      const [cfg, toggles, recenti] = await Promise.all([
         api("GET", "ai_config", "?id=eq.1&select=*"),
         api("GET", "ai_appartamenti", "?select=*&order=appartamento.asc"),
-        api("GET", "bozze_approvazioni", "?stato=eq.in_attesa&order=creata_il.desc"),
         api("GET", "chat_recenti", "?select=*&order=ultimo_ts.desc.nullslast&limit=20"),
       ]);
       if (cfg.ok && cfg.data && cfg.data[0]) setConfig(cfg.data[0]);
       // La lista appartamenti sono i nomi VERI di Krossbooking (già puliti dai doppioni)
       setApts((toggles.data || []).map(t => ({ appartamento: t.appartamento, nome: t.nome, indirizzo: t.indirizzo, citta: t.citta, attiva: !!t.attiva, auto_invio: !!t.auto_invio })));
-      if (coda.ok && Array.isArray(coda.data)) setQueue(coda.data);
       if (recenti.ok && Array.isArray(recenti.data)) setChats(recenti.data);
     } catch (e) { setErr("Impossibile caricare i dati."); }
     setLoading(false);
@@ -104,12 +101,6 @@ export default function MessaggiAI() {
     if (r.ok) setInviate(s => ({ ...s, [c.id_thread]: true }));
     else alert("Invio non riuscito, riprova.");
   }
-  async function aggiornaBozza(row, stato, bozza) {
-    const patch = { stato, aggiornata_il: new Date().toISOString() };
-    if (typeof bozza === "string") patch.bozza = bozza;
-    await api("PATCH", "bozze_approvazioni", `?id_thread=eq.${encodeURIComponent(row.id_thread)}`, patch, "return=minimal");
-    setQueue(qq => qq.filter(x => x.id_thread !== row.id_thread));
-  }
 
   const aptsFiltrati = useMemo(() =>
     apts.filter(a => ((a.nome || "") + " " + (a.appartamento || "") + " " + (a.citta || "")).toLowerCase().includes(q.toLowerCase())),
@@ -140,18 +131,9 @@ export default function MessaggiAI() {
         </div>
 
         {!spentoTutto && (
-          <div style={{ marginTop: 14, borderTop: "1px dashed #d1d5db", paddingTop: 12 }}>
-            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>Come si comporta?</div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button onClick={() => salvaConfig({ modalita: "sola_bozza" })}
-                style={{ ...btn(config.modalita === "sola_bozza" ? "#2563eb" : "#e5e7eb", config.modalita === "sola_bozza" ? "#fff" : "#374151"), textAlign: "left", flex: "1 1 220px" }}>
-                ✍️ Solo bozze (consigliato)<br /><span style={{ fontWeight: 400, fontSize: 12 }}>Prepara le risposte ma NON invia. Approvi tu.</span>
-              </button>
-              <button onClick={() => salvaConfig({ modalita: "auto" })}
-                style={{ ...btn(config.modalita === "auto" ? "#16a34a" : "#e5e7eb", config.modalita === "auto" ? "#fff" : "#374151"), textAlign: "left", flex: "1 1 220px" }}>
-                ⚡ Automatico<br /><span style={{ fontWeight: 400, fontSize: 12 }}>Invia da solo le risposte di routine; il resto lo mette in coda.</span>
-              </button>
-            </div>
+          <div style={{ marginTop: 12, borderTop: "1px dashed #d1d5db", paddingTop: 10, fontSize: 13, color: "#6b7280" }}>
+            Come funziona: per ogni appartamento accendi <b>AI</b> (legge e suggerisce le risposte) e, se vuoi,
+            <b> ⚡ auto</b> (invia da sola le risposte di routine — wifi, orari, indirizzi; le domande delicate restano sempre a te).
           </div>
         )}
       </div>
@@ -160,9 +142,6 @@ export default function MessaggiAI() {
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
         <button onClick={() => setTab("chat")} style={btn(tab === "chat" ? "#111827" : "#e5e7eb", tab === "chat" ? "#fff" : "#374151")}>
           💬 Chat recenti <span style={{ ...chip("#3b82f6", "#fff"), marginLeft: 6 }}>{chats.length}</span>
-        </button>
-        <button onClick={() => setTab("coda")} style={btn(tab === "coda" ? "#111827" : "#e5e7eb", tab === "coda" ? "#fff" : "#374151")}>
-          📥 Da approvare {queue.length > 0 && <span style={{ ...chip("#ef4444", "#fff"), marginLeft: 6 }}>{queue.length}</span>}
         </button>
         <button onClick={() => setTab("appartamenti")} style={btn(tab === "appartamenti" ? "#111827" : "#e5e7eb", tab === "appartamenti" ? "#fff" : "#374151")}>
           🏠 AI per appartamento <span style={{ ...chip("#3b82f6", "#fff"), marginLeft: 6 }}>{attiviCount} attivi</span>
@@ -223,43 +202,6 @@ export default function MessaggiAI() {
                   </div>
                 </>
               ))}
-            </div>
-          );
-        })
-      )}
-
-      {/* CODA APPROVAZIONI */}
-      {!loading && tab === "coda" && (
-        queue.length === 0 ? (
-          <div style={{ ...box, color: "#6b7280", textAlign: "center" }}>
-            Nessuna conversazione in attesa. 🎉<br />
-            <span style={{ fontSize: 13 }}>Quando l'AI prepara una risposta da approvare, compare qui.</span>
-          </div>
-        ) : queue.map(row => {
-          const testo = edit[row.id_thread] !== undefined ? edit[row.id_thread] : (row.bozza || "");
-          return (
-            <div key={row.id_thread} style={box}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
-                <div style={{ fontWeight: 700 }}>🏠 {row.appartamento || "n/d"}</div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  {row.canale && <span style={chip("#eef2ff", "#4338ca")}>{row.canale}</span>}
-                  {row.motivo && <span style={chip("#fef9c3", "#854d0e")}>{row.motivo}</span>}
-                </div>
-              </div>
-              {row.conversazione && (
-                <div style={{ background: "#f9fafb", border: "1px solid #eee", borderRadius: 8, padding: 10, fontSize: 13, color: "#374151", whiteSpace: "pre-wrap", maxHeight: 160, overflow: "auto", marginBottom: 10 }}>
-                  {row.conversazione}
-                </div>
-              )}
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>Risposta proposta dall'AI (modificabile):</div>
-              <textarea value={testo} onChange={e => setEdit(s => ({ ...s, [row.id_thread]: e.target.value }))}
-                placeholder="(l'AI non ha ancora scritto una bozza per questa conversazione)"
-                style={{ width: "100%", minHeight: 80, borderRadius: 8, border: "1px solid #d1d5db", padding: 10, fontSize: 14, fontFamily: "inherit", resize: "vertical" }} />
-              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                <button style={btn("#16a34a")} onClick={() => aggiornaBozza(row, "approvata", testo)}>✓ Approva e invia</button>
-                <button style={btn("#e5e7eb", "#374151")} onClick={() => aggiornaBozza(row, "in_attesa", testo)}>💾 Salva bozza</button>
-                <button style={btn("#fee2e2", "#b91c1c")} onClick={() => aggiornaBozza(row, "rifiutata")}>✕ Rifiuta</button>
-              </div>
             </div>
           );
         })
