@@ -48,6 +48,7 @@ export default function MessaggiAI() {
   const [apts, setApts] = useState([]);          // [{appartamento, attiva}]
   const [queue, setQueue] = useState([]);        // bozze_approvazioni in attesa
   const [chats, setChats] = useState([]);        // chat_recenti (ultime 20 da Kross)
+  const [inviate, setInviate] = useState({});    // { id_thread: true } messe in coda invio
   const [q, setQ] = useState("");
   const [tab, setTab] = useState("chat");        // chat | coda | appartamenti
   const [copiato, setCopiato] = useState("");
@@ -92,6 +93,16 @@ export default function MessaggiAI() {
     await api("POST", "ai_appartamenti", "?on_conflict=appartamento",
       [{ appartamento: nome, auto_invio, aggiornata_il: new Date().toISOString() }],
       "resolution=merge-duplicates,return=minimal");
+  }
+  async function inviaChat(c) {
+    const testo = (edit["chat-" + c.id_thread] !== undefined ? edit["chat-" + c.id_thread] : (c.risposta_ai || "")).trim();
+    if (!testo) { alert("Scrivi prima la risposta."); return; }
+    if (!window.confirm("Inviare questa risposta all'ospite su Krossbooking?")) return;
+    const r = await api("POST", "invii_pendenti", "?on_conflict=id_thread",
+      [{ id_thread: c.id_thread, testo, stato: "in_attesa", creato_il: new Date().toISOString() }],
+      "resolution=merge-duplicates,return=minimal");
+    if (r.ok) setInviate(s => ({ ...s, [c.id_thread]: true }));
+    else alert("Invio non riuscito, riprova.");
   }
   async function aggiornaBozza(row, stato, bozza) {
     const patch = { stato, aggiornata_il: new Date().toISOString() };
@@ -190,23 +201,26 @@ export default function MessaggiAI() {
                   {c.conversazione}
                 </div>
               )}
-              {daRispondere && (
+              {daRispondere && (inviate[c.id_thread] ? (
+                <div style={{ background: "#fef9c3", border: "1px solid #fde047", borderRadius: 8, padding: 10, fontSize: 13, fontWeight: 700, color: "#854d0e", textAlign: "center" }}>
+                  📤 In invio… il robot la spedisce entro 90 secondi
+                </div>
+              ) : (
                 <>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>🤖 Risposta suggerita dall'AI:</div>
-                  {c.risposta_ai ? (
-                    <>
-                      <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: 10, fontSize: 14, whiteSpace: "pre-wrap" }}>{c.risposta_ai}</div>
-                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                        <button style={btn("#2563eb")} onClick={() => { navigator.clipboard.writeText(c.risposta_ai).then(() => { setCopiato(c.id_thread); setTimeout(() => setCopiato(""), 2000); }); }}>
-                          {copiato === c.id_thread ? "✓ Copiata!" : "📋 Copia risposta"}
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <div style={{ color: "#9ca3af", fontSize: 13 }}>L'AI sta preparando la risposta… premi ↻ Aggiorna tra poco.</div>
-                  )}
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>🤖 Risposta suggerita dall'AI (modificabile):</div>
+                  <textarea
+                    value={edit["chat-" + c.id_thread] !== undefined ? edit["chat-" + c.id_thread] : (c.risposta_ai || "")}
+                    onChange={e => setEdit(s => ({ ...s, ["chat-" + c.id_thread]: e.target.value }))}
+                    placeholder="(l'AI sta preparando la risposta… oppure scrivila tu)"
+                    style={{ width: "100%", minHeight: 70, borderRadius: 8, border: "1px solid #d1d5db", padding: 10, fontSize: 14, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} />
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <button style={btn("#16a34a")} onClick={() => inviaChat(c)}>📤 Invia all'ospite</button>
+                    <button style={btn("#e5e7eb", "#374151")} onClick={() => { const t = edit["chat-" + c.id_thread] !== undefined ? edit["chat-" + c.id_thread] : (c.risposta_ai || ""); navigator.clipboard.writeText(t).then(() => { setCopiato(c.id_thread); setTimeout(() => setCopiato(""), 2000); }); }}>
+                      {copiato === c.id_thread ? "✓ Copiata!" : "📋 Copia"}
+                    </button>
+                  </div>
                 </>
-              )}
+              ))}
             </div>
           );
         })
