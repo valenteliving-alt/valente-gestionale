@@ -15,8 +15,8 @@ exports.handler = async (event) => {
   let b = {}; try { b = JSON.parse(event.body || "{}"); } catch (_) {}
   if (!process.env.INGEST_KEY || b.chiave !== process.env.INGEST_KEY) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: "chiave non valida" }) };
 
-  const conversazione = String(b.conversazione || "").slice(-4000);
-  const kb = String(b.kb || "").slice(0, 6000);
+  const conversazione = String(b.conversazione || "").slice(-2200);
+  const kb = String(b.kb || "").slice(0, 3000);
   const scheda = b.scheda && typeof b.scheda === "object"
     ? Object.entries(b.scheda).filter(([k, v]) => v && !["appartamento", "aggiornata_il", "verificata"].includes(k)).map(([k, v]) => `${k}: ${v}`).join("\n")
     : "(scheda non ancora compilata)";
@@ -32,7 +32,7 @@ Rispondi SOLO con JSON valido: {"azione":"invia"|"approvazione","motivo":"breve"
     for (let tent = 0; tent < 2 && !out; tent++) {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST", headers: { "x-api-key": AKEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-        body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 1400, system: sys, messages: [{ role: "user", content: usr }] }),
+        body: JSON.stringify({ model: process.env.CERVELLO_MODEL || "claude-haiku-4-5-20251001", max_tokens: 900, system: sys, messages: [{ role: "user", content: usr }] }),
       });
       const j = await r.json().catch(() => null);
       if (!j || j.error) { errore = j && j.error ? String(j.error.message || j.error.type) : "risposta non leggibile"; await new Promise((rr) => setTimeout(rr, 1500)); continue; }
