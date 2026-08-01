@@ -4,15 +4,17 @@ import { useMemo, useState, useRef, useEffect, useCallback } from "react";
    dominio del CRM: stesso login, stessa sessione, nessuna password in più.
    Qui la incorniciamo e le passiamo il nome di chi sta valutando. */
 
-export default function Valutazione({ nomeAgente }) {
+export default function Valutazione({ nomeAgente, prefill }) {
   const [pronta, setPronta] = useState(false);
   const [altezza, setAltezza] = useState(700);
   const frame = useRef(null);
 
   const src = useMemo(() => {
-    const q = nomeAgente ? `?agente=${encodeURIComponent(nomeAgente)}` : "";
-    return `/valutazione.html${q}`;
-  }, [nomeAgente]);
+    const parti = [];
+    if (nomeAgente) parti.push(`agente=${encodeURIComponent(nomeAgente)}`);
+    if (prefill) parti.push(prefill);
+    return `/valutazione.html${parti.length ? "?" + parti.join("&") : ""}`;
+  }, [nomeAgente, prefill]);
 
   /* Il riquadro cresce con il contenuto: così c'è una sola barra di scorrimento,
      quella della pagina, invece di una dentro l'altra. */

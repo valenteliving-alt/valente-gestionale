@@ -3461,6 +3461,30 @@ function App({ utente, onLogout }) {
   const [leads, setLeads] = useState([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
   const [leadsError, setLeadsError] = useState("");
+  const [valutaPrefill, setValutaPrefill] = useState("");
+
+  /* Dalla scheda lead al valutatore: portiamo di là tutto quello che il proprietario
+     ha gia' scritto sul sito, cosi' resta solo da cercare l'indirizzo su BNBCalc. */
+  function valutaLead(l) {
+    const g = l.grezzo || {};
+    const q = new URLSearchParams();
+    q.set("lead", "1");
+    const metti = (k, v) => { if (v) q.set(k, String(v)); };
+    metti("comune", g.citta);
+    metti("indirizzo", g.indirizzo);
+    metti("camere", g.camere);
+    metti("mq", g.mq);
+    metti("tipo", g.tipo);
+    metti("formula", g.formula);
+    metti("stato", g.stato_immobile);
+    metti("specs", g.caratteristiche);
+    metti("nome", g.nome);
+    metti("telefono", g.telefono);
+    metti("email", g.email);
+    metti("lead_id", String(l.id || "").replace(/^sito-/, ""));
+    setValutaPrefill(q.toString());
+    setView("valutazione");
+  }
   const [notifStato, setNotifStato] = useState("idle"); // idle|loading|on|denied|unsupported (v20)
   const [notifCount, setNotifCount] = useState(0); // notifiche email non gestite
   // Tendine del menu: quali gruppi sono aperti (ricordato sul dispositivo)
@@ -3602,6 +3626,10 @@ function App({ utente, onLogout }) {
           dettaglio: [l.tipo, l.situazione, l.formula, l.camere ? l.camere + " camere" : null, l.mq ? l.mq + " m²" : null, l.stato_immobile, l.motivo]
             .filter(Boolean).join(" · "),
           caratteristiche: l.caratteristiche || "",
+          grezzo: { tipo: l.tipo || "", citta: l.citta || "", indirizzo: l.indirizzo || "",
+                    camere: l.camere || "", mq: l.mq || "", formula: l.formula || "",
+                    stato_immobile: l.stato_immobile || "", caratteristiche: l.caratteristiche || "",
+                    nome: l.nome || "", telefono: l.telefono || "", email: l.email || "" },
           messaggio: l.messaggio || l.note || "",
           campagna: (l.tracking && (l.tracking.utm_campaign || l.tracking.utm_source)) || "",
           fotoN: l.foto_n || 0,
@@ -3818,7 +3846,7 @@ function App({ utente, onLogout }) {
           ) :
           /* Il valutatore resta accessibile anche a chi aspetta l'approvazione:
               un agente può valutare un immobile prima ancora di averne in gestione. */
-           inAttesa && view === "valutazione" ? <Valutazione nomeAgente={mioNome} /> :
+           inAttesa && view === "valutazione" ? <Valutazione nomeAgente={mioNome} prefill={valutaPrefill} /> :
            inAttesa ? (
             <div className="fi" style={{ maxWidth: 520, margin: "60px auto", textAlign: "center", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 16, boxShadow: "var(--shadow)", padding: 40 }}>
               <div style={{ fontSize: 34, marginBottom: 12 }}>⏳</div>
@@ -3846,7 +3874,7 @@ function App({ utente, onLogout }) {
             view === "ricorrenti" ? <Ricorrenti proprieta={proprieta} owners={owners} /> :
             view === "team" ? <Team proprieta={proprieta} sonoMaster={sonoMaster} onDataChanged={load} /> :
             view === "portale" ? <PortaleAgente proprieta={proprieta} nomeAgente={mioNome} sb={sb} onDataChanged={load} /> :
-            view === "valutazione" ? <Valutazione nomeAgente={mioNome} /> :
+            view === "valutazione" ? <Valutazione nomeAgente={mioNome} prefill={valutaPrefill} /> :
             view === "lead" ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
@@ -3905,6 +3933,7 @@ function App({ utente, onLogout }) {
                           {l.fonte === "sito" ? (
                             <>
                               {l.creato && <span style={{ fontSize: 11, color: "var(--gray)" }}>{new Date(l.creato).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>}
+                              <button onClick={() => valutaLead(l)} style={{ fontSize: 11, color: "#fff", background: "var(--gold)", fontWeight: 700, border: 0, borderRadius: 6, padding: "4px 11px", cursor: "pointer" }}>Valuta con BNBCalc →</button>
                               {l.telefono && <a href={`https://wa.me/39${String(l.telefono).replace(/\D/g, "").replace(/^39/, "")}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>WhatsApp →</a>}
                               {l.email && <a href={`mailto:${l.email}`} style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Email →</a>}
                             </>
