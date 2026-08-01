@@ -720,6 +720,8 @@ async function saveReport(html, audience){
     await uploadFile(path,blob,'text/html;charset=utf-8');
     const a=parseAddr(state.bnbAddress||'');
     await logDocumento({tipo:'report_valutazione',agente:getAgente(),indirizzo:state.bnbAddress||null,comune:a.city||state.region||null,file_path:path,file_name:addr+'.html',formato:'html',ref_id:null});
+    if(audience === 'owner' || !ULTIMO_REPORT){ ULTIMO_REPORT = {path:path, audience:audience||'agent'}; }
+    try { if(typeof render === 'function' && step === 4) render(); } catch(e){}
     console.log('Report archiviato su Supabase');
   }catch(e){ console.warn('Errore salvataggio report',e); }
 }
@@ -1461,6 +1463,156 @@ function switchTab(tab){
 }
 
 // ── RENDER ──
+/* ============================================================
+   Precompilazione da una richiesta arrivata dal sito (sezione Lead del CRM).
+   Il proprietario ha gia' scritto comune, camere, metri, stato e dotazioni:
+   li portiamo qui dentro, cosi' resta solo da cercare l'indirizzo su BNBCalc.
+   ============================================================ */
+let LEAD = null;   // contatto del proprietario, per mandargli il report a fine lavoro
+
+function trovaRegioneCitta(comune){
+  if(!comune) return null;
+  const norm = t => (t||'').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s*\(.*\)/,'').trim();
+  const cercato = norm(comune);
+  for(const [regione, d] of Object.entries(DB)){
+    if(!d.cities) continue;
+    for(const [citta, punteggio] of Object.entries(d.cities)){
+      if(norm(citta) === cercato) return {regione, punteggio};
+    }
+  }
+  for(const [regione, d] of Object.entries(DB)){
+    if(!d.cities) continue;
+    for(const [citta, punteggio] of Object.entries(d.cities)){
+      const n = norm(citta);
+      if(n.includes(cercato) || cercato.includes(n)) return {regione, punteggio};
+    }
+  }
+  return null;
+}
+
+const STATO_DA_TESTO = [
+  [/ristrutturat[oa] o in ottimo|ottimo stato/i, 10],
+  [/buono/i, 7],
+  [/da arredare/i, 4],
+  [/rinnovare/i, 1],
+  [/da ristrutturare/i, -5],
+];
+
+const SPEC_DA_TESTO = [
+  [/piscina/i, 'piscina'],
+  [/terrazza|vista/i, 'vista'],
+  [/monument|attrazion/i, 'monumento'],
+  [/pregio|design/i, 'design'],
+  [/parcheggio|garage/i, 'parcheggio'],
+  [/cin|scia/i, 'cin'],
+  [/liber[ao] da inquilini/i, 'libero'],
+  [/più unit|piu unit/i, 'multi'],
+];
+
+function precompilaValutazioneDaCRM(){
+  let q;
+  try { q = new URLSearchParams(location.search); } catch(e){ return false; }
+  if(q.get('lead') !== '1') return false;
+
+  LEAD = {
+    id: q.get('lead_id') || '',
+    nome: q.get('nome') || '',
+    telefono: q.get('telefono') || '',
+    email: q.get('email') || '',
+  };
+
+  const comune = q.get('comune') || '';
+  const indirizzo = q.get('indirizzo') || '';
+  if(indirizzo || comune){
+    state.bnbAddress = [indirizzo, comune, 'Italy'].filter(Boolean).join(', ');
+  }
+  const rc = trovaRegioneCitta(comune);
+  if(rc){ state.region = rc.regione; state.city = rc.punteggio; }
+
+  const camere = parseInt(q.get('camere'), 10);
+  if(camere > 0){ state.rooms = camere; state.beds = Math.max(2, camere * 2); }
+  const mq = parseInt(q.get('mq'), 10);
+  if(mq > 0) state.sqm = mq;
+
+  const tipo = (q.get('tipo') || '').toLowerCase();
+  if(/villa|casa indipendente/.test(tipo)) state.type = 'villa';
+  else if(/più unit|piu unit/.test(tipo)) state.type = 'trilocale';
+  else if(camere >= 3) state.type = 'trilocale';
+  else if(camere === 1) state.type = 'monolocale';
+  else state.type = 'bilocale';
+
+  const formula = (q.get('formula') || '').toLowerCase();
+  if(/garantito|subloca/.test(formula)) state.contr = 'sublocazione';
+  else if(/gestione|commissione/.test(formula)) state.contr = 'gestione';
+
+  const testoStato = q.get('stato') || '';
+  for(const [re, val] of STATO_DA_TESTO){ if(re.test(testoStato)){ state.stato = val; break; } }
+
+  const specs = q.get('specs') || '';
+  state.specs = state.specs || {};
+  for(const [re, chiave] of SPEC_DA_TESTO){ if(re.test(specs)) state.specs[chiave] = true; }
+
+  // Se sappiamo dove si trova, saltiamo la tipologia e partiamo dalla zona
+  step = (state.region && state.city) ? 3 : 2;
+  return true;
+}
+
+/* Link temporaneo al report archiviato, da mandare al proprietario */
+async function linkReport(path, giorni){
+  const r = await fetch(SUPABASE_URL + '/storage/v1/object/sign/documenti/' + path, {
+    method: 'POST',
+    headers: {'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json'},
+    body: JSON.stringify({expiresIn: (giorni || 30) * 24 * 3600}),
+  });
+  if(!r.ok) throw new Error('Link non creato (' + r.status + ')');
+  const j = await r.json();
+  return SUPABASE_URL + '/storage/v1' + (j.signedURL || j.signedUrl);
+}
+
+let ULTIMO_REPORT = null;   // {path, audience}
+
+function testoInvio(link){
+  const chi = LEAD && LEAD.nome ? LEAD.nome.split(' ')[0] : '';
+  return (chi ? 'Ciao ' + chi + ', ' : 'Buongiorno, ') +
+    'come promesso ecco la valutazione del tuo immobile fatta dal nostro team, ' +
+    'con la previsione di ricavo annuo e il confronto fra le due formule di gestione.\n\n' +
+    link + '\n\nIl link resta attivo 30 giorni. Restiamo a disposizione.\nValente Living';
+}
+
+async function inviaReport(come){
+  if(!ULTIMO_REPORT){ alert('Genera prima il report del proprietario.'); return; }
+  let link;
+  try { link = await linkReport(ULTIMO_REPORT.path, 30); }
+  catch(e){ alert('Non riesco a creare il link: ' + (e.message || e)); return; }
+  const testo = testoInvio(link);
+  if(come === 'whatsapp'){
+    const num = (LEAD && LEAD.telefono ? LEAD.telefono : '').replace(/\D/g, '').replace(/^0+/, '');
+    const completo = num ? (num.startsWith('39') ? num : '39' + num) : '';
+    window.open('https://wa.me/' + completo + '?text=' + encodeURIComponent(testo), '_blank');
+  } else {
+    const a = (LEAD && LEAD.email) ? LEAD.email : '';
+    window.open('mailto:' + a + '?subject=' + encodeURIComponent('La valutazione del tuo immobile — Valente Living') +
+                '&body=' + encodeURIComponent(testo), '_blank');
+  }
+}
+
+function boxInvioReport(){
+  if(!LEAD || (!LEAD.telefono && !LEAD.email)) return '';
+  const pronto = !!ULTIMO_REPORT;
+  return `
+  <div style="background:#1c1b18;color:#fff;border-radius:12px;padding:14px 16px;margin-top:14px">
+    <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#c4a35a;font-weight:700;margin-bottom:4px">Manda il report al proprietario</div>
+    <div style="font-size:12.5px;opacity:.85;margin-bottom:11px">
+      ${LEAD.nome || 'Richiesta dal sito'}${LEAD.telefono ? ' · ' + LEAD.telefono : ''}${LEAD.email ? ' · ' + LEAD.email : ''}
+      ${pronto ? '' : '<br><span style="opacity:.7">Genera prima il report proprietario qui sopra.</span>'}
+    </div>
+    <div style="display:flex;gap:9px;flex-wrap:wrap">
+      ${LEAD.telefono ? `<button onclick="inviaReport('whatsapp')" ${pronto?'':'disabled'} style="background:#25D366;color:#fff;border:0;border-radius:9px;padding:10px 15px;font-size:13px;font-weight:700;cursor:pointer;${pronto?'':'opacity:.4;cursor:default'}">WhatsApp</button>` : ''}
+      ${LEAD.email ? `<button onclick="inviaReport('email')" ${pronto?'':'disabled'} style="background:#fff;color:#1c1b18;border:0;border-radius:9px;padding:10px 15px;font-size:13px;font-weight:700;cursor:pointer;${pronto?'':'opacity:.4;cursor:default'}">Email</button>` : ''}
+    </div>
+  </div>`;
+}
+
 function render(){
   const c=document.getElementById('content');
   if(currentTab==='guida'){
@@ -2333,7 +2485,8 @@ function renderResult(){
       </div>
     </div>
     `:''}
-    <div style="background:#fff;border:1.5px solid var(--g200);border-radius:14px;padding:16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+    ${boxInvioReport()}
+    <div style="background:#fff;border:1.5px solid var(--g200);border-radius:14px;padding:16px;margin-top:14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
       <div>
         <div style="font-size:13px;font-weight:700;color:var(--g900);margin-bottom:2px">📝 Mandato di gestione</div>
         <div style="font-size:12px;color:var(--g400)">Compila i dati proprietario e scarica il contratto DOCX pronto da firmare</div>
@@ -2773,6 +2926,9 @@ function openMandato() {
 }
 
 function updateLingua(cod) { mandatoState.lingua = cod; renderMandato(); }
+
+/* Se il CRM ci ha mandato una richiesta dal sito, partiamo con i campi gia' pieni */
+try { if (precompilaValutazioneDaCRM()) render(); } catch (e) { console.warn('precompila lead', e); }
 
 /* Se il CRM ci ha mandato qui per fare un mandato, apriamo direttamente il modulo */
 if (precompilaDaCRM()) {
