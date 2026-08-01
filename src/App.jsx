@@ -3598,7 +3598,8 @@ function App({ utente, onLogout }) {
           azienda: "",
           stato: l.stato || "nuovo",
           creato: l.created_at,
-          dettaglio: [l.tipo, l.situazione, l.formula, l.camere ? l.camere + " camere" : null, l.motivo]
+          indirizzo: [l.indirizzo, l.citta].filter(Boolean).join(", "),
+          dettaglio: [l.tipo, l.situazione, l.formula, l.camere ? l.camere + " camere" : null, l.mq ? l.mq + " m²" : null, l.motivo]
             .filter(Boolean).join(" · "),
           messaggio: l.messaggio || l.note || "",
           campagna: (l.tracking && (l.tracking.utm_campaign || l.tracking.utm_source)) || "",
@@ -3874,7 +3875,9 @@ function App({ utente, onLogout }) {
                         </div>
                         {l.email && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 4, wordBreak: "break-all" }}>✉ {l.email}</p>}
                         {l.telefono && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 4 }}>📞 {l.telefono}</p>}
-                        {(l.citta || l.azienda) && <p style={{ fontSize: 12, color: "var(--gray)" }}>{[l.azienda, l.citta].filter(Boolean).join(" · ")}</p>}
+                        {l.fonte === "sito" && l.indirizzo ? (
+                          <p style={{ fontSize: 12, marginTop: 2 }}>📍 <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(l.indirizzo)}`} target="_blank" rel="noreferrer" style={{ color: "var(--gold)", textDecoration: "none" }}>{l.indirizzo}</a></p>
+                        ) : ((l.citta || l.azienda) && <p style={{ fontSize: 12, color: "var(--gray)" }}>{[l.azienda, l.citta].filter(Boolean).join(" · ")}</p>)}
                         {l.dettaglio && <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{l.dettaglio}</p>}
                         {l.messaggio && <p style={{ fontSize: 12, marginTop: 8, lineHeight: 1.45 }}>{l.messaggio}</p>}
                         {l.foto && l.foto.length > 0 && (
