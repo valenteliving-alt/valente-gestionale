@@ -3603,6 +3603,7 @@ function App({ utente, onLogout }) {
           messaggio: l.messaggio || l.note || "",
           campagna: (l.tracking && (l.tracking.utm_campaign || l.tracking.utm_source)) || "",
           fotoN: l.foto_n || 0,
+          foto: Array.isArray(l.foto_urls) ? l.foto_urls : [],
         }));
       }
     } catch { /* se il sito non risponde mostro comunque HubSpot */ }
@@ -3876,7 +3877,20 @@ function App({ utente, onLogout }) {
                         {(l.citta || l.azienda) && <p style={{ fontSize: 12, color: "var(--gray)" }}>{[l.azienda, l.citta].filter(Boolean).join(" · ")}</p>}
                         {l.dettaglio && <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{l.dettaglio}</p>}
                         {l.messaggio && <p style={{ fontSize: 12, marginTop: 8, lineHeight: 1.45 }}>{l.messaggio}</p>}
-                        {l.fotoN > 0 && <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 6 }}>📷 {l.fotoN} foto allegate</p>}
+                        {l.foto && l.foto.length > 0 && (
+                          <div style={{ marginTop: 10 }}>
+                            <p style={{ fontSize: 11, color: "var(--gray)", marginBottom: 6 }}>📷 {l.foto.length} foto allegate</p>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              {l.foto.map((u, i) => (
+                                <a key={i} href={u} target="_blank" rel="noreferrer" title="Apri a schermo intero">
+                                  <img src={u} alt={`Foto ${i + 1}`} loading="lazy"
+                                       style={{ width: 62, height: 62, objectFit: "cover", borderRadius: 6, border: "1px solid var(--cd)", display: "block" }} />
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {(!l.foto || !l.foto.length) && l.fotoN > 0 && <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 6 }}>📷 {l.fotoN} foto allegate</p>}
                         {l.campagna && <p style={{ fontSize: 11, color: "var(--gold)", marginTop: 6 }}>campagna: {l.campagna}</p>}
                         <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--cd)", display: "flex", gap: 14, flexWrap: "wrap" }}>
                           {l.fonte === "sito" ? (
