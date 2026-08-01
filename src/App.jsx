@@ -3570,15 +3570,45 @@ function App({ utente, onLogout }) {
 
   const loadLeads = useCallback(async () => {
     setLeadsLoading(true); setLeadsError("");
+    let daHubspot = [];
+    let erroreHubspot = "";
+    // 1) contatti assegnati a me su HubSpot
     try {
       const r = await fetch("/.netlify/functions/hubspot", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "leads" }),
       });
       const data = await r.json();
-      if (!r.ok) { setLeadsError(data.error || "Errore nel caricamento dei lead."); setLeads([]); }
-      else setLeads(data.leads || []);
-    } catch { setLeadsError("Impossibile contattare HubSpot. Riprova."); setLeads([]); }
+      if (!r.ok) erroreHubspot = data.error || "Errore nel caricamento dei lead HubSpot.";
+      else daHubspot = (data.leads || []).map(l => ({ ...l, fonte: "hubspot" }));
+    } catch { erroreHubspot = "Impossibile contattare HubSpot."; }
+
+    // 2) richieste arrivate dal sito vetrina (tabella lead_sito)
+    let daSito = [];
+    try {
+      const { data, ok } = await sb.get("lead_sito", "?select=*&order=created_at.desc&limit=200");
+      if (ok && Array.isArray(data)) {
+        daSito = data.map(l => ({
+          id: "sito-" + l.id,
+          fonte: "sito",
+          nome: l.nome || l.email || "Richiesta dal sito",
+          email: l.email || "",
+          telefono: l.telefono || "",
+          citta: l.citta || "",
+          azienda: "",
+          stato: l.stato || "nuovo",
+          creato: l.created_at,
+          dettaglio: [l.tipo, l.situazione, l.formula, l.camere ? l.camere + " camere" : null, l.motivo]
+            .filter(Boolean).join(" · "),
+          messaggio: l.messaggio || l.note || "",
+          campagna: (l.tracking && (l.tracking.utm_campaign || l.tracking.utm_source)) || "",
+          fotoN: l.foto_n || 0,
+        }));
+      }
+    } catch { /* se il sito non risponde mostro comunque HubSpot */ }
+
+    if (erroreHubspot && !daSito.length) { setLeadsError(erroreHubspot); setLeads([]); }
+    else { setLeadsError(erroreHubspot); setLeads([...daSito, ...daHubspot]); }
     setLeadsLoading(false);
   }, []);
 
@@ -3817,7 +3847,7 @@ function App({ utente, onLogout }) {
             view === "lead" ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
-                  <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Lead</h1><p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Contatti assegnati a te su HubSpot{leads.length ? ` · ${leads.length}` : ""}</p></div>
+                  <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Lead</h1><p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Richieste dal sito + contatti assegnati a te su HubSpot{leads.length ? ` · ${leads.length}` : ""}</p></div>
                   <button className="bg" onClick={loadLeads} disabled={leadsLoading}>{leadsLoading ? "Aggiorno…" : "↻ Aggiorna"}</button>
                 </div>
                 <div className="gl" style={{ marginBottom: 24 }} />
@@ -3829,20 +3859,35 @@ function App({ utente, onLogout }) {
                 ) : leadsLoading ? (
                   <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento lead da HubSpot…</div>
                 ) : leads.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessun lead assegnato a te.</div>
+                  <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessun lead: n\u00e9 dal sito n\u00e9 assegnato a te su HubSpot.</div>
                 ) : (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
                     {leads.map(l => (
                       <div key={l.id} className="card fi" style={{ cursor: "default" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
                           <h3 style={{ fontSize: 15, fontWeight: 600 }}>{l.nome}</h3>
-                          {l.stato && <span className="tag">{l.stato}</span>}
+                          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                            {l.fonte === "sito" && <span className="tag" style={{ background: "var(--gold)", color: "#fff" }}>Sito</span>}
+                            {l.stato && <span className="tag">{l.stato}</span>}
+                          </div>
                         </div>
                         {l.email && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 4, wordBreak: "break-all" }}>✉ {l.email}</p>}
                         {l.telefono && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 4 }}>📞 {l.telefono}</p>}
                         {(l.citta || l.azienda) && <p style={{ fontSize: 12, color: "var(--gray)" }}>{[l.azienda, l.citta].filter(Boolean).join(" · ")}</p>}
-                        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--cd)" }}>
-                          <a href={`https://app.hubspot.com/contacts/25704633/record/0-1/${l.id}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Apri su HubSpot →</a>
+                        {l.dettaglio && <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{l.dettaglio}</p>}
+                        {l.messaggio && <p style={{ fontSize: 12, marginTop: 8, lineHeight: 1.45 }}>{l.messaggio}</p>}
+                        {l.fotoN > 0 && <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 6 }}>📷 {l.fotoN} foto allegate</p>}
+                        {l.campagna && <p style={{ fontSize: 11, color: "var(--gold)", marginTop: 6 }}>campagna: {l.campagna}</p>}
+                        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--cd)", display: "flex", gap: 14, flexWrap: "wrap" }}>
+                          {l.fonte === "sito" ? (
+                            <>
+                              {l.creato && <span style={{ fontSize: 11, color: "var(--gray)" }}>{new Date(l.creato).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>}
+                              {l.telefono && <a href={`https://wa.me/39${String(l.telefono).replace(/\D/g, "").replace(/^39/, "")}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>WhatsApp →</a>}
+                              {l.email && <a href={`mailto:${l.email}`} style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Email →</a>}
+                            </>
+                          ) : (
+                            <a href={`https://app.hubspot.com/contacts/25704633/record/0-1/${l.id}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Apri su HubSpot →</a>
+                          )}
                         </div>
                       </div>
                     ))}
