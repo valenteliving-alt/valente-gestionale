@@ -3599,8 +3599,9 @@ function App({ utente, onLogout }) {
           stato: l.stato || "nuovo",
           creato: l.created_at,
           indirizzo: [l.indirizzo, l.citta].filter(Boolean).join(", "),
-          dettaglio: [l.tipo, l.situazione, l.formula, l.camere ? l.camere + " camere" : null, l.mq ? l.mq + " m²" : null, l.motivo]
+          dettaglio: [l.tipo, l.situazione, l.formula, l.camere ? l.camere + " camere" : null, l.mq ? l.mq + " m²" : null, l.stato_immobile, l.motivo]
             .filter(Boolean).join(" · "),
+          caratteristiche: l.caratteristiche || "",
           messaggio: l.messaggio || l.note || "",
           campagna: (l.tracking && (l.tracking.utm_campaign || l.tracking.utm_source)) || "",
           fotoN: l.foto_n || 0,
@@ -3879,6 +3880,11 @@ function App({ utente, onLogout }) {
                           <p style={{ fontSize: 12, marginTop: 2 }}>📍 <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(l.indirizzo)}`} target="_blank" rel="noreferrer" style={{ color: "var(--gold)", textDecoration: "none" }}>{l.indirizzo}</a></p>
                         ) : ((l.citta || l.azienda) && <p style={{ fontSize: 12, color: "var(--gray)" }}>{[l.azienda, l.citta].filter(Boolean).join(" · ")}</p>)}
                         {l.dettaglio && <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{l.dettaglio}</p>}
+                        {l.caratteristiche && <p style={{ fontSize: 11.5, color: "var(--gray)", marginTop: 3, display: "flex", flexWrap: "wrap", gap: 5 }}>
+                          {l.caratteristiche.split(", ").filter(Boolean).map((c, i) => (
+                            <span key={i} style={{ background: "rgba(192,148,86,.14)", color: "#8a6a2f", borderRadius: 20, padding: "2px 9px", fontSize: 11 }}>{c}</span>
+                          ))}
+                        </p>}
                         {l.messaggio && <p style={{ fontSize: 12, marginTop: 8, lineHeight: 1.45 }}>{l.messaggio}</p>}
                         {l.foto && l.foto.length > 0 && (
                           <div style={{ marginTop: 10 }}>
