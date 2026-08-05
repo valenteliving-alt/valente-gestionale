@@ -1,16 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 import Archivio from "./Archivio";
-import Schede from "./Schede";
-import MessaggiAI from "./MessaggiAI";
-import Ecosistema from "./Ecosistema";
-import AgentiAI from "./AgentiAI";
-import Manuale from "./Manuale";
 import Guida from "./Guida";
 import Compliance from "./Compliance";
-import Ricorrenti from "./Ricorrenti";
-import Team from "./Team";
-import PortaleAgente from "./PortaleAgente";
-import Valutazione from "./Valutazione";
+
+// PASSWORD PER ENTRARE NEL GESTIONALE — cambiala qui quando vuoi
+const PASSWORD_SITO = "Living626!!";
 
 const SUPABASE_URL = "https://heabtbdmwbjlgujsisor.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
@@ -48,70 +42,12 @@ function inviaPush(title, body, url) {
   } catch (_) { /* ignora */ }
 }
 
-/* ── Sessione utente (Supabase Auth) ──────────────────────────────────────────
-   Il token dell'utente loggato sostituisce la chiave anonima in ogni chiamata:
-   così il database può distinguere chi sta scrivendo e applicare i permessi. */
-const AUTH_KEY = "vl_sessione";
-const auth = {
-  leggi() {
-    try { return JSON.parse(localStorage.getItem(AUTH_KEY) || "null"); } catch { return null; }
-  },
-  scrivi(s) {
-    try { s ? localStorage.setItem(AUTH_KEY, JSON.stringify(s)) : localStorage.removeItem(AUTH_KEY); } catch { /* ignora */ }
-  },
-  token() { const s = auth.leggi(); return (s && s.access_token) || null; },
-  utente() { const s = auth.leggi(); return (s && s.user) || null; },
-
-  async login(email, password) {
-    const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-      method: "POST",
-      headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ email: String(email).trim(), password }),
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error_description || d.msg || d.message || "Accesso non riuscito.");
-    auth.scrivi({ access_token: d.access_token, refresh_token: d.refresh_token, scade: Date.now() + (d.expires_in || 3600) * 1000, user: d.user });
-    return d.user;
-  },
-
-  // Rinnova il token quando sta per scadere, così non si viene buttati fuori
-  async rinnova() {
-    const s = auth.leggi();
-    if (!s || !s.refresh_token) return null;
-    const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
-      method: "POST",
-      headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: s.refresh_token }),
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) { auth.scrivi(null); return null; }
-    auth.scrivi({ access_token: d.access_token, refresh_token: d.refresh_token, scade: Date.now() + (d.expires_in || 3600) * 1000, user: d.user || s.user });
-    return d.access_token;
-  },
-
-  async logout() {
-    const t = auth.token();
-    if (t) {
-      try { await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: "POST", headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${t}` } }); } catch { /* ignora */ }
-    }
-    auth.scrivi(null);
-  },
-};
-
 const sb = {
-  async req(method, table, body, query = "", riprova = true) {
-    const s = auth.leggi();
-    // Se il token è scaduto (o quasi) lo rinnovo prima di chiamare
-    if (s && s.scade && s.scade - Date.now() < 60000) await auth.rinnova();
-    const token = auth.token() || SUPABASE_KEY;
+  async req(method, table, body, query = "") {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
       method, body: body ? JSON.stringify(body) : undefined,
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=representation" }
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" }
     });
-    if (r.status === 401 && riprova && auth.leggi()) {
-      const nuovo = await auth.rinnova();
-      if (nuovo) return sb.req(method, table, body, query, false);
-    }
     const data = await r.json().catch(() => null);
     return { data, ok: r.ok };
   },
@@ -167,7 +103,7 @@ const MONDAY_DATA = [
 ];
 
 const STATI = ["in lancio", "attivo", "mandato firmato", "mandato + cin", "ristrutturazione", "inattivo"];
-const STATI_COLOR = { "attivo": "#2d6a4f", "in lancio": "#6366F1", "mandato firmato": "#1d6fa4", "mandato + cin": "#4a90d9", "ristrutturazione": "#e07b39", "inattivo": "#888" };
+const STATI_COLOR = { "attivo": "#2d6a4f", "in lancio": "#d69c31", "mandato firmato": "#1d6fa4", "mandato + cin": "#4a90d9", "ristrutturazione": "#e07b39", "inattivo": "#888" };
 const CONTRATTI = ["gestione", "sublocazione"];
 const PIATTAFORME = ["Airbnb", "Booking", "VRBO", "Direct", "Expedia"];
 const GESTORI = ["Tommaso", "Francesco", "Jacopo"];
@@ -176,8 +112,8 @@ const WORKFLOW_COLUMNS = [
   { id: "mandato", label: "Mandato", color: "#1d6fa4" },
   { id: "scia", label: "SCIA", color: "#e07b39" },
   { id: "cin", label: "CIN", color: "#8b5cf6" },
-  { id: "cir", label: "ISTAT", color: "#0891b2" },
-  { id: "geis", label: "GEIS", color: "#6366F1" },
+  { id: "cir", label: "CIR/Ross1000", color: "#0891b2" },
+  { id: "geis", label: "GEIS", color: "#d69c31" },
   { id: "alloggiati", label: "Alloggiati Web", color: "#059669" },
   { id: "annunci", label: "Annunci Online", color: "#2d6a4f" },
 ];
@@ -204,34 +140,34 @@ const QUICK_PROMPTS = [
 ];
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Poppins:wght@300;400;500;600&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--cream:#F6F7F9;--cd:#ECEEF3;--black:#0F172A;--gold:#6366F1;--white:#fff;--gray:#64748B;--gl:#E2E8F0;--red:#E11D48;--sw:240px;--r:12px;--shadow:0 1px 2px rgba(15,23,42,.04),0 4px 14px rgba(15,23,42,.05);--shadow-lg:0 8px 30px rgba(15,23,42,.10)}
+:root{--cream:#FBF9F8;--cd:#F0EAE2;--black:#0A0A0A;--gold:#D69C31;--white:#fff;--gray:#6b6b6b;--gl:#e4ddd8;--red:#c0392b;--sw:240px;--r:12px;--shadow:0 1px 2px rgba(20,14,4,.04),0 4px 14px rgba(20,14,4,.05);--shadow-lg:0 8px 30px rgba(20,14,4,.12)}
 html{scroll-behavior:smooth}
-body{font-family:'Inter',sans-serif;background:var(--cream);color:var(--black);min-height:100vh;-webkit-font-smoothing:antialiased}
-h1,h2,h3{font-family:'Inter',sans-serif;letter-spacing:-.02em;font-weight:700}
-input,select,textarea{font-family:'Inter',sans-serif;font-size:13px;background:var(--white);border:1px solid var(--gl);color:var(--black);padding:10px 13px;width:100%;outline:none;border-radius:10px;transition:border-color .15s,box-shadow .15s}
-input:hover,select:hover,textarea:hover{border-color:#B6C2D4}
-input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
-input::placeholder,textarea::placeholder{color:#A2ACBD}
+body{font-family:'Poppins',sans-serif;background:var(--cream);color:var(--black);min-height:100vh;-webkit-font-smoothing:antialiased}
+h1,h2,h3{font-family:'Playfair Display',serif}
+input,select,textarea{font-family:'Poppins',sans-serif;font-size:13px;background:var(--white);border:1px solid var(--gl);color:var(--black);padding:10px 13px;width:100%;outline:none;border-radius:10px;transition:border-color .15s,box-shadow .15s}
+input:hover,select:hover,textarea:hover{border-color:#d0c6be}
+input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(214,156,49,.15)}
+input::placeholder,textarea::placeholder{color:#b3aca4}
 select{cursor:pointer}
-button{font-family:'Inter',sans-serif;cursor:pointer;border-radius:10px;transition:transform .12s,box-shadow .15s,background .15s,color .15s,border-color .15s}
+button{font-family:'Poppins',sans-serif;cursor:pointer;border-radius:10px;transition:transform .12s,box-shadow .15s,background .15s,color .15s,border-color .15s}
 button:active{transform:scale(.97)}
 button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 ::-webkit-scrollbar{width:8px;height:8px}
 ::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:99px}
+::-webkit-scrollbar-thumb{background:#d8cfc6;border-radius:99px}
 ::-webkit-scrollbar-thumb:hover{background:var(--gold)}
-.pill{display:inline-block;padding:3px 10px;font-size:11px;font-weight:600;border-radius:20px;letter-spacing:.02em;color:#fff}
-.tag{display:inline-block;padding:2px 9px;font-size:10px;font-weight:600;letter-spacing:.03em;background:var(--cd);color:var(--gray);border:1px solid transparent;border-radius:6px}
-.bp{background:var(--gold);color:#fff;border:none;padding:10px 20px;font-size:12.5px;font-weight:600;letter-spacing:0;text-transform:none;box-shadow:0 1px 3px rgba(99,102,241,.35)}
-.bp:hover{background:#4F46E5;color:#fff;box-shadow:0 4px 14px rgba(99,102,241,.4)}
+.pill{display:inline-block;padding:3px 10px;font-size:11px;font-weight:500;border-radius:20px;text-transform:uppercase;letter-spacing:.04em;color:#fff}
+.tag{display:inline-block;padding:2px 9px;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;background:var(--cd);color:var(--gray);border:1px solid var(--gl);border-radius:6px}
+.bp{background:var(--black);color:var(--white);border:none;padding:10px 24px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;box-shadow:0 2px 8px rgba(10,10,10,.18)}
+.bp:hover{background:var(--gold);color:var(--black);box-shadow:0 4px 14px rgba(214,156,49,.35)}
 .bp:disabled{opacity:.55;cursor:default;box-shadow:none}
-.bg{background:var(--white);color:#475569;border:1px solid var(--gl);padding:8px 16px;font-size:12px;font-weight:500}
-.bg:hover{border-color:#94A3B8;color:var(--black);box-shadow:var(--shadow)}
-.bd{background:transparent;color:var(--red);border:1px solid #FBCFE0;padding:8px 16px;font-size:12px;font-weight:500}
+.bg{background:var(--white);color:var(--gray);border:1px solid var(--gl);padding:8px 16px;font-size:12px;font-weight:500}
+.bg:hover{border-color:var(--black);color:var(--black);box-shadow:var(--shadow)}
+.bd{background:transparent;color:var(--red);border:1px solid #e8c4c0;padding:8px 16px;font-size:12px;font-weight:500}
 .bd:hover{background:var(--red);color:#fff;border-color:var(--red)}
-.gl{height:1px;background:var(--gl);border-radius:2px}
+.gl{height:2px;background:linear-gradient(90deg,var(--gold),transparent);border-radius:2px}
 .fi{animation:fi .3s ease}
 @keyframes fi{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .card{background:var(--white);border:1px solid var(--gl);padding:18px 20px;cursor:pointer;transition:box-shadow .2s,border-color .2s,transform .2s;position:relative;overflow:hidden;border-radius:var(--r);box-shadow:var(--shadow)}
@@ -240,7 +176,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-o
 .kcard:hover{border-color:var(--gold);box-shadow:var(--shadow-lg);transform:translateY(-1px)}
 .kcol{background:var(--cd);padding:12px;min-height:200px;flex:1;min-width:170px;border-radius:var(--r)}
 .check{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:12px;cursor:pointer;border-bottom:1px solid var(--cd)}
-.check:hover{background:rgba(99,102,241,.04)}
+.check:hover{background:rgba(214,156,49,.04)}
 .check input[type=checkbox]{width:15px;height:15px;accent-color:var(--gold);cursor:pointer;flex-shrink:0}
 .check.done span{text-decoration:line-through;color:var(--gray)}
 .msg-user{background:var(--black);color:var(--white);padding:12px 16px;max-width:80%;margin-left:auto;font-size:13px;line-height:1.5;border-radius:14px 14px 4px 14px}
@@ -249,7 +185,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-o
 .typing{display:flex;gap:4px;padding:12px 16px;background:var(--white);border:1px solid var(--gl);width:60px;border-radius:14px 14px 14px 4px}
 table{border-collapse:collapse}
 tbody tr{transition:background .12s}
-tbody tr:hover{background:rgba(99,102,241,.05)}
+tbody tr:hover{background:rgba(214,156,49,.05)}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:bounce 1.2s infinite}
 .dot:nth-child(2){animation-delay:.2s}
 .dot:nth-child(3){animation-delay:.4s}
@@ -258,7 +194,7 @@ tbody tr:hover{background:rgba(99,102,241,.05)}
 .ai-btn:hover{background:var(--gold);transform:scale(1.08)}
 .ai-panel{position:fixed;bottom:0;right:0;width:420px;height:100vh;background:var(--cream);border-left:1px solid var(--gl);display:flex;flex-direction:column;z-index:600;animation:slideIn .3s ease;box-shadow:-12px 0 40px rgba(0,0,0,.12)}
 @keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
-.sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--sw);z-index:100;background:linear-gradient(180deg,#0F1226 0%,#131A33 100%);color:var(--white);display:flex;flex-direction:column;overflow-y:auto;scrollbar-width:thin}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--sw);z-index:100;background:linear-gradient(180deg,#0A0A0A 0%,#151310 100%);color:var(--white);display:flex;flex-direction:column;overflow-y:auto;scrollbar-width:thin}
 .sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15)}
 .sidebar nav button{border-radius:10px}
 .sidebar nav button:not(.nav-on):hover{background:rgba(255,255,255,.06)!important;color:#fff!important}
@@ -268,19 +204,20 @@ tbody tr:hover{background:rgba(99,102,241,.05)}
 .backdrop{display:none;animation:fadeIn .2s ease}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 .fg{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px}
-.msgai-top{position:fixed;top:14px;right:18px;z-index:450;display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,#6366F1,#818CF8);color:#fff;border:none;border-radius:999px;padding:10px 20px;font-size:12.5px;font-weight:700;letter-spacing:.02em;cursor:pointer;box-shadow:0 4px 18px rgba(99,102,241,.4);transition:transform .15s}
-.msgai-top:hover{transform:scale(1.05)}
+.notif-top{position:fixed;top:12px;left:calc(50% + 120px);transform:translateX(-50%);z-index:450;display:flex;align-items:center;gap:8px;background:var(--black);color:#fff;border:1px solid var(--gold);border-radius:999px;padding:8px 18px;font-size:12.5px;font-weight:600;letter-spacing:.03em;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.25);transition:transform .15s}
+.notif-top:hover{transform:translateX(-50%) scale(1.04)}
+.notif-top .nbadge{background:var(--red);color:#fff;font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px}
 @media (max-width:768px){
   .sidebar{transform:translateX(-100%);transition:transform .25s ease;width:min(82vw,300px);box-shadow:0 0 40px rgba(0,0,0,.45)}
   .sidebar.open{transform:translateX(0)}
   .sidebar nav button{padding-top:13px!important;padding-bottom:13px!important}
   .main{margin-left:0;padding:14px;padding-top:64px}
-  .topbar{display:flex;position:fixed;top:0;left:0;right:0;height:52px;background:rgba(15,18,38,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:var(--white);align-items:center;gap:14px;padding:0 16px;z-index:90}
+  .topbar{display:flex;position:fixed;top:0;left:0;right:0;height:52px;background:rgba(10,10,10,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:var(--white);align-items:center;gap:14px;padding:0 16px;z-index:90}
   .backdrop{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:95}
   .ai-panel{width:100%;right:0}
   .ai-btn{bottom:18px;right:18px;width:50px;height:50px;font-size:20px}
   .fg{grid-template-columns:1fr}
-  .msgai-top{top:62px;right:12px;padding:8px 14px;font-size:11.5px}
+  .notif-top{top:62px;left:50%}
   .home-grid{grid-template-columns:1fr !important}
   input,select,textarea{font-size:16px;padding:12px 14px}
   .bp,.bg,.bd{padding-top:11px;padding-bottom:11px}
@@ -289,7 +226,7 @@ tbody tr:hover{background:rgba(99,102,241,.05)}
 `;
 
 const SB = ({ stato }) => <span className="pill" style={{ background: STATI_COLOR[stato] || "#888" }}>{stato || "—"}</span>;
-const CT = ({ tipo }) => <span className="tag" style={tipo === "sublocazione" ? { background: "#EEF2FF", color: "#4F46E5", borderColor: "transparent" } : {}}>{tipo || "gestione"}</span>;
+const CT = ({ tipo }) => <span className="tag" style={tipo === "sublocazione" ? { background: "#fff8e1", color: "#b8860b", borderColor: "#d69c31" } : {}}>{tipo || "gestione"}</span>;
 const DR = ({ label, val }) => val ? (
   <div style={{ display: "flex", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--cd)" }}>
     <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", minWidth: 130 }}>{label}</span>
@@ -309,67 +246,6 @@ const ST = ({ children }) => (
     <div className="gl" style={{ width: 60 }} />
   </div>
 );
-/* Selettore con ricerca: sostituisce le tendine lunghe (proprietari, immobili).
-   Le voci sono sempre ordinate alfabeticamente e filtrabili scrivendo. */
-const SelectRicerca = ({ value, onChange, opzioni, placeholder = "— Seleziona —", vuoto = "— Nessuno —" }) => {
-  const [aperto, setAperto] = useState(false);
-  const [q, setQ] = useState("");
-  const box = useRef(null);
-  const ordinate = useMemo(
-    () => [...opzioni].sort((a, b) => String(a.label).localeCompare(String(b.label), "it", { sensitivity: "base" })),
-    [opzioni]
-  );
-  const filtrate = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    return t ? ordinate.filter(o => String(o.label).toLowerCase().includes(t)) : ordinate;
-  }, [ordinate, q]);
-  const selezionata = opzioni.find(o => String(o.value) === String(value));
-
-  useEffect(() => {
-    if (!aperto) return;
-    const fuori = (e) => { if (box.current && !box.current.contains(e.target)) { setAperto(false); setQ(""); } };
-    document.addEventListener("mousedown", fuori);
-    return () => document.removeEventListener("mousedown", fuori);
-  }, [aperto]);
-
-  const scegli = (v) => { onChange(v); setAperto(false); setQ(""); };
-
-  return (
-    <div ref={box} style={{ position: "relative" }}>
-      <button type="button" onClick={() => setAperto(a => !a)}
-        style={{ width: "100%", textAlign: "left", padding: "10px 13px", fontSize: 13, background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 10, color: selezionata ? "var(--black)" : "#A2ACBD", display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selezionata ? selezionata.label : placeholder}</span>
-        <span style={{ fontSize: 10, color: "var(--gray)" }}>▾</span>
-      </button>
-      {aperto && (
-        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 1100, background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "0 12px 40px rgba(15,23,42,.18)", overflow: "hidden" }}>
-          <div style={{ padding: 8, borderBottom: "1px solid var(--cd)" }}>
-            <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Cerca…"
-              onKeyDown={e => { if (e.key === "Enter" && filtrate.length) { e.preventDefault(); scegli(filtrate[0].value); } if (e.key === "Escape") setAperto(false); }} />
-          </div>
-          <div style={{ maxHeight: 260, overflowY: "auto" }}>
-            <button type="button" onClick={() => scegli("")}
-              style={{ width: "100%", textAlign: "left", padding: "9px 13px", fontSize: 12.5, background: "transparent", border: "none", color: "var(--gray)", borderRadius: 0 }}>{vuoto}</button>
-            {filtrate.map(o => {
-              const sel = String(o.value) === String(value);
-              return (
-                <button key={o.value} type="button" onClick={() => scegli(o.value)}
-                  style={{ width: "100%", textAlign: "left", padding: "9px 13px", fontSize: 12.5, background: sel ? "#EEF2FF" : "transparent", border: "none", color: sel ? "#4F46E5" : "var(--black)", fontWeight: sel ? 600 : 400, borderRadius: 0, display: "flex", alignItems: "center", gap: 8 }}
-                  onMouseEnter={e => { if (!sel) e.currentTarget.style.background = "var(--cream)"; }}
-                  onMouseLeave={e => { if (!sel) e.currentTarget.style.background = "transparent"; }}>
-                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.label}</span>
-                  {sel && <span style={{ fontSize: 11 }}>✓</span>}
-                </button>
-              );
-            })}
-            {filtrate.length === 0 && <div style={{ padding: "12px 13px", fontSize: 12, color: "var(--gray)" }}>Nessun risultato per "{q}"</div>}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
 const Modal = ({ title, onClose, children }) => (
   <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={e => e.target === e.currentTarget && onClose()}>
     <div style={{ background: "var(--cream)", width: "100%", maxWidth: 680, maxHeight: "90vh", overflow: "auto", borderRadius: 16, boxShadow: "0 24px 70px rgba(0,0,0,.28)" }} className="fi">
@@ -532,7 +408,7 @@ const AiPanel = ({ onClose, proprieta, owners, onDataChanged }) => {
             try {
               const ra = await fetch("/.netlify/functions/allegati", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "upload", token: auth.token(), proprietario_id: String(nuovoId), nome_file: f.name, tipo: f.type, data: f.data }),
+                body: JSON.stringify({ action: "upload", proprietario_id: String(nuovoId), nome_file: f.name, tipo: f.type, data: f.data }),
               });
               allegatoMsg = ra.ok
                 ? " Ho anche allegato il documento alla sua scheda."
@@ -558,7 +434,7 @@ const AiPanel = ({ onClose, proprieta, owners, onDataChanged }) => {
       <div style={{ padding: "16px 20px", background: "var(--black)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
         <div style={{ width: 36, height: 36, background: "var(--gold)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>✦</div>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: "var(--white)", fontFamily: "Inter" }}>Assistente AI</p>
+          <p style={{ fontSize: 14, fontWeight: 600, color: "var(--white)", fontFamily: "Playfair Display" }}>Assistente AI</p>
           <p style={{ fontSize: 10, color: "rgba(255,255,255,.5)", letterSpacing: ".06em", textTransform: "uppercase" }}>Valente Living · Powered by Claude</p>
         </div>
         <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,.6)", fontSize: 20 }}>×</button>
@@ -673,7 +549,7 @@ const OwnerForm = ({ init = EP, onSave, onClose, loading }) => {
 
 // ── Form Proprietà ───────────────────────────────────────────────────────────
 const EP2 = { nome: "", indirizzo: "", citta: "", cap: "", provincia: "", proprietario_id: "", tipo_contratto: "gestione", stato: "in lancio", cin: "", cir: "", commissione: "", commissione_iva_inclusa: true, posti_letto: "", camere: "", bagni: "", mq: "", catasto_foglio: "", catasto_mappale: "", catasto_sub: "", categoria_catastale: "", gestore_interno: "Tommaso", piattaforme: [], note: "", data_inizio: "", personale_pulizie: "", telefono_pulizie: "" };
-const PropForm = ({ init = EP2, owners, onSave, onClose, loading, gestori = GESTORI }) => {
+const PropForm = ({ init = EP2, owners, onSave, onClose, loading }) => {
   const [f, setF] = useState(init);
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
   const tp = p => setF(prev => ({ ...prev, piattaforme: prev.piattaforme?.includes(p) ? prev.piattaforme.filter(x => x !== p) : [...(prev.piattaforme || []), p] }));
@@ -683,7 +559,7 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading, gestori = GEST
     if (!f.id) { setAiMsg("Salva prima l'immobile: poi potrò leggere i documenti che gli hai allegato."); return; }
     setAiBusy(true); setAiMsg("Cerco i documenti dell'immobile…");
     try {
-      const lr = await fetch("/.netlify/functions/allegati", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "list", token: auth.token(), proprieta_id: f.id }) });
+      const lr = await fetch("/.netlify/functions/allegati", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "list", proprieta_id: f.id }) });
       const ld = await lr.json();
       let list = ld.files || [];
       if (!list.length) { setAiMsg("Nessun documento allegato a questo immobile. Carica un mandato o una visura e riprova."); setAiBusy(false); return; }
@@ -693,7 +569,7 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading, gestori = GEST
       const files = [];
       for (const it of list) {
         try {
-          const sr = await fetch("/.netlify/functions/allegati", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "sign", token: auth.token(), path: it.path }) });
+          const sr = await fetch("/.netlify/functions/allegati", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "sign", path: it.path }) });
           const sd = await sr.json();
           if (!sd.url) continue;
           const blob = await (await fetch(sd.url)).blob();
@@ -719,8 +595,8 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading, gestori = GEST
   return (
     <>
       {f.id && (
-        <div style={{ marginBottom: 18, padding: 14, background: "rgba(99,102,241,.08)", border: "1px solid rgba(99,102,241,.35)" }}>
-          <button type="button" onClick={compilaAI} disabled={aiBusy} style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, letterSpacing: ".04em", border: "none", background: aiBusy ? "#bbb" : "linear-gradient(135deg, #6366F1, #818CF8)", color: "#fff", cursor: aiBusy ? "default" : "pointer", borderRadius: 999 }}>
+        <div style={{ marginBottom: 18, padding: 14, background: "rgba(214,156,49,.08)", border: "1px solid rgba(214,156,49,.35)" }}>
+          <button type="button" onClick={compilaAI} disabled={aiBusy} style={{ padding: "8px 16px", fontSize: 12, fontWeight: 700, letterSpacing: ".04em", border: "none", background: aiBusy ? "#bbb" : "linear-gradient(135deg, #D69C31, #f0c84a)", color: "var(--black)", cursor: aiBusy ? "default" : "pointer", borderRadius: 999 }}>
             {aiBusy ? "Leggo i documenti…" : "✨ Compila con AI dai documenti"}
           </button>
           {aiMsg && <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 10, lineHeight: 1.4 }}>{aiMsg}</p>}
@@ -728,19 +604,10 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading, gestori = GEST
       )}
       <ST>Dati Proprietà</ST><FG>
         <FF label="Nome" span={2}><input value={f.nome} onChange={e => s("nome", e.target.value)} /></FF>
-        <FF label="Proprietario" span={2}>
-          <SelectRicerca value={f.proprietario_id} onChange={v => s("proprietario_id", v)}
-            opzioni={owners.map(o => ({ value: o.id, label: `${o.cognome || ""} ${o.nome || ""}`.trim() }))}
-            placeholder="— Seleziona —" vuoto="— Nessun proprietario —" />
-        </FF>
+        <FF label="Proprietario" span={2}><select value={f.proprietario_id} onChange={e => s("proprietario_id", e.target.value)}><option value="">— Seleziona —</option>{owners.map(o => <option key={o.id} value={o.id}>{o.cognome} {o.nome}</option>)}</select></FF>
         <FF label="Tipo Contratto"><select value={f.tipo_contratto} onChange={e => s("tipo_contratto", e.target.value)}>{CONTRATTI.map(c => <option key={c}>{c}</option>)}</select></FF>
         <FF label="Stato"><select value={f.stato} onChange={e => s("stato", e.target.value)}>{STATI.map(ss => <option key={ss}>{ss}</option>)}</select></FF>
-        <FF label="Gestore">
-          <select value={f.gestore_interno || ""} onChange={e => s("gestore_interno", e.target.value)}>
-            <option value="">— Non assegnato —</option>
-            {gestori.map(g => <option key={g}>{g}</option>)}
-          </select>
-        </FF>
+        <FF label="Gestore"><select value={f.gestore_interno} onChange={e => s("gestore_interno", e.target.value)}>{GESTORI.map(g => <option key={g}>{g}</option>)}</select></FF>
         <FF label="Data Inizio"><input type="date" value={f.data_inizio} onChange={e => s("data_inizio", e.target.value)} /></FF>
       </FG>
       <div style={{ marginTop: 20 }}><ST>Indirizzo</ST><FG>
@@ -785,96 +652,10 @@ const PropForm = ({ init = EP2, owners, onSave, onClose, loading, gestori = GEST
   );
 };
 
-// ── Team: helper condiviso per collaboratori e task ──────────────────────────
-async function fnTeam(payload) {
-  const r = await fetch("/.netlify/functions/team", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...payload, token: auth.token() }),
-  });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok || d.error) throw new Error(d.error || "Errore.");
-  return d;
-}
-const COLORI_COLL = ["#6366F1", "#0891b2", "#e07b39", "#2d6a4f", "#8b5cf6", "#b8860b", "#c0392b", "#1d6fa4"];
-
 // ── Workflow Lancio ──────────────────────────────────────────────────────────
-const KanbanView = ({ proprieta, owners, onDataChanged, onEdit, onApriScheda }) => {
+const KanbanView = ({ proprieta, owners, onDataChanged, onEdit }) => {
   const [saving, setSaving] = useState(null);
-  const [noteAperte, setNoteAperte] = useState(null); // id proprietà con le note aperte
-  const [noteDraft, setNoteDraft] = useState("");
-  const [noteSaving, setNoteSaving] = useState(false);
-  const [noteSalvate, setNoteSalvate] = useState(false);
-  const [fPersona, setFPersona] = useState(""); // filtro per assegnatario
-  const [collaboratori, setCollaboratori] = useState([]);
-  const [task, setTask] = useState([]);
-  const [nuovoColl, setNuovoColl] = useState(null); // { nome, ruolo } quando si crea un collaboratore
-  const [taskAperti, setTaskAperti] = useState(null); // id proprietà con i task aperti
-  const [nuovoTask, setNuovoTask] = useState({ titolo: "", assegnato_a: "", scadenza: "" });
-
-  const caricaTeam = useCallback(async () => {
-    try {
-      const [c, t] = await Promise.all([fnTeam({ action: "list_collaboratori" }), fnTeam({ action: "list_task" })]);
-      setCollaboratori(c.collaboratori || []);
-      setTask(t.task || []);
-    } catch { /* silenzioso */ }
-  }, []);
-  useEffect(() => { caricaTeam(); }, [caricaTeam]);
-
-  const attivi = collaboratori.filter(c => c.attivo !== false);
-  const collDi = (nome) => collaboratori.find(c => c.nome === nome);
-  const taskDi = (propId) => task.filter(t => String(t.proprieta_id) === String(propId));
-
-  const creaCollaboratore = async () => {
-    if (!nuovoColl || !nuovoColl.nome.trim()) return;
-    try {
-      const usati = collaboratori.map(c => c.colore);
-      const colore = COLORI_COLL.find(c => !usati.includes(c)) || COLORI_COLL[collaboratori.length % COLORI_COLL.length];
-      const d = await fnTeam({ action: "save_collaboratore", nome: nuovoColl.nome.trim(), ruolo: nuovoColl.ruolo.trim() || null, colore });
-      setCollaboratori(cs => [...cs, d.collaboratore].sort((a, b) => a.nome.localeCompare(b.nome)));
-      setNuovoColl(null);
-    } catch (e) { alert(e.message); }
-  };
-
-  const salvaTask = async (payload) => {
-    const d = await fnTeam({ action: "save_task", ...payload });
-    setTask(ts => {
-      const altri = ts.filter(x => x.id !== d.task.id);
-      return [d.task, ...altri];
-    });
-    return d.task;
-  };
-  const aggiungiTask = async (p) => {
-    if (!nuovoTask.titolo.trim()) return;
-    try {
-      await salvaTask({ titolo: nuovoTask.titolo.trim(), assegnato_a: nuovoTask.assegnato_a || p.gestore_interno || null, proprieta_id: p.id, scadenza: nuovoTask.scadenza || null, stato: "da fare" });
-      setNuovoTask({ titolo: "", assegnato_a: "", scadenza: "" });
-    } catch (e) { alert(e.message); }
-  };
-  const toggleTask = async (t) => {
-    try { await salvaTask({ id: t.id, stato: t.stato === "fatto" ? "da fare" : "fatto" }); }
-    catch (e) { alert(e.message); }
-  };
-  const eliminaTask = async (t) => {
-    if (!confirm(`Eliminare il task "${t.titolo}"?`)) return;
-    try { await fnTeam({ action: "delete_task", id: t.id }); setTask(ts => ts.filter(x => x.id !== t.id)); }
-    catch (e) { alert(e.message); }
-  };
-  const tutteInLancio = proprieta.filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato));
-  const inLancio = fPersona
-    ? tutteInLancio.filter(p => fPersona === "__nessuno" ? !p.gestore_interno : p.gestore_interno === fPersona)
-    : tutteInLancio;
-
-  const apriNote = (p) => {
-    if (noteAperte === p.id) { setNoteAperte(null); return; }
-    setNoteAperte(p.id); setNoteDraft(p.note || ""); setNoteSalvate(false);
-  };
-  const salvaNote = async (p) => {
-    setNoteSaving(true); setNoteSalvate(false);
-    await sb.patch("proprieta", p.id, { note: noteDraft.trim() || null });
-    if (onDataChanged) await onDataChanged();
-    setNoteSaving(false); setNoteSalvate(true);
-    setTimeout(() => setNoteSalvate(false), 2500);
-  };
+  const inLancio = proprieta.filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato));
   const parseSteps = p => { try { return p.workflow_steps ? JSON.parse(p.workflow_steps) : {}; } catch { return {}; } };
   const stepDone = (p, stepId) => {
     if (stepId === "cin") return !!(p.cin && String(p.cin).trim());
@@ -898,38 +679,13 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit, onApriScheda }) 
     if (onDataChanged) await onDataChanged();
     setSaving(null);
   };
-  // Assegnazione della proprietà a chi ci lavora
-  const assegna = async (p, gestore) => {
-    setSaving(p.id);
-    await sb.patch("proprieta", p.id, { gestore_interno: gestore || null });
-    if (onDataChanged) await onDataChanged();
-    setSaving(null);
-  };
-  const coloreGestore = (g) => {
-    const c = collaboratori.find(x => x.nome === g);
-    return (c && c.colore) || "#94A3B8";
-  };
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
-        <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Workflow Lancio</h1><p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{inLancio.length} proprietà in onboarding{fPersona ? ` · filtro attivo` : ""}</p></div>
+        <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Workflow Lancio</h1><p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{inLancio.length} proprietà in onboarding</p></div>
         <button className="bp" onClick={() => onEdit && onEdit("new")}>+ Nuova proprietà</button>
       </div>
-      <div className="gl" style={{ marginBottom: 16 }} />
-
-      {/* Filtro per persona assegnata */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 20 }}>
-        <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", marginRight: 2 }}>Chi ci lavora</span>
-        {[["", `Tutti (${tutteInLancio.length})`], ...attivi.map(c => [c.nome, `${c.nome} (${tutteInLancio.filter(p => p.gestore_interno === c.nome).length})`]), ["__nessuno", `Non assegnate (${tutteInLancio.filter(p => !p.gestore_interno).length})`]].map(([v, l]) => (
-          <button key={v || "tutti"} onClick={() => setFPersona(v)}
-            style={{
-              padding: "5px 12px", fontSize: 11.5, fontWeight: 600,
-              border: `1px solid ${fPersona === v ? "var(--black)" : "var(--gl)"}`,
-              background: fPersona === v ? "var(--black)" : "var(--white)",
-              color: fPersona === v ? "#fff" : "var(--gray)",
-            }}>{l}</button>
-        ))}
-      </div>
+      <div className="gl" style={{ marginBottom: 24 }} />
       {inLancio.length === 0 ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessuna proprietà in lancio.</div> : (
         <div style={{ display: "grid", gap: 14 }}>
           {inLancio.map(p => {
@@ -941,14 +697,7 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit, onApriScheda }) 
               <div key={p.id} className="card" style={{ padding: 18, opacity: busy ? .55 : 1, transition: "opacity .15s" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
                   <div>
-                    <div onClick={() => onApriScheda && onApriScheda(p)}
-                      title="Apri la scheda completa con tutti i documenti"
-                      style={{ fontSize: 16, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}
-                      onMouseEnter={e => { e.currentTarget.style.color = "var(--gold)"; }}
-                      onMouseLeave={e => { e.currentTarget.style.color = "var(--black)"; }}>
-                      {p.nome}
-                      <span style={{ fontSize: 11, color: "var(--gray)" }}>↗</span>
-                    </div>
+                    <div style={{ fontSize: 16, fontWeight: 600 }}>{p.nome}</div>
                     <div style={{ fontSize: 12, color: "var(--gray)", marginTop: 2 }}>{[p.citta, p.provincia].filter(Boolean).join(", ")}{owner ? ` · ${owner.cognome || ""} ${owner.nome || ""}`.replace(/ +$/, "") : ""}</div>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -973,134 +722,14 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit, onApriScheda }) 
                     );
                   })}
                 </div>
-                {/* Assegnazione a chi ci lavora */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)" }}>Assegnata a</span>
-                  {attivi.map(c => {
-                    const sel = p.gestore_interno === c.nome;
-                    return (
-                      <button key={c.id} onClick={() => assegna(p, sel ? "" : c.nome)} disabled={busy}
-                        title={sel ? "Clic per togliere l'assegnazione" : `Assegna a ${c.nome}${c.ruolo ? " · " + c.ruolo : ""}`}
-                        style={{
-                          display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", fontSize: 11.5, fontWeight: 600,
-                          border: `1.5px solid ${sel ? (c.colore || "#94A3B8") : "var(--gl)"}`,
-                          background: sel ? (c.colore || "#94A3B8") : "transparent",
-                          color: sel ? "#fff" : "var(--gray)",
-                        }}>
-                        <span style={{ width: 16, height: 16, borderRadius: "50%", background: sel ? "rgba(255,255,255,.25)" : (c.colore || "#94A3B8"), color: "#fff", fontSize: 9, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{c.nome[0]}</span>
-                        {c.nome}
-                      </button>
-                    );
-                  })}
-                  <button onClick={() => setNuovoColl({ nome: "", ruolo: "" })} title="Aggiungi un collaboratore"
-                    style={{ padding: "5px 10px", fontSize: 11.5, fontWeight: 600, border: "1px dashed var(--gl)", background: "transparent", color: "var(--gray)" }}>+ Collaboratore</button>
-                  {!p.gestore_interno && <span style={{ fontSize: 11, color: "var(--red)" }}>non assegnata</span>}
-                </div>
-
-                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                   <button className="bg" onClick={() => onEdit && onEdit(p)} disabled={busy}>Compila dati</button>
-                  <button className="bg" onClick={() => apriNote(p)} disabled={busy}>
-                    📝 Note{p.note ? " ✓" : ""}
-                  </button>
-                  {(() => {
-                    const ts = taskDi(p.id);
-                    const aperti = ts.filter(t => t.stato !== "fatto").length;
-                    return (
-                      <button className="bg" onClick={() => setTaskAperti(taskAperti === p.id ? null : p.id)} disabled={busy}>
-                        ☑︎ Task{ts.length ? ` ${ts.length - aperti}/${ts.length}` : ""}
-                        {aperti > 0 && <span style={{ marginLeft: 6, background: "var(--red)", color: "#fff", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10 }}>{aperti}</span>}
-                      </button>
-                    );
-                  })()}
                   <button className="bp" onClick={() => rendiAttiva(p)} disabled={busy} style={{ marginLeft: "auto" }}>✓ Rendi attiva</button>
                 </div>
-
-                {/* Task assegnabili */}
-                {taskAperti === p.id && (
-                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--cd)" }}>
-                    <label style={{ display: "block", fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", marginBottom: 8 }}>Task</label>
-                    {taskDi(p.id).length === 0 && <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 8 }}>Nessun task. Aggiungine uno qui sotto.</div>}
-                    {taskDi(p.id).sort((a, b) => (a.stato === "fatto" ? 1 : 0) - (b.stato === "fatto" ? 1 : 0)).map(t => {
-                      const fatto = t.stato === "fatto";
-                      const c = collDi(t.assegnato_a);
-                      const scaduto = !fatto && t.scadenza && new Date(t.scadenza) < new Date(new Date().toDateString());
-                      return (
-                        <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--cd)" }}>
-                          <input type="checkbox" checked={fatto} onChange={() => toggleTask(t)} style={{ width: 15, height: 15, accentColor: "var(--gold)", flexShrink: 0 }} />
-                          <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, textDecoration: fatto ? "line-through" : "none", color: fatto ? "var(--gray)" : "var(--black)" }}>{t.titolo}</span>
-                          {t.assegnato_a && (
-                            <span className="tag" style={{ background: (c && c.colore) || "#94A3B8", color: "#fff", borderColor: "transparent" }}>{t.assegnato_a}</span>
-                          )}
-                          {t.scadenza && <span style={{ fontSize: 10.5, color: scaduto ? "var(--red)" : "var(--gray)", fontWeight: scaduto ? 700 : 400, whiteSpace: "nowrap" }}>{scaduto ? "⚠ " : ""}{t.scadenza}</span>}
-                          <button onClick={() => eliminaTask(t)} style={{ background: "none", border: "none", color: "var(--red)", fontSize: 14, padding: "0 4px" }}>×</button>
-                        </div>
-                      );
-                    })}
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
-                      <input value={nuovoTask.titolo} onChange={e => setNuovoTask(v => ({ ...v, titolo: e.target.value }))}
-                        onKeyDown={e => { if (e.key === "Enter") aggiungiTask(p); }}
-                        placeholder="Nuovo task… (es. Richiedere CIN sul portale)" style={{ flex: "1 1 220px" }} />
-                      <select value={nuovoTask.assegnato_a} onChange={e => setNuovoTask(v => ({ ...v, assegnato_a: e.target.value }))} style={{ width: "auto", minWidth: 130 }}>
-                        <option value="">{p.gestore_interno ? `${p.gestore_interno} (default)` : "Non assegnato"}</option>
-                        {attivi.map(c => <option key={c.id} value={c.nome}>{c.nome}</option>)}
-                      </select>
-                      <input type="date" value={nuovoTask.scadenza} onChange={e => setNuovoTask(v => ({ ...v, scadenza: e.target.value }))} style={{ width: "auto", minWidth: 140 }} />
-                      <button className="bp" onClick={() => aggiungiTask(p)}>+ Aggiungi</button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Note e descrizioni dell'immobile in lancio */}
-                {noteAperte === p.id ? (
-                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--cd)" }}>
-                    <label style={{ display: "block", fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", marginBottom: 6 }}>
-                      Note e descrizione
-                    </label>
-                    <textarea
-                      value={noteDraft}
-                      onChange={e => setNoteDraft(e.target.value)}
-                      rows={5}
-                      placeholder={"Appunti sul lancio: cosa manca, contatti utili, accordi col proprietario, stato lavori, arredo, foto da fare…"}
-                      style={{ lineHeight: 1.5 }}
-                    />
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-                      <button className="bp" onClick={() => salvaNote(p)} disabled={noteSaving}>{noteSaving ? "Salvo…" : "Salva note"}</button>
-                      <button className="bg" onClick={() => setNoteAperte(null)}>Chiudi</button>
-                      {noteSalvate && <span style={{ fontSize: 11.5, color: "#2d6a4f", fontWeight: 600 }}>✓ Salvate</span>}
-                    </div>
-                  </div>
-                ) : p.note ? (
-                  <div onClick={() => apriNote(p)} title="Clicca per modificare le note"
-                    style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--cd)", fontSize: 12, color: "var(--gray)", lineHeight: 1.5, whiteSpace: "pre-wrap", cursor: "pointer" }}>
-                    {p.note.length > 220 ? p.note.slice(0, 220) + "…" : p.note}
-                  </div>
-                ) : null}
               </div>
             );
           })}
         </div>
-      )}
-
-      {/* Creazione rapida collaboratore */}
-      {nuovoColl && (
-        <Modal title="Nuovo collaboratore" onClose={() => setNuovoColl(null)}>
-          <FG>
-            <FF label="Nome" span={2}>
-              <input autoFocus value={nuovoColl.nome} onChange={e => setNuovoColl(v => ({ ...v, nome: e.target.value }))}
-                onKeyDown={e => { if (e.key === "Enter") creaCollaboratore(); }} placeholder="es. Giulia" />
-            </FF>
-            <FF label="Ruolo" span={2}>
-              <input value={nuovoColl.ruolo} onChange={e => setNuovoColl(v => ({ ...v, ruolo: e.target.value }))} placeholder="es. Compliance manager, Contabile, Property manager" />
-            </FF>
-          </FG>
-          <p style={{ fontSize: 11.5, color: "var(--gray)", marginTop: 12 }}>
-            Il collaboratore comparirà subito tra le persone assegnabili, con un colore assegnato in automatico.
-          </p>
-          <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
-            <button className="bg" onClick={() => setNuovoColl(null)}>Annulla</button>
-            <button className="bp" onClick={creaCollaboratore}>Crea collaboratore</button>
-          </div>
-        </Modal>
       )}
     </div>
   );
@@ -1176,317 +805,33 @@ const PropTile = ({ p, o, onClick }) => (
   </div>
 );
 
-/* Mandato di gestione: il contratto lo compila il gestionale con i dati che ha già,
-   così non si ricopia niente a mano. Il modulo si apre nel valutatore, che sa
-   riempire il modello Word. */
-const LINGUE_CONTRATTO = [{ cod: "it", nome: "Italiano" }, { cod: "en", nome: "English" }];
-
-/* Carica una libreria esterna una sola volta, quando serve davvero. */
-function caricaScript(src) {
-  return new Promise((ok, ko) => {
-    if ([...document.scripts].some(s => s.src === src)) return ok();
-    const s = document.createElement("script");
-    s.src = src; s.onload = () => ok(); s.onerror = () => ko(new Error("Libreria non caricata: " + src));
-    document.head.appendChild(s);
-  });
-}
-
-const CDN = {
-  zip: "https://unpkg.com/pizzip@3.1.8/dist/pizzip.js",
-  docx: "https://unpkg.com/docxtemplater@3.62.2/build/docxtemplater.js",
-  pdf: "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
-};
-
-const oggiIt = () => new Date().toLocaleDateString("it-IT");
-const traTerm = (anni) => { const d = new Date(); d.setFullYear(d.getFullYear() + anni); return d.toLocaleDateString("it-IT"); };
-
-/* Il mandato si compila qui dentro e si scarica: niente pagine intermedie.
-   Il modello Word sta in public/, i dati arrivano dalla scheda immobile. */
-function GeneraMandato({ p, o }) {
-  const [lingua, setLingua] = useState("it");
-  const [aperto, setAperto] = useState(false);
-  const [busy, setBusy] = useState("");
-  const [errore, setErrore] = useState("");
-  const [f, setF] = useState(null);
-
-  if (!p) return null;
-
-  const inizializza = () => {
-    setErrore("");
-    setF({
-      // proprietario
-      nome: (o && o.nome) || "", cognome: (o && o.cognome) || "", cf: (o && o.codice_fiscale) || "",
-      luogo_nascita: "", data_nascita: "",
-      residenza: o ? [o.indirizzo, o.citta].filter(Boolean).join(", ") : "",
-      telefono: (o && o.telefono) || "", email: (o && o.email) || "",
-      // immobile
-      tipo_immobile: "Appartamento",
-      indirizzo_immobile: p.indirizzo || "", comune_immobile: p.citta || "", provincia_immobile: p.provincia || "",
-      foglio: p.catasto_foglio || "", particella: p.catasto_mappale || "", subalterno: p.catasto_sub || "",
-      categoria_catastale: p.categoria_catastale || "", superficie: p.mq || "", rendita_catastale: "",
-      // contratto
-      percentuale_commissione: p.commissione != null ? String(p.commissione) : "20",
-      data_inizio: oggiIt(), data_fine: traTerm(2),
-      budget_interventi: "70", budget_interventi_lettere: "settanta",
-      max_ospiti: p.posti_letto ? String(p.posti_letto) : "6",
-      giorni_uso_proprietario: "30",
-    });
-    setAperto(true);
-  };
-
-  const campo = (k, v) => setF(x => ({ ...x, [k]: v }));
-
-  // Riempie il modello Word e restituisce lo zip pronto
-  const componi = async () => {
-    await caricaScript(CDN.zip);
-    await caricaScript(CDN.docx);
-    const file = lingua === "it" ? "/template.docx" : `/template-${lingua}.docx`;
-    const r = await fetch(file);
-    const tipo = r.headers.get("content-type") || "";
-    if (!r.ok || tipo.includes("html")) {
-      const nome = (LINGUE_CONTRATTO.find(l => l.cod === lingua) || {}).nome || lingua;
-      throw new Error(`Manca il modello di contratto in ${nome}. Per ora puoi generarlo in italiano.`);
-    }
-    const zip = new window.PizZip(await r.arrayBuffer());
-    const doc = new window.docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
-    doc.render({
-      proprietari: [{
-        nome: f.nome, cognome: f.cognome, cf: f.cf, luogo_nascita: f.luogo_nascita,
-        data_nascita: f.data_nascita, residenza: f.residenza, telefono: f.telefono, email: f.email, sep: ". ",
-      }],
-      tipo_immobile: f.tipo_immobile, indirizzo_immobile: f.indirizzo_immobile,
-      comune_immobile: f.comune_immobile, provincia_immobile: f.provincia_immobile,
-      foglio: f.foglio, particella: f.particella, subalterno: f.subalterno,
-      categoria_catastale: f.categoria_catastale, superficie: f.superficie, rendita_catastale: f.rendita_catastale,
-      percentuale_commissione: f.percentuale_commissione, data_inizio: f.data_inizio, data_fine: f.data_fine,
-      budget_interventi: f.budget_interventi, budget_interventi_lettere: f.budget_interventi_lettere,
-      max_ospiti: f.max_ospiti, giorni_uso_proprietario: f.giorni_uso_proprietario,
-    });
-    return doc.getZip();
-  };
-
-  const nomeFile = (est) => {
-    const chi = (f.cognome || p.nome || "mandato").replace(/[^a-zA-Z0-9]/g, "_");
-    return `Mandato_Valente_Living_${chi}_${oggiIt().replace(/\//g, "-")}.${est}`;
-  };
-
-  const scarica = (blob, nome) => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = nome;
-    document.body.appendChild(a); a.click();
-    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-  };
-
-  const faiWord = async () => {
-    setBusy("word"); setErrore("");
-    try {
-      const zip = await componi();
-      scarica(zip.generate({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", compression: "DEFLATE" }), nomeFile("docx"));
-    } catch (e) { setErrore(e.message); }
-    setBusy("");
-  };
-
-  const faiPdf = async () => {
-    setBusy("pdf"); setErrore("");
-    try {
-      const zip = await componi();
-      await caricaScript(CDN.pdf);
-      // Dal Word compilato prendo il testo, paragrafo per paragrafo, e lo impagino
-      const xml = zip.file("word/document.xml").asText();
-      const paragrafi = xml.split(/<\/w:p>/)
-        .map(b => b.replace(/<w:tab[^>]*\/>/g, "\t").replace(/<[^>]+>/g, ""))
-        .map(s => s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").trim());
-      const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF({ unit: "mm", format: "a4" });
-      const margine = 18, larghezza = 210 - margine * 2, fondo = 297 - margine;
-      let y = margine;
-      pdf.setFont("helvetica", "normal"); pdf.setFontSize(10);
-      paragrafi.forEach(par => {
-        if (!par) { y += 3; return; }
-        const righe = pdf.splitTextToSize(par, larghezza);
-        righe.forEach(riga => {
-          if (y > fondo) { pdf.addPage(); y = margine; }
-          pdf.text(riga, margine, y); y += 5;
-        });
-        y += 2;
-      });
-      pdf.save(nomeFile("pdf"));
-    } catch (e) { setErrore(e.message); }
-    setBusy("");
-  };
-
-  return (
-    <div style={{ marginTop: 20, background: "var(--cream)", border: "1px solid var(--gl)", borderRadius: 10, padding: 14 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>📄 Mandato di gestione</div>
-      <p style={{ fontSize: 11, color: "var(--gray)", marginBottom: 10, lineHeight: 1.5 }}>
-        Precompilato con i dati dell'immobile{o ? " e del proprietario" : ""}: completi le poche righe mancanti e scarichi.
-        {!o && <> Collega prima un proprietario per riempire anche la sua parte.</>}
-      </p>
-
-      {!aperto ? (
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <select value={lingua} onChange={e => setLingua(e.target.value)} style={{ width: "auto", minWidth: 120 }}>
-            {LINGUE_CONTRATTO.map(l => <option key={l.cod} value={l.cod}>{l.nome}</option>)}
-          </select>
-          <button className="bp" onClick={inizializza} style={{ fontSize: 12 }}>Prepara mandato</button>
-        </div>
-      ) : (
-        <>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)", margin: "10px 0 6px" }}>Proprietario</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }}>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Nome<input value={f.nome} onChange={e => campo("nome", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Cognome<input value={f.cognome} onChange={e => campo("cognome", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Codice fiscale<input value={f.cf} onChange={e => campo("cf", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Luogo di nascita<input value={f.luogo_nascita} onChange={e => campo("luogo_nascita", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Data di nascita<input value={f.data_nascita} onChange={e => campo("data_nascita", e.target.value)} placeholder="gg/mm/aaaa" style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Residenza<input value={f.residenza} onChange={e => campo("residenza", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-          </div>
-
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)", margin: "12px 0 6px" }}>Immobile e catasto</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }}>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Tipo<input value={f.tipo_immobile} onChange={e => campo("tipo_immobile", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Indirizzo<input value={f.indirizzo_immobile} onChange={e => campo("indirizzo_immobile", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Comune<input value={f.comune_immobile} onChange={e => campo("comune_immobile", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Foglio<input value={f.foglio} onChange={e => campo("foglio", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Particella<input value={f.particella} onChange={e => campo("particella", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Subalterno<input value={f.subalterno} onChange={e => campo("subalterno", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Categoria<input value={f.categoria_catastale} onChange={e => campo("categoria_catastale", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Superficie (mq)<input value={f.superficie} onChange={e => campo("superficie", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Rendita catastale<input value={f.rendita_catastale} onChange={e => campo("rendita_catastale", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-          </div>
-
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)", margin: "12px 0 6px" }}>Condizioni</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 }}>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Provvigione (%)<input value={f.percentuale_commissione} onChange={e => campo("percentuale_commissione", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Max ospiti<input value={f.max_ospiti} onChange={e => campo("max_ospiti", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Data inizio<input value={f.data_inizio} onChange={e => campo("data_inizio", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Data fine<input value={f.data_fine} onChange={e => campo("data_fine", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Budget interventi (€)<input value={f.budget_interventi} onChange={e => campo("budget_interventi", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>…in lettere<input value={f.budget_interventi_lettere} onChange={e => campo("budget_interventi_lettere", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Giorni uso proprietario<input value={f.giorni_uso_proprietario} onChange={e => campo("giorni_uso_proprietario", e.target.value)} style={{ width: "100%", marginTop: 3 }} /></label>
-            <label style={{ fontSize: 10.5, color: "var(--gray)" }}>Lingua
-              <select value={lingua} onChange={e => setLingua(e.target.value)} style={{ width: "100%", marginTop: 3 }}>
-                {LINGUE_CONTRATTO.map(l => <option key={l.cod} value={l.cod}>{l.nome}</option>)}
-              </select>
-            </label>
-          </div>
-
-          {errore && <div style={{ fontSize: 11.5, color: "var(--red)", marginTop: 10 }}>{errore}</div>}
-
-          <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-            <button className="bp" onClick={faiWord} disabled={!!busy} style={{ fontSize: 12 }}>
-              {busy === "word" ? "Preparo…" : "⬇ Scarica Word"}
-            </button>
-            <button className="bg" onClick={faiPdf} disabled={!!busy} style={{ fontSize: 12 }}>
-              {busy === "pdf" ? "Preparo…" : "⬇ Scarica PDF"}
-            </button>
-            <button className="bg" onClick={() => setAperto(false)} style={{ fontSize: 12, marginLeft: "auto" }}>Chiudi</button>
-          </div>
-          <p style={{ fontSize: 10, color: "var(--gray)", marginTop: 8, lineHeight: 1.5 }}>
-            Il Word mantiene l'impaginazione originale del contratto. Il PDF è la stessa versione compilata,
-            impaginata in modo semplice: usalo per invio e archiviazione, il Word se devi ancora ritoccare qualcosa.
-          </p>
-        </>
-      )}
-    </div>
-  );
-}
-
-/* Un immobile appena entrato resta in evidenza per una settimana: il tempo di
-   accorgersene, assegnarlo e far partire la pratica. */
-const GIORNI_NOVITA = 7;
-function appenaArrivata(p) {
-  if (!p || !p.created_at) return false;
-  return (Date.now() - new Date(p.created_at).getTime()) < GIORNI_NOVITA * 86400000;
-}
-
-const PropRow = ({ p, o, onClick, gestori = [], coloreGestore, onAssegna }) => (
+const PropRow = ({ p, o, onClick }) => (
   <div className="fi" onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", cursor: "pointer" }}
     onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--gold)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--gl)"; }}>
-    <span style={{ width: 9, height: 9, borderRadius: "50%", background: STATI_COLOR[p.stato] || "#ccc", flexShrink: 0 }} title={p.stato} />
+    <span style={{ width: 9, height: 9, borderRadius: "50%", background: STATI_COLOR[p.stato] || "#ccc", flexShrink: 0 }} />
     <div style={{ flex: 2, minWidth: 0 }}>
-      <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        {p.nome}
-        {appenaArrivata(p) && (
-          <span title={`Aggiunta ${new Date(p.created_at).toLocaleDateString("it-IT")}${p.agente ? ` da ${p.agente}` : ""}`}
-            style={{ marginLeft: 8, fontSize: 9, fontWeight: 700, letterSpacing: ".06em", padding: "2px 7px", borderRadius: 99, background: "#DCFCE7", color: "#166534", verticalAlign: "middle" }}>
-            NUOVA
-          </span>
-        )}
-      </div>
+      <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.nome}</div>
       <div style={{ fontSize: 11, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.indirizzo}{p.citta ? `, ${p.citta}` : ""}{p.provincia ? ` (${p.provincia})` : ""}</div>
     </div>
-
-    {/* Proprietario */}
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <div style={{ fontSize: 11.5, color: "var(--black)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o ? `${o.cognome} ${o.nome}` : "—"}</div>
-      <div style={{ fontSize: 10, color: "var(--gray)" }}>proprietario</div>
-    </div>
-
-    {/* Codici e posti letto */}
-    <div style={{ width: 120, flexShrink: 0, minWidth: 0 }}>
-      <div style={{ fontSize: 10.5, fontFamily: "monospace", color: p.cin ? "var(--gray)" : "var(--red)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-        {p.cin ? p.cin : "CIN mancante"}
-      </div>
-      <div style={{ fontSize: 10, color: "var(--gray)" }}>
-        {[p.posti_letto && `${p.posti_letto} letti`, p.camere && `${p.camere} cam`].filter(Boolean).join(" · ") || "—"}
-      </div>
-    </div>
-
-    {/* Gestore: assegnabile al volo */}
-    <div style={{ width: 130, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-      <select
-        value={p.gestore_interno || ""}
-        onChange={e => onAssegna && onAssegna(p, e.target.value)}
-        title="Assegna il property manager"
-        style={{
-          fontSize: 11, padding: "5px 8px", borderRadius: 8,
-          borderColor: p.gestore_interno ? (coloreGestore ? coloreGestore(p.gestore_interno) : "var(--gl)") : "#FBCFE0",
-          color: p.gestore_interno ? "var(--black)" : "var(--red)",
-          fontWeight: p.gestore_interno ? 600 : 400,
-        }}>
-        <option value="">Non assegnato</option>
-        {gestori.map(g => <option key={g} value={g}>{g}</option>)}
-      </select>
-    </div>
-
-    <div style={{ width: 46, textAlign: "right", fontSize: 11, color: "var(--gray)", flexShrink: 0 }}>{p.commissione ? `${p.commissione}%` : "—"}</div>
-    <div style={{ width: 120, textAlign: "right", flexShrink: 0, display: "flex", justifyContent: "flex-end", gap: 6, alignItems: "center" }}>
+    <div style={{ flex: 1, minWidth: 0, fontSize: 11, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o ? `${o.cognome} ${o.nome}` : "—"}</div>
+    <div style={{ width: 50, textAlign: "right", fontSize: 11, color: "var(--gray)", flexShrink: 0 }}>{p.commissione ? `${p.commissione}%` : "—"}</div>
+    <div style={{ width: 130, textAlign: "right", flexShrink: 0, display: "flex", justifyContent: "flex-end", gap: 6, alignItems: "center" }}>
+      {!p.cin && p.stato === "attivo" && <span className="tag" style={{ fontSize: 9, color: "var(--red)", borderColor: "var(--red)" }}>No CIN</span>}
       <SB stato={p.stato} />
     </div>
   </div>
 );
 
-const OwnerRow = ({ o, pc, props = [], onClick, onApriProp }) => (
-  <div className="fi" onClick={onClick} style={{ padding: "10px 14px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", cursor: "pointer" }}
+const OwnerRow = ({ o, pc, onClick }) => (
+  <div className="fi" onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 14px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", cursor: "pointer" }}
     onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--gold)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--gl)"; }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-      <div style={{ width: 30, height: 30, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: "Inter", fontSize: 11, fontWeight: 700, color: "var(--gold)" }}>{o.cognome?.[0]}{o.nome?.[0]}</span></div>
-      <div style={{ flex: "1.4 1 0", minWidth: 0, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.cognome} {o.nome}</div>
-      <div style={{ flex: "1 1 0", minWidth: 0, fontSize: 11, fontFamily: "monospace", letterSpacing: ".04em", color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.codice_fiscale || "—"}</div>
-      <div style={{ flex: "1.3 1 0", minWidth: 0, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.email || "—"}</div>
-      <div style={{ width: 125, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>{o.telefono || "—"}</div>
-      <div style={{ width: 110, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>{o.citta || "—"}</div>
-      <span className="tag" style={{ flexShrink: 0, background: pc ? "#EEF2FF" : "var(--cd)", color: pc ? "#4F46E5" : "var(--gray)" }}>{pc === 0 ? "nessun immobile" : `${pc} immobil${pc === 1 ? "e" : "i"}`}</span>
-    </div>
-    {/* Appartamenti del proprietario: cliccabili singolarmente */}
-    {props.length > 0 && (
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, paddingLeft: 42 }}>
-        {props.map(p => (
-          <span key={p.id}
-            onClick={e => { e.stopPropagation(); onApriProp && onApriProp(p); }}
-            title={`${p.nome} · ${p.citta || ""} · ${p.stato || ""}${p.cin ? "" : " · CIN mancante"}`}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, padding: "3px 9px", borderRadius: 7,
-              background: "var(--cream)", border: "1px solid var(--gl)", color: "var(--black)",
-            }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: STATI_COLOR[p.stato] || "#888", flexShrink: 0 }} />
-            {p.nome}
-            {!p.cin && <span style={{ color: "var(--red)", fontWeight: 700 }} title="CIN mancante">!</span>}
-          </span>
-        ))}
-      </div>
-    )}
+    <div style={{ width: 30, height: 30, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: "Playfair Display", fontSize: 11, fontWeight: 700, color: "var(--gold)" }}>{o.cognome?.[0]}{o.nome?.[0]}</span></div>
+    <div style={{ flex: "1.4 1 0", minWidth: 0, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.cognome} {o.nome}</div>
+    <div style={{ flex: "1 1 0", minWidth: 0, fontSize: 11, fontFamily: "monospace", letterSpacing: ".04em", color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.codice_fiscale || "—"}</div>
+    <div style={{ flex: "1.3 1 0", minWidth: 0, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{o.email || "—"}</div>
+    <div style={{ width: 125, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>{o.telefono || "—"}</div>
+    <div style={{ width: 110, fontSize: 12, color: "var(--gray)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}>{o.citta || "—"}</div>
+    <span className="tag" style={{ flexShrink: 0 }}>{pc} prop.</span>
   </div>
 );
 
@@ -1498,7 +843,7 @@ const DOC_CATEGORIE = [
   { id: "planimetria", label: "Planimetrie", icon: "📐", color: "#0891b2", match: /\b(planimetr|piantina|disegno|layout)\w*/i },
   { id: "catasto", label: "Visure / Catasto", icon: "🗂️", color: "#e07b39", match: /\b(visur|catast|atto|rogito|ape|certificazione\s*energetica)\w*/i },
   { id: "anagrafica", label: "Documenti d'identità / Anagrafica", icon: "🪪", color: "#b8860b", match: /\b(carta\s*identit|ci\b|passaport|patente|codice\s*fiscale|cf\b|tessera|anagraf)\w*/i },
-  { id: "scia", label: "SCIA / Comune", icon: "🏛️", color: "#6366F1", match: /\b(scia|suap|comune|protocoll|asseverazione)\w*/i },
+  { id: "scia", label: "SCIA / Comune", icon: "🏛️", color: "#d69c31", match: /\b(scia|suap|comune|protocoll|asseverazione)\w*/i },
   { id: "altro", label: "Altri documenti", icon: "📎", color: "#888", match: /.*/ },
 ];
 function categoriaDoc(nome) {
@@ -1507,7 +852,7 @@ function categoriaDoc(nome) {
   return DOC_CATEGORIE[DOC_CATEGORIE.length - 1];
 }
 
-function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaIds, etichette }) {
+function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaIds }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1525,11 +870,8 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
     const ids = idsKey ? idsKey.split(",") : [];
     // Quali "caselle" interrogare: se è un immobile solo lui; se è un proprietario, lui + tutti i suoi immobili
     const targets = [];
-    if (proprietaId) {
-      targets.push({ proprieta_id: proprietaId });
-      // Includi anche i documenti del proprietario collegato (es. carta d'identità, CF)
-      if (linkProprietarioId) targets.push({ proprietario_id: linkProprietarioId });
-    } else if (proprietarioId) {
+    if (proprietaId) targets.push({ proprieta_id: proprietaId });
+    else if (proprietarioId) {
       targets.push({ proprietario_id: proprietarioId });
       ids.forEach((pid) => targets.push({ proprieta_id: pid }));
     }
@@ -1537,7 +879,7 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
       const results = await Promise.all(targets.map((t) =>
         fetch("/.netlify/functions/allegati", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "list", token: auth.token(), ...t }),
+          body: JSON.stringify({ action: "list", ...t }),
         }).then((r) => (r.ok ? r.json() : { files: [] })).catch(() => ({ files: [] }))
       ));
       const merged = [];
@@ -1558,7 +900,7 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
     try {
       const r = await fetch("/.netlify/functions/allegati", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "describe", token: auth.token(), id: f.id, path: f.path, tipo: f.tipo, nome_file: f.nome_file, data }),
+        body: JSON.stringify({ action: "describe", id: f.id, path: f.path, tipo: f.tipo, nome_file: f.nome_file, data }),
       });
       const d = await r.json().catch(() => ({}));
       if (r.ok && d.file) setFiles(fs => fs.map(x => x.id === f.id ? { ...x, ...d.file } : x));
@@ -1602,7 +944,7 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
         });
         const r = await fetch("/.netlify/functions/allegati", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "upload", token: auth.token(), nome_file: file.name, tipo: file.type, data: base64, ...target }),
+          body: JSON.stringify({ action: "upload", nome_file: file.name, tipo: file.type, data: base64, ...target }),
         });
         if (!r.ok) falliti.push(file.name);
         else { const dd = await r.json().catch(() => ({})); if (dd.file) await descrivi(dd.file, base64); }
@@ -1622,7 +964,7 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
     try {
       const r = await fetch("/.netlify/functions/allegati", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "sign", token: auth.token(), path }),
+        body: JSON.stringify({ action: "sign", path }),
       });
       const d = await r.json();
       if (r.ok && d.url) window.open(d.url, "_blank");
@@ -1636,7 +978,7 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
     try {
       const r = await fetch("/.netlify/functions/allegati", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "delete", token: auth.token(), id: f.id, path: f.path }),
+        body: JSON.stringify({ action: "delete", id: f.id, path: f.path }),
       });
       if (r.ok) await carica();
       else { const d = await r.json(); setErr(d.error || "Eliminazione fallita."); }
@@ -1645,7 +987,7 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
 
   return (
     <div
-      style={{ marginTop: 24, border: dragOver ? "2px dashed var(--gold)" : "2px dashed transparent", padding: dragOver ? 10 : 0, background: dragOver ? "rgba(99,102,241,.06)" : "transparent", transition: "all .12s" }}
+      style={{ marginTop: 24, border: dragOver ? "2px dashed var(--gold)" : "2px dashed transparent", padding: dragOver ? 10 : 0, background: dragOver ? "rgba(214,156,49,.06)" : "transparent", transition: "all .12s" }}
       onDragOver={(e) => { e.preventDefault(); if (!busy) setDragOver(true); }}
       onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
       onDrop={(e) => { e.preventDefault(); setDragOver(false); caricaFiles(e.dataTransfer.files); }}
@@ -1678,15 +1020,6 @@ function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaId
                 <div key={f.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 10px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", borderLeft: `3px solid ${cat.color}`, marginBottom: 6 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, wordBreak: "break-all" }}>{f.nome_file}</div>
-                    {(() => {
-                      // Etichetta di provenienza: da quale appartamento o proprietario arriva il documento
-                      if (!etichette) return null;
-                      const nomeP = f.proprieta_id && etichette.prop && etichette.prop[String(f.proprieta_id)];
-                      const nomeO = !f.proprieta_id && f.proprietario_id && etichette.own && etichette.own[String(f.proprietario_id)];
-                      const testo = nomeP ? `🏠 ${nomeP}` : nomeO ? `👤 ${nomeO}` : null;
-                      if (!testo) return null;
-                      return <span className="tag" style={{ marginTop: 4, background: nomeP ? "#EEF2FF" : "#FEF3C7", color: nomeP ? "#4F46E5" : "#92400E", borderColor: "transparent" }}>{testo}</span>;
-                    })()}
                     {f.ai_descrizione && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 2 }}><span style={{ color: "var(--gold)" }} title="Descrizione generata dall'AI">✨</span> {f.ai_descrizione}</div>}
                   </div>
                   <button onClick={() => apri(f.path)} style={{ background: "none", border: "none", color: "var(--gold)", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>Apri</button>
@@ -1810,7 +1143,7 @@ function Smistamento({ proprieta, owners, onDataChanged }) {
         if (proprieta_id && proprietario_id) destNome = destNome + " (+ proprietario)";
         const ra = await fetch("/.netlify/functions/allegati", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "upload", token: auth.token(), proprieta_id, proprietario_id, nome_file: row.file.name, tipo: row.file.type, data: row.file.data }),
+          body: JSON.stringify({ action: "upload", proprieta_id, proprietario_id, nome_file: row.file.name, tipo: row.file.type, data: row.file.data }),
         });
         if (!ra.ok) throw new Error("allegato");
         setRows(rs => rs.map(x => x.rid === row.rid ? { ...x, stato: "archiviato", dest: destNome } : x));
@@ -1837,7 +1170,7 @@ function Smistamento({ proprieta, owners, onDataChanged }) {
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
         onDrop={(e) => { e.preventDefault(); setDragOver(false); aggiungiFiles(e.dataTransfer.files); }}
-        style={{ border: dragOver ? "2px dashed var(--gold)" : "2px dashed var(--gl)", background: dragOver ? "rgba(99,102,241,.06)" : "var(--white)", padding: 36, textAlign: "center", cursor: "pointer", transition: "all .12s" }}
+        style={{ border: dragOver ? "2px dashed var(--gold)" : "2px dashed var(--gl)", background: dragOver ? "rgba(214,156,49,.06)" : "var(--white)", padding: 36, textAlign: "center", cursor: "pointer", transition: "all .12s" }}
       >
         <input ref={fileRef} type="file" multiple style={{ display: "none" }} onChange={(e) => { aggiungiFiles(e.target.files); e.target.value = ""; }} />
         <p style={{ fontSize: 14, fontWeight: 600, color: dragOver ? "var(--gold)" : "var(--black)" }}>{dragOver ? "Rilascia qui i documenti" : "Trascina qui i documenti o clicca per selezionarli"}</p>
@@ -1950,7 +1283,7 @@ function MappaItalia({ proprieta, compact = false, onApri }) {
       let ox = 0, oy = 0;
       if (n > 1) { const ang = (i / n) * Math.PI * 2; const r = 7 + (i % 3) * 3.5; ox = Math.cos(ang) * r; oy = Math.sin(ang) * r; }
       const sub = p.tipo_contratto === "sublocazione";
-      dots.push({ x: bx + ox, y: by + oy, color: sub ? "#6366F1" : "#2d6a4f", name: p.nome, citta: p.citta || "", tipo: sub ? "sublocazione" : "gestione", attivo: p.stato === "attivo" });
+      dots.push({ x: bx + ox, y: by + oy, color: sub ? "#D69C31" : "#2d6a4f", name: p.nome, citta: p.citta || "", tipo: sub ? "sublocazione" : "gestione", attivo: p.stato === "attivo" });
     });
   });
   const nGest = (proprieta || []).filter((p) => p.tipo_contratto !== "sublocazione").length;
@@ -1979,7 +1312,7 @@ function MappaItalia({ proprieta, compact = false, onApri }) {
         </svg>
         <div style={{ display: "flex", gap: 16, marginTop: 8, justifyContent: "center" }}>
           <span style={{ fontSize: 11, color: "var(--gray)", display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: "50%", background: "#2d6a4f" }} />Gestione {nGest}</span>
-          <span style={{ fontSize: 11, color: "var(--gray)", display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: "50%", background: "#6366F1" }} />Subloc. {nSub}</span>
+          <span style={{ fontSize: 11, color: "var(--gray)", display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: "50%", background: "#D69C31" }} />Subloc. {nSub}</span>
         </div>
       </div>
     );
@@ -2011,7 +1344,7 @@ function MappaItalia({ proprieta, compact = false, onApri }) {
           <div className="card" style={{ padding: 18, marginBottom: 16 }}>
             <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 12 }}>Legenda</p>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><span style={{ width: 12, height: 12, borderRadius: "50%", background: "#2d6a4f", display: "inline-block" }} /><span style={{ fontSize: 13 }}>Gestione <strong>({nGest})</strong></span></div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ width: 12, height: 12, borderRadius: "50%", background: "#6366F1", display: "inline-block" }} /><span style={{ fontSize: 13 }}>Sublocazione <strong>({nSub})</strong></span></div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ width: 12, height: 12, borderRadius: "50%", background: "#D69C31", display: "inline-block" }} /><span style={{ fontSize: 13 }}>Sublocazione <strong>({nSub})</strong></span></div>
             <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 10 }}>I puntini più chiari sono immobili non ancora attivi.</p>
           </div>
           <div className="card" style={{ padding: 18 }}>
@@ -2138,7 +1471,7 @@ function DashboardGestione() {
   const tdS = (r) => ({ padding: 8, borderBottom: "1px solid var(--gl)", textAlign: r ? "right" : "left", fontSize: 12.5 });
   const Card = ({ children, style }) => <div style={{ background: "#fff", border: "1px solid var(--gl)", padding: 24, ...style }}>{children}</div>;
   const H2 = ({ t, s }) => <div style={{ margin: "34px 0 14px" }}><h2 style={{ fontSize: 19 }}>{t}</h2><div style={{ fontSize: 12, color: "var(--gray)", marginTop: 3 }}>{s}</div></div>;
-  const Kpi = ({ l, v, n, gold }) => <div style={{ background: "#fff", padding: "18px 16px" }}><div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: "var(--gray)" }}>{l}</div><div style={{ fontFamily: "'Inter',serif", fontSize: 24, fontWeight: 600, marginTop: 6, color: gold ? "var(--gold)" : "var(--black)" }}>{v}</div><div style={{ fontSize: 11, color: "var(--gray)", marginTop: 3 }}>{n}</div></div>;
+  const Kpi = ({ l, v, n, gold }) => <div style={{ background: "#fff", padding: "18px 16px" }}><div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: "var(--gray)" }}>{l}</div><div style={{ fontFamily: "'Playfair Display',serif", fontSize: 24, fontWeight: 600, marginTop: 6, color: gold ? "var(--gold)" : "var(--black)" }}>{v}</div><div style={{ fontSize: 11, color: "var(--gray)", marginTop: 3 }}>{n}</div></div>;
   const Chk = ({ ok, children }) => <div style={{ display: "flex", gap: 10, padding: "9px 0", borderBottom: "1px solid var(--gl)", fontSize: 13, alignItems: "flex-start" }}><span style={{ minWidth: 9, height: 9, borderRadius: "50%", marginTop: 5, background: ok ? "#2E7D32" : "#B26A00", display: "inline-block" }} /><div>{children}</div></div>;
 
   if (rows === null) return <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento dati gestione…</div>;
@@ -2238,7 +1571,7 @@ const C_fineMese = (ym) => { const [a, m] = ym.split("-").map(Number); return ym
 const C_thS = (r) => ({ textAlign: r ? "right" : "left", fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "var(--gray)", fontWeight: 500, padding: 8, borderBottom: "1px solid var(--black)", whiteSpace: "nowrap" });
 const C_tdS = (r) => ({ padding: 8, borderBottom: "1px solid var(--gl)", textAlign: r ? "right" : "left", fontSize: 12.5 });
 const C_Card = ({ children, style }) => <div style={{ background: "#fff", border: "1px solid var(--gl)", padding: 20, ...style }}>{children}</div>;
-const C_Kpi = ({ l, v, n, gold }) => <div style={{ background: "#fff", padding: "16px 14px" }}><div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: "var(--gray)" }}>{l}</div><div style={{ fontFamily: "'Inter',serif", fontSize: 22, fontWeight: 600, marginTop: 6, color: gold ? "var(--gold)" : "var(--black)" }}>{v}</div>{n && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 3 }}>{n}</div>}</div>;
+const C_Kpi = ({ l, v, n, gold }) => <div style={{ background: "#fff", padding: "16px 14px" }}><div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: "var(--gray)" }}>{l}</div><div style={{ fontFamily: "'Playfair Display',serif", fontSize: 22, fontWeight: 600, marginTop: 6, color: gold ? "var(--gold)" : "var(--black)" }}>{v}</div>{n && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 3 }}>{n}</div>}</div>;
 const FATT_STATI = { bozza: "#888", emessa: "#1d6fa4", incassata: "#2d6a4f", scaduta: "#c0392b", annullata: "#aaa" };
 const REND_STATI = { bozza: "#888", inviato: "#1d6fa4", liquidato: "#2d6a4f" };
 
@@ -2284,16 +1617,8 @@ const FatturaForm = ({ init, proprieta, owners, onSave, onClose, loading }) => {
       <ST>Documento</ST><FG>
         <FF label="Numero"><input value={f.numero || ""} onChange={e => s("numero", e.target.value)} placeholder="Es. 12/2026" /></FF>
         <FF label="Data"><input type="date" value={f.data || ""} onChange={e => s("data", e.target.value)} /></FF>
-        <FF label="Cliente (proprietario)" span={2}>
-          <SelectRicerca value={f.proprietario_id || ""} onChange={v => s("proprietario_id", v)}
-            opzioni={owners.map(o => ({ value: o.id, label: `${o.cognome || ""} ${o.nome || ""}`.trim() }))}
-            placeholder="— Altro cliente —" vuoto="— Altro cliente —" />
-        </FF>
-        <FF label="Immobile (opzionale)" span={2}>
-          <SelectRicerca value={f.proprieta_id || ""} onChange={v => s("proprieta_id", v)}
-            opzioni={proprieta.map(p => ({ value: p.id, label: p.nome }))}
-            placeholder="— Nessun immobile —" vuoto="— Nessun immobile —" />
-        </FF>
+        <FF label="Cliente (proprietario)" span={2}><select value={f.proprietario_id || ""} onChange={e => s("proprietario_id", e.target.value)}><option value="">— Altro cliente —</option>{owners.map(o => <option key={o.id} value={o.id}>{o.cognome} {o.nome}</option>)}</select></FF>
+        <FF label="Immobile (opzionale)" span={2}><select value={f.proprieta_id || ""} onChange={e => s("proprieta_id", e.target.value)}><option value="">—</option>{proprieta.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}</select></FF>
         <FF label="Descrizione" span={2}><input value={f.descrizione || ""} onChange={e => s("descrizione", e.target.value)} placeholder="Es. compensi di gestione maggio 2026" /></FF>
         <FF label="Periodo da"><input type="date" value={f.periodo_da || ""} onChange={e => s("periodo_da", e.target.value)} /></FF>
         <FF label="Periodo a"><input type="date" value={f.periodo_a || ""} onChange={e => s("periodo_a", e.target.value)} /></FF>
@@ -2873,8 +2198,8 @@ function EntrataTab({ proprieta, onChanged, setMsg }) {
                 <td style={{ ...C_tdS(), maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.oggetto}>{f.oggetto || "—"}</td>
                 <td style={C_tdS()}>{f.numero_fattura || "—"}</td>
                 <td style={C_tdS()}><span className="tag">{f.categoria || "altro"}</span></td>
-                <td style={{ ...C_tdS(1), fontWeight: 600, whiteSpace: "nowrap" }}>{f.importo_totale != null ? C_valuta(C_num(f.importo_totale), f.valuta) : "—"}{f.valuta && f.valuta !== "EUR" && <span className="tag" style={{ marginLeft: 6, fontSize: 9, color: "#b8860b", borderColor: "#6366F1" }}>{f.valuta}</span>}</td>
-                <td style={C_tdS()}><span className="pill" style={{ background: f.stato === "registrata" ? "#2d6a4f" : f.stato === "ignorata" ? "#888" : "#6366F1" }}>{f.stato.replace("_", " ")}</span></td>
+                <td style={{ ...C_tdS(1), fontWeight: 600, whiteSpace: "nowrap" }}>{f.importo_totale != null ? C_valuta(C_num(f.importo_totale), f.valuta) : "—"}{f.valuta && f.valuta !== "EUR" && <span className="tag" style={{ marginLeft: 6, fontSize: 9, color: "#b8860b", borderColor: "#d69c31" }}>{f.valuta}</span>}</td>
+                <td style={C_tdS()}><span className="pill" style={{ background: f.stato === "registrata" ? "#2d6a4f" : f.stato === "ignorata" ? "#888" : "#d69c31" }}>{f.stato.replace("_", " ")}</span></td>
                 <td style={{ ...C_tdS(1), whiteSpace: "nowrap" }}>
                   <a href={`https://mail.google.com/mail/u/0/#all/${f.thread_id}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none", marginRight: 8 }}>Email →</a>
                   {f.stato === "da_registrare" && <>
@@ -2895,7 +2220,7 @@ function EntrataTab({ proprieta, onChanged, setMsg }) {
 
 /* ============ SEZIONE NOTIFICHE: posta Gmail classificata per priorità ============ */
 /* I dati arrivano dalla tabella email_notifiche, alimentata ogni ora dalla sync Gmail (Cowork). */
-const PRIO_INFO = { 3: { label: "Alta", color: "#c0392b" }, 2: { label: "Media", color: "#6366F1" }, 1: { label: "Bassa", color: "#8a8a8a" } };
+const PRIO_INFO = { 3: { label: "Alta", color: "#c0392b" }, 2: { label: "Media", color: "#d69c31" }, 1: { label: "Bassa", color: "#8a8a8a" } };
 const N_quando = (d) => {
   if (!d) return "—";
   const t = new Date(d), ore = (Date.now() - t.getTime()) / 36e5;
@@ -3022,7 +2347,7 @@ function parseCSV(t) {
   if (f.length || row.length) { row.push(f); rows.push(row); }
   return rows;
 }
-const TICKET_STATO_COLOR = { "completata": "#2d6a4f", "in corso": "#1d6fa4", "in attesa": "#e07b39", "da fare": "#6366F1", "aperto": "#6366F1", "annullata": "#888" };
+const TICKET_STATO_COLOR = { "completata": "#2d6a4f", "in corso": "#1d6fa4", "in attesa": "#e07b39", "da fare": "#d69c31", "aperto": "#d69c31", "annullata": "#888" };
 
 function AttivitaView() {
   const [rows, setRows] = useState([]);
@@ -3321,13 +2646,9 @@ function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
   const inArrivo = (proprieta || []).filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato));
   const eventi = [...conData.slice(-8)];
 
-  // Arrivi recenti: restano in cima finché non li si è guardati e assegnati
-  const novita = (proprieta || []).filter(appenaArrivata)
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
   const milestoneNext = [25, 40, 50, 75, 100].find(m => m > totale) || 100;
   const obiettivi = [
-    inArrivo.length ? { t: `Lanciare ${inArrivo.length} immobili in pipeline`, s: "in onboarding (mandato/lancio)", c: "#6366F1", go: "lancio" } : null,
+    inArrivo.length ? { t: `Lanciare ${inArrivo.length} immobili in pipeline`, s: "in onboarding (mandato/lancio)", c: "#d69c31", go: "lancio" } : null,
     stats.senzaCin ? { t: `Ottenere il CIN per ${stats.senzaCin} immobili attivi`, s: "CIN mancante", c: "#e07b39", go: "proprieta" } : null,
     { t: `Raggiungere ${milestoneNext} immobili`, s: `mancano ${milestoneNext - totale} immobili`, c: "#1d6fa4", go: "proprieta" },
     { t: `Obiettivo finale: ${OBIETTIVO_IMMOBILI} immobili`, s: `mancano ${mancanti}`, c: "#2d6a4f", go: "proprieta" },
@@ -3335,27 +2656,6 @@ function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
 
   return (
     <>
-      {novita.length > 0 && (
-        <div style={{ background: "var(--white)", border: "1px solid rgba(22,101,52,.3)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 16, marginBottom: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#166534", marginBottom: 8 }}>
-            ✨ {novita.length} nuov{novita.length === 1 ? "o immobile" : "i immobili"} negli ultimi {GIORNI_NOVITA} giorni
-          </div>
-          {novita.map(p => (
-            <div key={p.id} onClick={() => onApriProp && onApriProp(p)}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderTop: "1px solid var(--cd)", cursor: "pointer", flexWrap: "wrap" }}>
-              <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 600 }}>{p.nome}</span>
-                <span style={{ fontSize: 11, color: "var(--gray)", marginLeft: 6 }}>{[p.citta, p.provincia && `(${p.provincia})`].filter(Boolean).join(" ")}</span>
-              </div>
-              <span style={{ fontSize: 11, color: "var(--gray)" }}>
-                {p.agente ? `portato da ${p.agente}` : "inserito internamente"} · {new Date(p.created_at).toLocaleDateString("it-IT")}
-              </span>
-              {!p.gestore_interno && <span className="tag" style={{ background: "#FEF3C7", color: "#92400E", borderColor: "transparent" }}>da assegnare</span>}
-            </div>
-          ))}
-        </div>
-      )}
-
       <div style={{ marginBottom: 8 }}>
         <h1 style={{ fontSize: 26, fontWeight: 700 }}>Valente Living · Dashboard</h1>
         <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Dove siamo e dove stiamo andando</p>
@@ -3367,12 +2667,12 @@ function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
           <div>
             <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 6 }}>Roadmap verso {OBIETTIVO_IMMOBILI} immobili</p>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-              <span style={{ fontFamily: "Inter", fontSize: 44, fontWeight: 700, lineHeight: 1 }}>{totale}</span>
+              <span style={{ fontFamily: "Playfair Display", fontSize: 44, fontWeight: 700, lineHeight: 1 }}>{totale}</span>
               <span style={{ fontSize: 16, color: "var(--gray)" }}>/ {OBIETTIVO_IMMOBILI}</span>
             </div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <span style={{ fontFamily: "Inter", fontSize: 40, fontWeight: 700, color: "var(--gold)" }}>{pct}%</span>
+            <span style={{ fontFamily: "Playfair Display", fontSize: 40, fontWeight: 700, color: "var(--gold)" }}>{pct}%</span>
             <p style={{ fontSize: 11, color: "var(--gray)" }}>mancano {mancanti} immobili</p>
           </div>
         </div>
@@ -3380,9 +2680,9 @@ function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
           <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg, #2d6a4f, var(--gold))", borderRadius: 999, transition: "width .6s ease" }} />
         </div>
         <div style={{ display: "flex", gap: 16, marginTop: 16, flexWrap: "wrap" }}>
-          {[{ n: stats.attivi, l: "attivi", c: "#2d6a4f" }, { n: stats.onboarding, l: "in lancio", c: "#6366F1" }, { n: owners.length, l: "proprietari", c: "#1d6fa4" }, { n: stats.senzaCin, l: "senza CIN", c: "#e07b39" }].map((k, i) => (
+          {[{ n: stats.attivi, l: "attivi", c: "#2d6a4f" }, { n: stats.onboarding, l: "in lancio", c: "#d69c31" }, { n: owners.length, l: "proprietari", c: "#1d6fa4" }, { n: stats.senzaCin, l: "senza CIN", c: "#e07b39" }].map((k, i) => (
             <div key={i} style={{ flex: "1 1 90px", background: "var(--cream)", border: "1px solid var(--gl)", padding: "10px 12px" }}>
-              <div style={{ fontSize: 22, fontWeight: 700, color: k.c, fontFamily: "Inter" }}>{k.n}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: k.c, fontFamily: "Playfair Display" }}>{k.n}</div>
               <div style={{ fontSize: 10, color: "var(--gray)", textTransform: "uppercase", letterSpacing: ".06em" }}>{k.l}</div>
             </div>
           ))}
@@ -3441,7 +2741,7 @@ function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
   );
 }
 
-function App({ utente, onLogout }) {
+function App() {
   const [view, setView] = useState("home");
   const [proprieta, setProprieta] = useState([]);
   const [owners, setOwners] = useState([]);
@@ -3463,88 +2763,8 @@ function App({ utente, onLogout }) {
   const [leads, setLeads] = useState([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
   const [leadsError, setLeadsError] = useState("");
-  const [valutaPrefill, setValutaPrefill] = useState("");
-
-  /* Dalla scheda lead al valutatore: portiamo di là tutto quello che il proprietario
-     ha gia' scritto sul sito, cosi' resta solo da cercare l'indirizzo su BNBCalc. */
-  function valutaLead(l) {
-    const g = l.grezzo || {};
-    const q = new URLSearchParams();
-    q.set("lead", "1");
-    const metti = (k, v) => { if (v) q.set(k, String(v)); };
-    metti("comune", g.citta);
-    metti("indirizzo", g.indirizzo);
-    metti("camere", g.camere);
-    metti("mq", g.mq);
-    metti("tipo", g.tipo);
-    metti("formula", g.formula);
-    metti("stato", g.stato_immobile);
-    metti("specs", g.caratteristiche);
-    metti("nome", g.nome);
-    metti("telefono", g.telefono);
-    metti("email", g.email);
-    metti("lead_id", String(l.id || "").replace(/^sito-/, ""));
-    setValutaPrefill(q.toString());
-    setView("valutazione");
-  }
   const [notifStato, setNotifStato] = useState("idle"); // idle|loading|on|denied|unsupported (v20)
   const [notifCount, setNotifCount] = useState(0); // notifiche email non gestite
-  // Tendine del menu: quali gruppi sono aperti (ricordato sul dispositivo)
-  const [gruppiAperti, setGruppiAperti] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("vl_nav_gruppi")) || { Operativo: true, Documenti: false }; }
-    catch { return { Operativo: true, Documenti: false }; }
-  });
-  const toggleGruppo = (g) => setGruppiAperti(s => {
-    const n = { ...s, [g]: !s[g] };
-    try { localStorage.setItem("vl_nav_gruppi", JSON.stringify(n)); } catch (_) {}
-    return n;
-  });
-
-  const [sonoMaster, setSonoMaster] = useState(false);   // gestisce accessi
-  const [vedoTutto, setVedoTutto] = useState(false);     // master o socio
-  const [ruoloLetto, setRuoloLetto] = useState(false);   // ruolo già verificato sul database
-  const [sonoAgente, setSonoAgente] = useState(false);   // agente esterno: vista ridotta
-  const [inAttesa, setInAttesa] = useState(false);       // registrato ma non ancora approvato
-  const [mioNome, setMioNome] = useState("");            // nome con cui firmo i documenti caricati
-  const [gestori, setGestori] = useState(GESTORI);       // nomi dall'anagrafica collaboratori
-
-  const [coloriGestori, setColoriGestori] = useState({});
-  const [daApprovare, setDaApprovare] = useState(0);     // agenti registrati in attesa di via libera
-
-  // Registrazioni agenti in sospeso: il titolare le vede subito nel menu, senza cercarle
-  useEffect(() => {
-    if (!sonoMaster) { setDaApprovare(0); return; }
-    let vivo = true;
-    const conta = () => sb.get("collaboratori", "?select=id&stato_approvazione=eq.in_attesa")
-      .then(({ data }) => { if (vivo && Array.isArray(data)) setDaApprovare(data.length); })
-      .catch(() => {});
-    conta();
-    const t = setInterval(conta, 120000); // ricontrolla ogni due minuti
-    return () => { vivo = false; clearInterval(t); };
-  }, [sonoMaster, view]);
-
-  // Elenco assegnatari sempre allineato a chi è davvero nel team
-  useEffect(() => {
-    sb.get("collaboratori", "?select=nome,attivo,colore&order=nome.asc").then(({ data }) => {
-      if (Array.isArray(data) && data.length) {
-        const vivi = data.filter(c => c.attivo !== false);
-        setGestori(vivi.map(c => c.nome));
-        setColoriGestori(Object.fromEntries(vivi.map(c => [c.nome, c.colore || "#94A3B8"])));
-      }
-    }).catch(() => {});
-  }, [utente]);
-
-  const coloreGestore = useCallback((n) => coloriGestori[n] || "#94A3B8", [coloriGestori]);
-
-  // Chi non vede tutto parte dai propri immobili: la dashboard non fa parte del suo menu
-  useEffect(() => {
-    if (!ruoloLetto) return;
-    // L'agente ha due sole sezioni: i suoi immobili e il valutatore
-    if (sonoAgente) { if (view !== "portale" && view !== "valutazione") setView("portale"); return; }
-    if (!vedoTutto && ["home", "notifiche", "gestione", "lead", "lancio", "smistamento", "ricorrenti", "archivio", "team", "portale"].includes(view)) {
-      setView("proprieta");
-    }
-  }, [vedoTutto, sonoAgente, ruoloLetto, view]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -3554,30 +2774,6 @@ function App({ utente, onLogout }) {
     if (Array.isArray(rN.data)) setNotifCount(rN.data.length);
     setLoading(false);
   }, []);
-
-  // Assegna il property manager direttamente dall'elenco, senza aprire la scheda
-  // (definita DOPO load, altrimenti la si userebbe prima che esista)
-  const assegnaGestore = useCallback(async (p, nome) => {
-    setProprieta(ps => ps.map(x => x.id === p.id ? { ...x, gestore_interno: nome || null } : x)); // risposta immediata
-    const { ok } = await sb.patch("proprieta", p.id, { gestore_interno: nome || null });
-    if (!ok) { alert("Assegnazione non riuscita."); load(); }
-  }, [load]);
-
-  // Livello di accesso dell'utente collegato: decide cosa può vedere
-  useEffect(() => {
-    if (!utente) return;
-    sb.get("collaboratori", `?select=nome,ruolo_accesso,stato_approvazione&user_id=eq.${utente.id}`).then(({ data }) => {
-      const c = Array.isArray(data) && data[0] ? data[0] : null;
-      const r = c ? c.ruolo_accesso : null;
-      setMioNome(c ? c.nome : "");
-      const attesa = c && c.stato_approvazione === "in_attesa";
-      setSonoMaster(r === "master" && !attesa);
-      setVedoTutto((r === "master" || r === "socio") && !attesa);
-      setSonoAgente(r === "agente");
-      setInAttesa(!!attesa);
-      setRuoloLetto(true);
-    }).catch(() => { setSonoMaster(false); setVedoTutto(false); setRuoloLetto(true); });
-  }, [utente]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -3596,52 +2792,15 @@ function App({ utente, onLogout }) {
 
   const loadLeads = useCallback(async () => {
     setLeadsLoading(true); setLeadsError("");
-    let daHubspot = [];
-    let erroreHubspot = "";
-    // 1) contatti assegnati a me su HubSpot
     try {
       const r = await fetch("/.netlify/functions/hubspot", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "leads" }),
       });
       const data = await r.json();
-      if (!r.ok) erroreHubspot = data.error || "Errore nel caricamento dei lead HubSpot.";
-      else daHubspot = (data.leads || []).map(l => ({ ...l, fonte: "hubspot" }));
-    } catch { erroreHubspot = "Impossibile contattare HubSpot."; }
-
-    // 2) richieste arrivate dal sito vetrina (tabella lead_sito)
-    let daSito = [];
-    try {
-      const { data, ok } = await sb.get("lead_sito", "?select=*&order=created_at.desc&limit=200");
-      if (ok && Array.isArray(data)) {
-        daSito = data.map(l => ({
-          id: "sito-" + l.id,
-          fonte: "sito",
-          nome: l.nome || l.email || "Richiesta dal sito",
-          email: l.email || "",
-          telefono: l.telefono || "",
-          citta: l.citta || "",
-          azienda: "",
-          stato: l.stato || "nuovo",
-          creato: l.created_at,
-          indirizzo: [l.indirizzo, l.citta].filter(Boolean).join(", "),
-          dettaglio: [l.tipo, l.situazione, l.formula, l.camere ? l.camere + " camere" : null, l.mq ? l.mq + " m²" : null, l.stato_immobile, l.motivo]
-            .filter(Boolean).join(" · "),
-          caratteristiche: l.caratteristiche || "",
-          grezzo: { tipo: l.tipo || "", citta: l.citta || "", indirizzo: l.indirizzo || "",
-                    camere: l.camere || "", mq: l.mq || "", formula: l.formula || "",
-                    stato_immobile: l.stato_immobile || "", caratteristiche: l.caratteristiche || "",
-                    nome: l.nome || "", telefono: l.telefono || "", email: l.email || "" },
-          messaggio: l.messaggio || l.note || "",
-          campagna: (l.tracking && (l.tracking.utm_campaign || l.tracking.utm_source)) || "",
-          fotoN: l.foto_n || 0,
-          foto: Array.isArray(l.foto_urls) ? l.foto_urls : [],
-        }));
-      }
-    } catch { /* se il sito non risponde mostro comunque HubSpot */ }
-
-    if (erroreHubspot && !daSito.length) { setLeadsError(erroreHubspot); setLeads([]); }
-    else { setLeadsError(erroreHubspot); setLeads([...daSito, ...daHubspot]); }
+      if (!r.ok) { setLeadsError(data.error || "Errore nel caricamento dei lead."); setLeads([]); }
+      else setLeads(data.leads || []);
+    } catch { setLeadsError("Impossibile contattare HubSpot. Riprova."); setLeads([]); }
     setLeadsLoading(false);
   }, []);
 
@@ -3700,36 +2859,16 @@ function App({ utente, onLogout }) {
   const navItems = [
     { id: "home", label: "Home", icon: "🏛️", count: null },
     { id: "notifiche", label: "Notifiche", icon: "🔔", count: notifCount, alert: true },
-    // Gestione accessi: subito in alto, visibile solo al titolare
-    ...(sonoMaster ? [{ id: "team", label: "Team & Accessi", icon: "👥", count: daApprovare || null, alert: daApprovare > 0 }] : []),
-    /* I property manager hanno una vista essenziale: solo i loro immobili,
-       i proprietari collegati, i documenti e la compliance. */
     { id: "gestione", label: "Gestione & Contabilità", icon: "📊", count: null, group: "Operativo" },
     { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale, group: "Operativo" },
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length, group: "Operativo" },
     { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding, group: "Operativo" },
     { id: "lead", label: "Lead", icon: "🎯", count: null, group: "Operativo" },
     { id: "compliance", label: "Compliance", icon: "✅", count: stats.senzaCin > 0 ? stats.senzaCin : null, group: "Operativo" },
-    { id: "schede", label: "Schede Immobili", icon: "🏠", count: null, group: "Operativo" },
-    { id: "ecosistema", label: "Ecosistema", icon: "🌐", count: null, group: "Operativo" },
-    { id: "agenti-ai", label: "Agenti AI", icon: "🕹️", count: null, group: "Operativo" },
-    { id: "manuale", label: "Manuale operativo", icon: "📘", count: null, group: "Operativo" },
     { id: "smistamento", label: "Smistamento doc", icon: "📥", count: null, group: "Documenti" },
     { id: "archivio", label: "Archivio", icon: "🗂️", count: null, group: "Documenti" },
-    { id: "ricorrenti", label: "Ricorrenti", icon: "📅", count: null, group: "Documenti" },
     { id: "guida", label: "Guida", icon: "📚", count: null, group: "Documenti" },
-    // Solo il titolare gestisce accessi e permessi
-    // L'agente esterno ha un'unica sezione: i suoi immobili con la checklist documenti
-    ...(sonoAgente ? [{ id: "portale", label: "I miei immobili", icon: "🏠", count: proprieta.length || null }] : []),
-    // Il valutatore serve a tutti: l'agente lo usa prima ancora di avere immobili in gestione
-    { id: "valutazione", label: "Valuta immobile", icon: "📐", count: null, group: "Documenti" },
-  ].filter(i => vedoTutto
-    ? true
-    : sonoAgente
-      ? (i.id === "portale" || i.id === "valutazione")
-      : (ruoloLetto && !mioNome)
-        ? false // account senza scheda in Team: nessuna voce, c'è il messaggio a schermo
-        : ["proprieta", "proprietari", "compliance", "guida", "valutazione"].includes(i.id)); // property manager
+  ];
 
   return (
     <>
@@ -3738,21 +2877,21 @@ function App({ utente, onLogout }) {
         {/* Mobile top bar */}
         <div className="topbar">
           <button onClick={() => setSidebarOpen(true)} aria-label="Apri menu" style={{ background: "none", border: "none", color: "#fff", fontSize: 24, lineHeight: 1, padding: 4, cursor: "pointer" }}>☰</button>
-          <span style={{ fontFamily: "Inter", fontSize: 16, fontWeight: 700 }}>Valente <span style={{ color: "var(--gold)" }}>Living</span></span>
+          <span style={{ fontFamily: "Playfair Display", fontSize: 16, fontWeight: 700 }}>Valente <span style={{ color: "var(--gold)" }}>Living</span></span>
         </div>
         {sidebarOpen && <div className="backdrop" onClick={() => setSidebarOpen(false)} />}
         {/* Sidebar */}
         <aside className={"sidebar" + (sidebarOpen ? " open" : "")}>
           <div style={{ padding: "28px 20px 20px" }}>
-            <span style={{ fontFamily: "Inter", fontSize: 13, fontWeight: 700, letterSpacing: ".15em", color: "var(--gold)", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Valente</span>
-            <span style={{ fontFamily: "Inter", fontSize: 22, fontWeight: 700, lineHeight: 1, display: "block" }}>Living</span>
+            <span style={{ fontFamily: "Playfair Display", fontSize: 13, fontWeight: 700, letterSpacing: ".15em", color: "var(--gold)", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Valente</span>
+            <span style={{ fontFamily: "Playfair Display", fontSize: 22, fontWeight: 700, lineHeight: 1, display: "block" }}>Living</span>
             <span style={{ fontSize: 9, letterSpacing: ".15em", textTransform: "uppercase", color: "rgba(255,255,255,.4)" }}>Property Manager v3.0</span>
           </div>
           <div className="gl" style={{ margin: "0 20px 20px" }} />
           <div style={{ padding: "0 20px 20px" }}>
             <div style={{ background: "rgba(255,255,255,.05)", padding: "12px 14px" }}>
               <p style={{ fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: "rgba(255,255,255,.4)", marginBottom: 8 }}>Portfolio</p>
-              <div style={{ fontSize: 28, fontFamily: "Inter", fontWeight: 700, color: "var(--gold)", lineHeight: 1 }}>{stats.totale}</div>
+              <div style={{ fontSize: 28, fontFamily: "Playfair Display", fontWeight: 700, color: "var(--gold)", lineHeight: 1 }}>{stats.totale}</div>
               <p style={{ fontSize: 10, color: "rgba(255,255,255,.5)", marginTop: 2 }}>proprietà totali</p>
               <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <div style={{ textAlign: "center" }}><div style={{ fontSize: 14, fontWeight: 700, color: "#2d6a4f" }}>{stats.attivi}</div><div style={{ fontSize: 8, color: "rgba(255,255,255,.4)" }}>attivi</div></div>
@@ -3763,38 +2902,15 @@ function App({ utente, onLogout }) {
             </div>
           </div>
           <nav style={{ flex: 1, padding: "0 12px" }}>
-            {(() => {
-              const voce = (item) => (
-                <button key={item.id} className={view === item.id ? "nav-on" : ""} onClick={() => { setView(item.id); setSearch(""); setFStato(""); setFContratto(""); setFGestore(""); setSidebarOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", background: view === item.id ? "rgba(99,102,241,.15)" : "transparent", border: view === item.id ? "1px solid rgba(99,102,241,.3)" : "1px solid transparent", color: view === item.id ? "var(--gold)" : "rgba(255,255,255,.6)", fontSize: 13, fontWeight: view === item.id ? 600 : 400, marginBottom: 4, transition: "all .2s", textAlign: "left" }}>
+            {navItems.map((item, i) => (
+              <Fragment key={item.id}>
+                {item.group && (i === 0 || navItems[i - 1].group !== item.group) && <div className="nav-group">{item.group}</div>}
+                <button className={view === item.id ? "nav-on" : ""} onClick={() => { setView(item.id); setSearch(""); setFStato(""); setFContratto(""); setFGestore(""); setSidebarOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 12px", background: view === item.id ? "rgba(214,156,49,.15)" : "transparent", border: view === item.id ? "1px solid rgba(214,156,49,.3)" : "1px solid transparent", color: view === item.id ? "var(--gold)" : "rgba(255,255,255,.6)", fontSize: 13, fontWeight: view === item.id ? 600 : 400, marginBottom: 4, transition: "all .2s", textAlign: "left" }}>
                   <span>{item.icon}</span><span style={{ flex: 1 }}>{item.label}</span>
                   {item.count !== null && <span style={{ fontSize: 10, background: item.alert && item.count > 0 ? "var(--red)" : "rgba(255,255,255,.1)", color: item.alert && item.count > 0 ? "#fff" : undefined, fontWeight: item.alert && item.count > 0 ? 700 : undefined, padding: "1px 6px", borderRadius: 10 }}>{item.count}</span>}
                 </button>
-              );
-              const liberi = navItems.filter(i => !i.group);
-              const gruppi = [...new Set(navItems.filter(i => i.group).map(i => i.group))];
-              return (
-                <>
-                  {liberi.map(voce)}
-                  {gruppi.map(g => {
-                    const dentro = navItems.filter(i => i.group === g);
-                    // tendina aperta anche se contiene la sezione attiva (così non "sparisce")
-                    const aperto = !!gruppiAperti[g] || dentro.some(i => i.id === view);
-                    const avvisi = dentro.reduce((s, i) => s + (i.alert && i.count > 0 ? i.count : 0), 0);
-                    return (
-                      <Fragment key={g}>
-                        <button onClick={() => toggleGruppo(g)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 6px", background: "transparent", border: "none", cursor: "pointer", color: "rgba(255,255,255,.45)", fontSize: 10.5, fontWeight: 700, letterSpacing: ".12em", textTransform: "uppercase", textAlign: "left" }}>
-                          <span style={{ display: "inline-block", transition: "transform .15s", transform: aperto ? "rotate(90deg)" : "none", fontSize: 9 }}>▶</span>
-                          <span style={{ flex: 1 }}>{g}</span>
-                          {!aperto && avvisi > 0 && <span style={{ fontSize: 9.5, background: "var(--red)", color: "#fff", fontWeight: 700, padding: "1px 6px", borderRadius: 10 }}>{avvisi}</span>}
-                          {!aperto && <span style={{ fontSize: 9.5, color: "rgba(255,255,255,.3)" }}>{dentro.length}</span>}
-                        </button>
-                        {aperto && dentro.map(voce)}
-                      </Fragment>
-                    );
-                  })}
-                </>
-              );
-            })()}
+              </Fragment>
+            ))}
           </nav>
           {notifStato !== "unsupported" && (
             <div style={{ padding: "0 20px 4px" }}>
@@ -3805,86 +2921,37 @@ function App({ utente, onLogout }) {
             </div>
           )}
           <div style={{ padding: "12px 20px", borderTop: "1px solid rgba(255,255,255,.08)" }}>
-            <button onClick={() => { setAiOpen(true); setSidebarOpen(false); }} style={{ width: "100%", padding: "10px", background: "linear-gradient(135deg, #6366F1, #818CF8)", border: "none", color: "#fff", fontSize: 12, fontWeight: 700, letterSpacing: ".02em", textTransform: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <button onClick={() => { setAiOpen(true); setSidebarOpen(false); }} style={{ width: "100%", padding: "10px", background: "linear-gradient(135deg, #D69C31, #f0c84a)", border: "none", color: "var(--black)", fontSize: 12, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               ✦ Assistente AI
             </button>
           </div>
-          {/* Utente collegato + uscita */}
-          <div style={{ padding: "10px 20px 12px", borderTop: "1px solid rgba(255,255,255,.08)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 26, height: 26, borderRadius: "50%", background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
-                {String((utente && utente.email) || "?")[0].toUpperCase()}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 11, color: "rgba(255,255,255,.75)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(utente && utente.email) || "—"}</div>
-              </div>
-              <button onClick={onLogout} title="Esci dal gestionale"
-                style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", color: "rgba(255,255,255,.7)", fontSize: 10.5, fontWeight: 600, padding: "5px 9px" }}>Esci</button>
-            </div>
-            <p style={{ fontSize: 9, color: "rgba(255,255,255,.3)", textAlign: "center", marginTop: 10 }}>v3.0 · Valente Living SRL</p>
+          <div style={{ padding: "12px 20px" }}>
+            <p style={{ fontSize: 9, color: "rgba(255,255,255,.3)", textAlign: "center" }}>v3.0 · Valente Living SRL</p>
           </div>
         </aside>
 
-        {/* Messaggi AI Ospiti: sezione a sé, sempre a portata di mano in alto a destra */}
-        {vedoTutto && view !== "messaggiai" && (
-          <button className="msgai-top" onClick={() => { setView("messaggiai"); setSidebarOpen(false); }} title="Apri Messaggi AI Ospiti">
-            🤖 Messaggi AI Ospiti
+        {/* Campanella notifiche in alto al centro */}
+        {view !== "notifiche" && notifCount > 0 && (
+          <button className="notif-top" onClick={() => { setView("notifiche"); setSidebarOpen(false); }} title="Apri le notifiche">
+            🔔 Notifiche <span className="nbadge">{notifCount}</span>
           </button>
         )}
 
         {/* Main */}
         <main className="main">
-          {/* Account senza scheda in Team: senza un profilo collegato non vedrebbe nulla
-              e ogni salvataggio verrebbe rifiutato. Meglio dirlo che lasciarlo a vuoto. */}
-          {ruoloLetto && !mioNome && !vedoTutto && !inAttesa ? (
-            <div className="fi" style={{ maxWidth: 520, margin: "60px auto", textAlign: "center", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 16, boxShadow: "var(--shadow)", padding: 40 }}>
-              <div style={{ fontSize: 34, marginBottom: 12 }}>🔒</div>
-              <h2 style={{ fontSize: 19, marginBottom: 8 }}>Accesso non collegato a nessuna scheda</h2>
-              <p style={{ fontSize: 13, color: "var(--gray)", lineHeight: 1.6 }}>
-                Questo account esiste ma non è associato a nessuna persona del team, quindi non può vedere né salvare dati.
-                Chiedi al titolare di collegarlo da <strong>Team &amp; Accessi</strong>.
-              </p>
-              <p style={{ fontSize: 11.5, color: "var(--gray)", marginTop: 14 }}>{utente && utente.email}</p>
-              <button className="bg" onClick={onLogout} style={{ marginTop: 16, fontSize: 12 }}>Esci</button>
-            </div>
-          ) :
-          /* Il valutatore resta accessibile anche a chi aspetta l'approvazione:
-              un agente può valutare un immobile prima ancora di averne in gestione. */
-           inAttesa && view === "valutazione" ? <Valutazione nomeAgente={mioNome} prefill={valutaPrefill} vedoTutto={vedoTutto} /> :
-           inAttesa ? (
-            <div className="fi" style={{ maxWidth: 520, margin: "60px auto", textAlign: "center", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 16, boxShadow: "var(--shadow)", padding: 40 }}>
-              <div style={{ fontSize: 34, marginBottom: 12 }}>⏳</div>
-              <h2 style={{ fontSize: 19, marginBottom: 8 }}>Accesso in attesa di approvazione</h2>
-              <p style={{ fontSize: 13, color: "var(--gray)", lineHeight: 1.6 }}>
-                La tua registrazione è arrivata. Valente Living deve approvarla e collegarti agli immobili di tua competenza:
-                appena fatto, entrando qui li troverai. Per sollecitare, scrivi al tuo referente.
-              </p>
-              <button className="bp" onClick={() => setView("valutazione")} style={{ marginTop: 18, fontSize: 12 }}>
-                Intanto valuta un immobile →
-              </button>
-            </div>
-          ) : loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
+          {loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
             view === "home" ? <HomeView proprieta={proprieta} owners={owners} stats={stats} onVai={(v) => setView(v)} onApriProp={setDetP} /> :
             view === "gestione" ? <ContabilitaView proprieta={proprieta} owners={owners} /> :
             view === "notifiche" ? <NotificheView onDataChanged={load} /> :
-            view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} onEdit={setModalP} onApriScheda={setDetP} /> :
+            view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} onEdit={setModalP} /> :
             view === "smistamento" ? <Smistamento proprieta={proprieta} owners={owners} onDataChanged={load} /> :
             view === "archivio" ? <Archivio proprieta={proprieta} owners={owners} /> :
             view === "guida" ? <Guida /> :
             view === "compliance" ? <Compliance proprieta={proprieta} owners={owners} onPatch={(id, patch) => sb.patch("proprieta", id, patch)} onDataChanged={load} /> :
-            view === "schede" ? <Schede /> :
-            view === "messaggiai" ? <MessaggiAI /> :
-            view === "ecosistema" ? <Ecosistema /> :
-            view === "agenti-ai" ? <AgentiAI /> :
-            view === "manuale" ? <Manuale /> :
-            view === "ricorrenti" ? <Ricorrenti proprieta={proprieta} owners={owners} /> :
-            view === "team" ? <Team proprieta={proprieta} sonoMaster={sonoMaster} onDataChanged={load} /> :
-            view === "portale" ? <PortaleAgente proprieta={proprieta} nomeAgente={mioNome} sb={sb} onDataChanged={load} /> :
-            view === "valutazione" ? <Valutazione nomeAgente={mioNome} prefill={valutaPrefill} vedoTutto={vedoTutto} /> :
             view === "lead" ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
-                  <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Lead</h1><p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Richieste dal sito + contatti assegnati a te su HubSpot{leads.length ? ` · ${leads.length}` : ""}</p></div>
+                  <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Lead</h1><p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Contatti assegnati a te su HubSpot{leads.length ? ` · ${leads.length}` : ""}</p></div>
                   <button className="bg" onClick={loadLeads} disabled={leadsLoading}>{leadsLoading ? "Aggiorno…" : "↻ Aggiorna"}</button>
                 </div>
                 <div className="gl" style={{ marginBottom: 24 }} />
@@ -3896,56 +2963,20 @@ function App({ utente, onLogout }) {
                 ) : leadsLoading ? (
                   <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento lead da HubSpot…</div>
                 ) : leads.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessun lead: n\u00e9 dal sito n\u00e9 assegnato a te su HubSpot.</div>
+                  <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessun lead assegnato a te.</div>
                 ) : (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
                     {leads.map(l => (
                       <div key={l.id} className="card fi" style={{ cursor: "default" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
                           <h3 style={{ fontSize: 15, fontWeight: 600 }}>{l.nome}</h3>
-                          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                            {l.fonte === "sito" && <span className="tag" style={{ background: "var(--gold)", color: "#fff" }}>Sito</span>}
-                            {l.stato && <span className="tag">{l.stato}</span>}
-                          </div>
+                          {l.stato && <span className="tag">{l.stato}</span>}
                         </div>
                         {l.email && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 4, wordBreak: "break-all" }}>✉ {l.email}</p>}
                         {l.telefono && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 4 }}>📞 {l.telefono}</p>}
-                        {l.fonte === "sito" && l.indirizzo ? (
-                          <p style={{ fontSize: 12, marginTop: 2 }}>📍 <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(l.indirizzo)}`} target="_blank" rel="noreferrer" style={{ color: "var(--gold)", textDecoration: "none" }}>{l.indirizzo}</a></p>
-                        ) : ((l.citta || l.azienda) && <p style={{ fontSize: 12, color: "var(--gray)" }}>{[l.azienda, l.citta].filter(Boolean).join(" · ")}</p>)}
-                        {l.dettaglio && <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{l.dettaglio}</p>}
-                        {l.caratteristiche && <p style={{ fontSize: 11.5, color: "var(--gray)", marginTop: 3, display: "flex", flexWrap: "wrap", gap: 5 }}>
-                          {l.caratteristiche.split(", ").filter(Boolean).map((c, i) => (
-                            <span key={i} style={{ background: "rgba(192,148,86,.14)", color: "#8a6a2f", borderRadius: 20, padding: "2px 9px", fontSize: 11 }}>{c}</span>
-                          ))}
-                        </p>}
-                        {l.messaggio && <p style={{ fontSize: 12, marginTop: 8, lineHeight: 1.45 }}>{l.messaggio}</p>}
-                        {l.foto && l.foto.length > 0 && (
-                          <div style={{ marginTop: 10 }}>
-                            <p style={{ fontSize: 11, color: "var(--gray)", marginBottom: 6 }}>📷 {l.foto.length} foto allegate</p>
-                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                              {l.foto.map((u, i) => (
-                                <a key={i} href={u} target="_blank" rel="noreferrer" title="Apri a schermo intero">
-                                  <img src={u} alt={`Foto ${i + 1}`} loading="lazy"
-                                       style={{ width: 62, height: 62, objectFit: "cover", borderRadius: 6, border: "1px solid var(--cd)", display: "block" }} />
-                                </a>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {(!l.foto || !l.foto.length) && l.fotoN > 0 && <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 6 }}>📷 {l.fotoN} foto allegate</p>}
-                        {l.campagna && <p style={{ fontSize: 11, color: "var(--gold)", marginTop: 6 }}>campagna: {l.campagna}</p>}
-                        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--cd)", display: "flex", gap: 14, flexWrap: "wrap" }}>
-                          {l.fonte === "sito" ? (
-                            <>
-                              {l.creato && <span style={{ fontSize: 11, color: "var(--gray)" }}>{new Date(l.creato).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>}
-                              <button onClick={() => valutaLead(l)} style={{ fontSize: 11, color: "#fff", background: "var(--gold)", fontWeight: 700, border: 0, borderRadius: 6, padding: "4px 11px", cursor: "pointer" }}>Valuta con BNBCalc →</button>
-                              {l.telefono && <a href={`https://wa.me/39${String(l.telefono).replace(/\D/g, "").replace(/^39/, "")}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>WhatsApp →</a>}
-                              {l.email && <a href={`mailto:${l.email}`} style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Email →</a>}
-                            </>
-                          ) : (
-                            <a href={`https://app.hubspot.com/contacts/25704633/record/0-1/${l.id}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Apri su HubSpot →</a>
-                          )}
+                        {(l.citta || l.azienda) && <p style={{ fontSize: 12, color: "var(--gray)" }}>{[l.azienda, l.citta].filter(Boolean).join(" · ")}</p>}
+                        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--cd)" }}>
+                          <a href={`https://app.hubspot.com/contacts/25704633/record/0-1/${l.id}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Apri su HubSpot →</a>
                         </div>
                       </div>
                     ))}
@@ -3969,10 +3000,7 @@ function App({ utente, onLogout }) {
                 </div>
                 {ownVista === "elenco" ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {filtO.map(o => {
-                      const suoi = proprieta.filter(p => p.proprietario_id === o.id);
-                      return <OwnerRow key={o.id} o={o} pc={suoi.length} props={suoi} onClick={() => setDetO(o)} onApriProp={setDetP} />;
-                    })}
+                    {filtO.map(o => <OwnerRow key={o.id} o={o} pc={proprieta.filter(p => p.proprietario_id === o.id).length} onClick={() => setDetO(o)} />)}
                     {filtO.length === 0 && <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessun proprietario trovato.</div>}
                   </div>
                 ) : (
@@ -3982,7 +3010,7 @@ function App({ utente, onLogout }) {
                     return (
                       <div key={o.id} className="card fi" onClick={() => setDetO(o)}>
                         <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 12 }}>
-                          <div style={{ width: 42, height: 42, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: "Inter", fontSize: 14, fontWeight: 700, color: "var(--gold)" }}>{o.cognome?.[0]}{o.nome?.[0]}</span></div>
+                          <div style={{ width: 42, height: 42, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><span style={{ fontFamily: "Playfair Display", fontSize: 14, fontWeight: 700, color: "var(--gold)" }}>{o.cognome?.[0]}{o.nome?.[0]}</span></div>
                           <div><h3 style={{ fontSize: 15, fontWeight: 600 }}>{o.cognome} {o.nome}</h3><p style={{ fontSize: 11, color: "var(--gray)" }}>{o.citta || "—"}</p></div>
                         </div>
                         {o.codice_fiscale && <p style={{ fontSize: 11, fontFamily: "monospace", color: "var(--gray)", letterSpacing: ".06em", marginBottom: 6 }}>{o.codice_fiscale}</p>}
@@ -4007,7 +3035,7 @@ function App({ utente, onLogout }) {
                   <input placeholder="Cerca nome, città, proprietario, CIN..." value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 300, flex: 1 }} />
                   <select value={fStato} onChange={e => setFStato(e.target.value)} style={{ width: 150 }}><option value="">Tutti gli stati</option>{STATI.map(s => <option key={s}>{s}</option>)}</select>
                   <select value={fContratto} onChange={e => setFContratto(e.target.value)} style={{ width: 140 }}><option value="">Tutti contratti</option>{CONTRATTI.map(c => <option key={c}>{c}</option>)}</select>
-                  <select value={fGestore} onChange={e => setFGestore(e.target.value)} style={{ width: 130 }}><option value="">Tutti gestori</option>{gestori.map(g => <option key={g}>{g}</option>)}</select>
+                  <select value={fGestore} onChange={e => setFGestore(e.target.value)} style={{ width: 130 }}><option value="">Tutti gestori</option>{GESTORI.map(g => <option key={g}>{g}</option>)}</select>
                   <div style={{ display: "flex", gap: 6, marginLeft: "auto", alignItems: "stretch" }}>
                     <button onClick={() => setPropVista("griglia")} title="Vista a griglia" style={{ padding: "0 14px", border: "1px solid var(--gl)", background: propVista === "griglia" ? "var(--black)" : "var(--white)", color: propVista === "griglia" ? "var(--white)" : "var(--gray)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Griglia</button>
                     <button onClick={() => setPropVista("elenco")} title="Vista a elenco" style={{ padding: "0 14px", border: "1px solid var(--gl)", background: propVista === "elenco" ? "var(--black)" : "var(--white)", color: propVista === "elenco" ? "var(--white)" : "var(--gray)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Elenco</button>
@@ -4043,8 +3071,7 @@ function App({ utente, onLogout }) {
                         </div>
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          {g.items.map(p => <PropRow key={p.id} p={p} o={owners.find(x => x.id === p.proprietario_id)} onClick={() => setDetP(p)}
-                            gestori={gestori} coloreGestore={coloreGestore} onAssegna={assegnaGestore} />)}
+                          {g.items.map(p => <PropRow key={p.id} p={p} o={owners.find(x => x.id === p.proprietario_id)} onClick={() => setDetP(p)} />)}
                         </div>
                       )}
                     </div>
@@ -4079,13 +3106,8 @@ function App({ utente, onLogout }) {
             {detP.piattaforme?.length > 0 && <div style={{ padding: "8px 0", borderBottom: "1px solid var(--cd)" }}><span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", display: "block", marginBottom: 6 }}>Piattaforme</span><div style={{ display: "flex", gap: 6 }}>{detP.piattaforme.map(pp => <span key={pp} className="tag">{pp}</span>)}</div></div>}
             <DR label="Pulizie" val={[detP.personale_pulizie, detP.telefono_pulizie].filter(Boolean).join(" · ") || null} />
             {detP.note && <DR label="Note" val={detP.note} />}
-            <Allegati proprietaId={detP.id} linkProprietarioId={detP.proprietario_id}
-              etichette={{
-                prop: Object.fromEntries(proprieta.map(p => [String(p.id), p.nome])),
-                own: Object.fromEntries(owners.map(o => [String(o.id), `${o.cognome || ""} ${o.nome || ""}`.trim()])),
-              }} />
-            <GeneraMandato p={detP} o={owners.find(o => String(o.id) === String(detP.proprietario_id))} />
-            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <Allegati proprietaId={detP.id} linkProprietarioId={detP.proprietario_id} />
+            <div style={{ display: "flex", gap: 10, marginTop: 28 }}>
               <button className="bp" style={{ flex: 1 }} onClick={() => { setModalP(detP); setDetP(null); }}>Modifica</button>
               <button className="bd" onClick={() => delP(detP.id)}>Elimina</button>
             </div>
@@ -4099,7 +3121,7 @@ function App({ utente, onLogout }) {
           <div style={{ background: "var(--cream)", width: "100%", maxWidth: 420, height: "100%", overflow: "auto", padding: 32 }} className="fi">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                <div style={{ width: 50, height: 50, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontFamily: "Inter", fontSize: 18, fontWeight: 700, color: "var(--gold)" }}>{detO.cognome?.[0]}{detO.nome?.[0]}</span></div>
+                <div style={{ width: 50, height: 50, background: "var(--black)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontFamily: "Playfair Display", fontSize: 18, fontWeight: 700, color: "var(--gold)" }}>{detO.cognome?.[0]}{detO.nome?.[0]}</span></div>
                 <h2 style={{ fontSize: 20 }}>{detO.cognome} {detO.nome}</h2>
               </div>
               <button onClick={() => setDetO(null)} style={{ background: "none", border: "none", fontSize: 22, color: "var(--gray)" }}>×</button>
@@ -4112,44 +3134,17 @@ function App({ utente, onLogout }) {
             <DR label="Indirizzo" val={`${detO.indirizzo || ""}${detO.citta ? ", " + detO.citta : ""}`} />
             {detO.note && <DR label="Note" val={detO.note} />}
             <div style={{ marginTop: 24 }}>
-              {(() => {
-                const suoi = proprieta.filter(p => p.proprietario_id === detO.id);
-                const senzaCin = suoi.filter(p => !String(p.cin || "").trim()).length;
-                return (
-                  <>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
-                      <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)" }}>
-                        Appartamenti ({suoi.length})
-                      </p>
-                      {senzaCin > 0 && <span style={{ fontSize: 10.5, color: "var(--red)", fontWeight: 600 }}>{senzaCin} senza CIN</span>}
-                    </div>
-                    {suoi.length === 0 && <p style={{ fontSize: 12, color: "var(--gray)" }}>Nessun appartamento associato a questo proprietario.</p>}
-                    {suoi.map(p => (
-                      <div key={p.id} onClick={() => { setDetO(null); setDetP(p); }} style={{ padding: "10px 12px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", marginBottom: 6, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}
-                        onMouseEnter={e => e.currentTarget.style.borderColor = "var(--gold)"}
-                        onMouseLeave={e => e.currentTarget.style.borderColor = "var(--gl)"}>
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <p style={{ fontSize: 13, fontWeight: 600 }}>{p.nome}</p>
-                          <p style={{ fontSize: 11, color: "var(--gray)" }}>
-                            {[p.citta, p.provincia && `(${p.provincia})`].filter(Boolean).join(" ")}
-                            {p.gestore_interno ? ` · ${p.gestore_interno}` : ""}
-                          </p>
-                          <p style={{ fontSize: 10.5, marginTop: 3, fontFamily: "monospace", color: p.cin ? "var(--gray)" : "var(--red)" }}>
-                            {p.cin ? `CIN ${p.cin}` : "CIN mancante"}{p.cir ? ` · CIR ${p.cir}` : ""}
-                          </p>
-                        </div>
-                        <SB stato={p.stato} />
-                      </div>
-                    ))}
-                  </>
-                );
-              })()}
+              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--gold)", marginBottom: 12 }}>Proprietà Gestite</p>
+              {proprieta.filter(p => p.proprietario_id === detO.id).map(p => (
+                <div key={p.id} onClick={() => { setDetO(null); setDetP(p); }} style={{ padding: "10px 12px", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", marginBottom: 6, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = "var(--gold)"}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = "var(--gl)"}>
+                  <div><p style={{ fontSize: 13, fontWeight: 600 }}>{p.nome}</p><p style={{ fontSize: 11, color: "var(--gray)" }}>{p.citta}</p></div>
+                  <SB stato={p.stato} />
+                </div>
+              ))}
             </div>
-            <Allegati proprietarioId={detO.id} proprietaIds={proprieta.filter(p => p.proprietario_id === detO.id).map(p => p.id)}
-              etichette={{
-                prop: Object.fromEntries(proprieta.map(p => [String(p.id), p.nome])),
-                own: Object.fromEntries(owners.map(o => [String(o.id), `${o.cognome || ""} ${o.nome || ""}`.trim()])),
-              }} />
+            <Allegati proprietarioId={detO.id} proprietaIds={proprieta.filter(p => p.proprietario_id === detO.id).map(p => p.id)} />
             <div style={{ display: "flex", gap: 10, marginTop: 28 }}>
               <button className="bp" style={{ flex: 1 }} onClick={() => { setModalO(detO); setDetO(null); }}>Modifica</button>
               <button className="bd" onClick={() => delO(detO.id)}>Elimina</button>
@@ -4159,7 +3154,7 @@ function App({ utente, onLogout }) {
       )}
 
       {/* Modals */}
-      {modalP && <Modal title={modalP === "new" ? "Nuova Proprietà" : `Modifica — ${modalP.nome}`} onClose={() => setModalP(null)}><PropForm init={modalP === "new" ? EP2 : modalP} owners={owners} gestori={gestori} onSave={saveP} onClose={() => setModalP(null)} loading={saving} /></Modal>}
+      {modalP && <Modal title={modalP === "new" ? "Nuova Proprietà" : `Modifica — ${modalP.nome}`} onClose={() => setModalP(null)}><PropForm init={modalP === "new" ? EP2 : modalP} owners={owners} onSave={saveP} onClose={() => setModalP(null)} loading={saving} /></Modal>}
       {modalO && <Modal title={modalO === "new" ? "Nuovo Proprietario" : `Modifica — ${modalO.cognome} ${modalO.nome}`} onClose={() => setModalO(null)}><OwnerForm init={modalO === "new" ? EP : modalO} onSave={saveO} onClose={() => setModalO(null)} loading={saving} /></Modal>}
 
       {/* AI Panel */}
@@ -4175,238 +3170,30 @@ function App({ utente, onLogout }) {
   );
 }
 
-// ── Accesso con account personale (Supabase Auth) ────────────────────────────
-/* Schermata "scegli la tua password": è dove atterrano i link di invito
-   e di recupero password che Supabase manda via email. */
-function ImpostaPassword({ token, invito, onFatto }) {
-  const [pw, setPw] = useState("");
-  const [pw2, setPw2] = useState("");
-  const [err, setErr] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const salva = async () => {
-    if (pw.length < 8) { setErr("La password deve avere almeno 8 caratteri."); return; }
-    if (pw !== pw2) { setErr("Le due password non coincidono."); return; }
-    setBusy(true); setErr("");
-    try {
-      const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-        method: "PUT",
-        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ password: pw }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.msg || d.message || "Non è stato possibile salvare la password.");
-      onFatto();
-    } catch (e) { setErr(e.message); }
-    setBusy(false);
-  };
-
-  return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F6F7F9", fontFamily: "'Inter', sans-serif", padding: 20 }}>
-      <div style={{ width: "100%", maxWidth: 380, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, boxShadow: "0 8px 30px rgba(15,23,42,.08)", padding: "36px 32px" }}>
-        <div style={{ width: 44, height: 44, borderRadius: 12, background: "linear-gradient(135deg, #6366F1, #818CF8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 20, fontWeight: 800, margin: "0 auto 16px" }}>V</div>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: "#0F172A", textAlign: "center", marginBottom: 6, letterSpacing: "-.02em" }}>
-          {invito ? "Benvenuto in Valente Living" : "Nuova password"}
-        </h1>
-        <p style={{ fontSize: 13, color: "#64748B", textAlign: "center", marginBottom: 24 }}>
-          {invito ? "Scegli la password del tuo account" : "Scegli una nuova password per il tuo account"}
-        </p>
-        <input type="password" value={pw} autoFocus placeholder="Nuova password (min. 8 caratteri)" autoComplete="new-password"
-          onChange={e => { setPw(e.target.value); setErr(""); }}
-          style={{ width: "100%", padding: "12px 14px", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 15, marginBottom: 10, boxSizing: "border-box", outline: "none" }} />
-        <input type="password" value={pw2} placeholder="Ripeti la password" autoComplete="new-password"
-          onChange={e => { setPw2(e.target.value); setErr(""); }}
-          onKeyDown={e => e.key === "Enter" && salva()}
-          style={{ width: "100%", padding: "12px 14px", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 15, marginBottom: 12, boxSizing: "border-box", outline: "none" }} />
-        {err && <p style={{ color: "#E11D48", fontSize: 12, marginBottom: 12, textAlign: "center" }}>{err}</p>}
-        <button onClick={salva} disabled={busy}
-          style={{ width: "100%", padding: "12px", background: busy ? "#A5B4FC" : "#6366F1", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: busy ? "default" : "pointer", borderRadius: 10 }}>
-          {busy ? "Salvo…" : "Salva password ed entra"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// Legge il token che Supabase mette nell'indirizzo dopo un invito o un recupero password
-function leggiTokenDaUrl() {
-  try {
-    const h = new URLSearchParams(String(window.location.hash || "").replace(/^#/, ""));
-    const tipo = h.get("type");
-    const token = h.get("access_token");
-    if (token && (tipo === "recovery" || tipo === "invite" || tipo === "signup")) {
-      return { token, invito: tipo !== "recovery", refresh: h.get("refresh_token") };
-    }
-  } catch { /* ignora */ }
-  return null;
-}
-
+// ── Schermata password (cancello d'ingresso) ─────────────────────────────────
 export default function Gate() {
-  const [utente, setUtente] = useState(() => auth.utente());
-  const [email, setEmail] = useState("");
-  const [pw, setPw] = useState("");
-  const [err, setErr] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [recupero, setRecupero] = useState("");
-  const [reset, setReset] = useState(() => leggiTokenDaUrl());
-  const [registrazione, setRegistrazione] = useState(false);
-
-  // All'avvio: se c'è una sessione salvata la rinnovo, così non serve rifare il login ogni volta
-  useEffect(() => {
-    const s = auth.leggi();
-    if (s && s.scade && s.scade - Date.now() < 60000) {
-      auth.rinnova().then(t => { if (!t) setUtente(null); });
-    }
-  }, []);
-
-  // Link di invito o recupero password: mostra la schermata per scegliere la password
-  if (reset) {
-    return <ImpostaPassword token={reset.token} invito={reset.invito} onFatto={() => {
-      auth.scrivi({ access_token: reset.token, refresh_token: reset.refresh, scade: Date.now() + 3600000, user: null });
-      try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignora */ }
-      setReset(null);
-      setUtente(null);
-      setRecupero("Password impostata. Ora entra con la tua email e la nuova password.");
-      auth.scrivi(null);
-    }} />;
-  }
-
-  if (utente) return <App utente={utente} onLogout={async () => { await auth.logout(); setUtente(null); }} />;
-
-  if (registrazione) return <RegistrazioneAgente onIndietro={() => setRegistrazione(false)} />;
-
-  const entra = async () => {
-    if (!email.trim() || !pw) { setErr("Inserisci email e password."); return; }
-    setBusy(true); setErr("");
-    try { setUtente(await auth.login(email, pw)); }
-    catch (e) {
-      setErr(/invalid/i.test(e.message) ? "Email o password non corretti." : e.message);
-    }
-    setBusy(false);
+  const [ok, setOk] = useState(() => { try { return sessionStorage.getItem("vl_auth") === "1"; } catch { return false; } });
+  const [val, setVal] = useState("");
+  const [err, setErr] = useState(false);
+  if (ok) return <App />;
+  const submit = () => {
+    if (val === PASSWORD_SITO) { try { sessionStorage.setItem("vl_auth", "1"); } catch { /* ignore */ } setOk(true); }
+    else { setErr(true); }
   };
-
-  const recuperaPassword = async () => {
-    if (!email.trim()) { setErr("Scrivi la tua email qui sopra, poi riclicca."); return; }
-    setBusy(true); setErr(""); setRecupero("");
-    try {
-      await fetch(`${SUPABASE_URL}/auth/v1/recover`, {
-        method: "POST",
-        headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
-      });
-      setRecupero("Se l'indirizzo è registrato, ti arriva un'email per reimpostare la password.");
-    } catch { setErr("Non sono riuscito a inviare l'email."); }
-    setBusy(false);
-  };
-
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F6F7F9", fontFamily: "'Inter', sans-serif", padding: 20 }}>
-      <div style={{ width: "100%", maxWidth: 380, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, boxShadow: "0 8px 30px rgba(15,23,42,.08)", padding: "36px 32px" }}>
-        <div style={{ width: 44, height: 44, borderRadius: 12, background: "linear-gradient(135deg, #6366F1, #818CF8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 20, fontWeight: 800, margin: "0 auto 16px" }}>V</div>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: "#0F172A", textAlign: "center", marginBottom: 6, letterSpacing: "-.02em" }}>Valente Living</h1>
-        <p style={{ fontSize: 13, color: "#64748B", textAlign: "center", marginBottom: 24 }}>Accedi con il tuo account</p>
-
-        <input type="email" value={email} autoFocus placeholder="Email" autoComplete="username"
-          onChange={e => { setEmail(e.target.value); setErr(""); }}
-          onKeyDown={e => e.key === "Enter" && entra()}
-          style={{ width: "100%", padding: "12px 14px", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 15, marginBottom: 10, boxSizing: "border-box", outline: "none" }} />
-        <input type="password" value={pw} placeholder="Password" autoComplete="current-password"
-          onChange={e => { setPw(e.target.value); setErr(""); }}
-          onKeyDown={e => e.key === "Enter" && entra()}
-          style={{ width: "100%", padding: "12px 14px", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 15, marginBottom: 12, boxSizing: "border-box", outline: "none" }} />
-
-        {err && <p style={{ color: "#E11D48", fontSize: 12, marginBottom: 12, textAlign: "center" }}>{err}</p>}
-        {recupero && <p style={{ color: "#2d6a4f", fontSize: 12, marginBottom: 12, textAlign: "center" }}>{recupero}</p>}
-
-        <button onClick={entra} disabled={busy}
-          style={{ width: "100%", padding: "12px", background: busy ? "#A5B4FC" : "#6366F1", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: busy ? "default" : "pointer", borderRadius: 10 }}>
-          {busy ? "Accesso…" : "Entra"}
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#FBF9F8", fontFamily: "'Poppins', sans-serif", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 340 }}>
+        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 700, color: "#000", textAlign: "center", marginBottom: 6 }}>Valente Living</h1>
+        <p style={{ fontSize: 13, color: "#777", textAlign: "center", marginBottom: 24 }}>Inserisci la password per accedere</p>
+        <input type="password" value={val} autoFocus placeholder="Password"
+          onChange={e => { setVal(e.target.value); setErr(false); }}
+          onKeyDown={e => e.key === "Enter" && submit()}
+          style={{ width: "100%", padding: "12px 14px", border: "1px solid #ddd", fontSize: 15, marginBottom: 12, boxSizing: "border-box", outline: "none" }} />
+        {err && <p style={{ color: "#c0392b", fontSize: 12, marginBottom: 12, textAlign: "center" }}>Password errata, riprova.</p>}
+        <button onClick={submit}
+          style={{ width: "100%", padding: "12px", background: "#000", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", borderRadius: 999, letterSpacing: ".05em" }}>
+          ENTRA
         </button>
-        <button onClick={recuperaPassword} disabled={busy}
-          style={{ width: "100%", marginTop: 10, padding: "8px", background: "transparent", border: "none", color: "#64748B", fontSize: 12, cursor: "pointer" }}>
-          Password dimenticata?
-        </button>
-        <div style={{ borderTop: "1px solid #E2E8F0", marginTop: 16, paddingTop: 14, textAlign: "center" }}>
-          <span style={{ fontSize: 12, color: "#64748B" }}>Sei un agente? </span>
-          <button onClick={() => setRegistrazione(true)}
-            style={{ background: "transparent", border: "none", color: "#6366F1", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}>
-            Registrati qui
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* Registrazione agenti: serve il codice aziendale, e l'accesso resta
-   in attesa finché il titolare non lo approva. */
-function RegistrazioneAgente({ onIndietro }) {
-  const [f, setF] = useState({ nome: "", email: "", codice: "" });
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [fatto, setFatto] = useState(null); // { link, messaggio }
-  const [copiato, setCopiato] = useState(false);
-
-  const invia = async () => {
-    if (!f.nome.trim() || !f.email.trim() || !f.codice.trim()) { setErr("Compila tutti i campi."); return; }
-    setBusy(true); setErr("");
-    try {
-      const r = await fetch("/.netlify/functions/team", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "registra_agente", ...f }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok || d.error) throw new Error(d.error || "Registrazione non riuscita.");
-      setFatto(d);
-    } catch (e) { setErr(e.message); }
-    setBusy(false);
-  };
-
-  return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F6F7F9", fontFamily: "'Inter', sans-serif", padding: 20 }}>
-      <div style={{ width: "100%", maxWidth: 420, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, boxShadow: "0 8px 30px rgba(15,23,42,.08)", padding: "36px 32px" }}>
-        <div style={{ width: 44, height: 44, borderRadius: 12, background: "linear-gradient(135deg, #6366F1, #818CF8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 20, fontWeight: 800, margin: "0 auto 16px" }}>V</div>
-
-        {fatto ? (
-          <>
-            <h1 style={{ fontSize: 21, fontWeight: 700, color: "#0F172A", textAlign: "center", marginBottom: 10 }}>Registrazione ricevuta</h1>
-            <p style={{ fontSize: 12.5, color: "#64748B", lineHeight: 1.6, marginBottom: 14 }}>{fatto.messaggio}</p>
-            {fatto.link && (
-              <>
-                <div style={{ background: "#F6F7F9", border: "1px solid #E2E8F0", borderRadius: 10, padding: 10, fontSize: 10.5, fontFamily: "monospace", wordBreak: "break-all", maxHeight: 100, overflowY: "auto" }}>{fatto.link}</div>
-                <button onClick={async () => { try { await navigator.clipboard.writeText(fatto.link); setCopiato(true); } catch { /* ignora */ } }}
-                  style={{ width: "100%", marginTop: 10, padding: "11px", background: "#6366F1", color: "#fff", border: "none", fontSize: 13.5, fontWeight: 600, borderRadius: 10, cursor: "pointer" }}>
-                  {copiato ? "✓ Copiato" : "📋 Copia il link per la password"}
-                </button>
-                <a href={fatto.link} style={{ display: "block", textAlign: "center", marginTop: 10, fontSize: 12, color: "#6366F1" }}>Oppure aprilo adesso →</a>
-              </>
-            )}
-            <button onClick={onIndietro} style={{ width: "100%", marginTop: 14, padding: "9px", background: "transparent", border: "1px solid #E2E8F0", borderRadius: 10, color: "#64748B", fontSize: 12.5, cursor: "pointer" }}>Torna all'accesso</button>
-          </>
-        ) : (
-          <>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: "#0F172A", textAlign: "center", marginBottom: 6, letterSpacing: "-.02em" }}>Registrazione agenti</h1>
-            <p style={{ fontSize: 12.5, color: "#64748B", textAlign: "center", marginBottom: 20, lineHeight: 1.6 }}>
-              Ti serve il codice fornito da Valente Living. L'accesso sarà attivo dopo l'approvazione.
-            </p>
-            <input value={f.nome} autoFocus placeholder="Nome e cognome"
-              onChange={e => { setF(v => ({ ...v, nome: e.target.value })); setErr(""); }}
-              style={{ width: "100%", padding: "12px 14px", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 15, marginBottom: 10, boxSizing: "border-box", outline: "none" }} />
-            <input type="email" value={f.email} placeholder="Email"
-              onChange={e => { setF(v => ({ ...v, email: e.target.value })); setErr(""); }}
-              style={{ width: "100%", padding: "12px 14px", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 15, marginBottom: 10, boxSizing: "border-box", outline: "none" }} />
-            <input value={f.codice} placeholder="Codice agenzia"
-              onChange={e => { setF(v => ({ ...v, codice: e.target.value })); setErr(""); }}
-              onKeyDown={e => e.key === "Enter" && invia()}
-              style={{ width: "100%", padding: "12px 14px", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 15, marginBottom: 12, boxSizing: "border-box", outline: "none" }} />
-            {err && <p style={{ color: "#E11D48", fontSize: 12, marginBottom: 12, textAlign: "center" }}>{err}</p>}
-            <button onClick={invia} disabled={busy}
-              style={{ width: "100%", padding: "12px", background: busy ? "#A5B4FC" : "#6366F1", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: busy ? "default" : "pointer", borderRadius: 10 }}>
-              {busy ? "Invio…" : "Richiedi l'accesso"}
-            </button>
-            <button onClick={onIndietro} style={{ width: "100%", marginTop: 10, padding: "8px", background: "transparent", border: "none", color: "#64748B", fontSize: 12, cursor: "pointer" }}>← Torna all'accesso</button>
-          </>
-        )}
       </div>
     </div>
   );

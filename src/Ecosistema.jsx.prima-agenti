@@ -1,5 +1,4 @@
 import { useRef, useEffect, useState } from "react";
-import { AGENTI, GRUPPI } from "./AgentiAI";
 
 /* Ecosistema — mappa interattiva e animata di come è fatto il sistema Valente Living
    e come si muovono le informazioni. Stile "Obsidian" futuristico: nodi che fluttuano,
@@ -12,12 +11,10 @@ const NODI = {
   github:   { label: "GitHub",            icona: "🐙", col: "#94a3b8", x: 0.84, y: 0.26, desc: "Il magazzino del codice del CRM. Ogni modifica al gestionale si carica qui." },
   netlify:  { label: "Netlify",           icona: "🌐", col: "#2dd4bf", x: 0.90, y: 0.55, desc: "Pubblica il CRM online e ospita le piccole funzioni server (incluso il cervello AI). Prende il codice da GitHub e lo mette in rete." },
   supabase: { label: "Supabase (DB)",     icona: "🗄️", col: "#4ade80", x: 0.76, y: 0.85, desc: "Il database: prenotazioni, storico messaggi, schede immobili, interruttori dell'AI e la coda delle bozze da approvare." },
-  cervello: { label: "Cervello AI",       icona: "🧠", col: "#a78bfa", x: 0.44, y: 0.90, desc: "La funzione che decide COSA rispondere: prende la scheda dell'appartamento e lo storico, li impacchetta e li manda a Claude. È qui che stanno le regole — niente prezzi, niente codici a chi non ha fatto il check-in. Il testo però non lo scrive lei: lo scrive Claude." },
-  anthropic:{ label: "Claude (motore)",   icona: "✳️", col: "#d97757", x: 0.62, y: 0.93, desc: "Il modello che scrive materialmente le frasi. Riceve solo quello che la funzione gli manda in quel momento: non ha accesso al database, non ricorda le conversazioni precedenti, non decide niente da solo. Si paga a consumo, a frazioni di centesimo per risposta. Usa Haiku, il modello economico." },
+  cervello: { label: "Cervello AI",       icona: "🧠", col: "#a78bfa", x: 0.44, y: 0.90, desc: "La funzione che scrive materialmente la bozza di risposta all'ospite, usando le schede e lo storico. Gira su Netlify e usa Claude." },
   robot:    { label: "Robot 24/7",        icona: "🤖", col: "#38bdf8", x: 0.16, y: 0.80, desc: "Un mini-computer sempre acceso (server in Germania): entra in Kross da solo, legge i messaggi, chiede la risposta al cervello e la mette in coda. Lavora anche a Mac spento." },
   gmail:    { label: "Gmail 2FA",         icona: "✉️", col: "#f87171", x: 0.08, y: 0.50, desc: "La casella email che riceve il codice di sicurezza (2FA) per far entrare il robot in Kross in automatico." },
   kross:    { label: "Krossbooking",      icona: "🏨", col: "#fb923c", x: 0.16, y: 0.24, desc: "Il gestionale dove arrivano prenotazioni e messaggi degli ospiti dai vari canali (Airbnb, Booking...)." },
-  cowork:   { label: "Agenti Cowork",     icona: "🕹️", col: "#f472b6", x: 0.30, y: 0.62, desc: "Claude che lavora al posto tuo usando il browser: check-in in Questura, recupero fatture dai portali, pubblicazione dei siti. Non vive nel gestionale, ma agisce sugli stessi sistemi." },
   crm:      { label: "CRM Valente",       icona: "💠", col: "#818cf8", x: 0.50, y: 0.50, desc: "Il cuore: il tuo gestionale (valentelivingcrm). Prenotazioni, immobili, contabilità e il pannello Messaggi AI Ospiti." },
 };
 
@@ -35,132 +32,7 @@ const ARCHI = [
   ["supabase", "robot", "interruttori"],
   ["robot", "kross", "invia se approvi"],
   ["netlify", "cervello", ""],
-  ["cervello", "anthropic", "chiede a Claude"],
-  ["anthropic", "cervello", "scrive il testo"],
-  ["netlify", "anthropic", "anche gli altri agenti AI"],
-  ["tu", "cowork", "gli dici cosa fare"],
-  ["cowork", "kross", "check-in e schedine"],
-  ["cowork", "crm", "ti consegna i file"],
-  ["cowork", "github", "pubblica le modifiche"],
 ];
-
-
-/* Come lavorano gli agenti: lo stesso schema per tutti, con il gate umano al centro. */
-const PASSI = [
-  { i: "⚡", t: "Un evento", d: "un messaggio dell'ospite, un file che carichi, un orario che scatta" },
-  { i: "🧠", t: "L'agente legge", d: "prende SOLO i dati verificati che gli servono: schede, database, documenti" },
-  { i: "📝", t: "Propone", d: "scrive una bozza o una destinazione — non la esegue" },
-  { i: "✅", t: "Tu approvi", d: "il passaggio umano: confermi, correggi o rifiuti" },
-  { i: "🚀", t: "Parte", d: "solo adesso la risposta viene inviata o il dato viene salvato" },
-];
-
-function AgentiDelNodo({ nodo }) {
-  const lista = AGENTI.filter((a) => a.nodo === nodo);
-  const [ap, setAp] = useState(null);
-  const agente = lista.find((a) => a.id === ap) || null;
-
-  if (!lista.length) {
-    return (
-      <div style={{ marginTop: 10, fontSize: 12.5, color: "#64748b", lineHeight: 1.5 }}>
-        Su questo nodo non gira nessun agente: è un pezzo di infrastruttura o una fonte di dati.
-        Prova <b>Cervello AI</b>, <b>Robot 24/7</b>, <b>CRM Valente</b>, <b>Netlify</b> o <b>Agenti Cowork</b>.
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 2 }}>
-        Agenti che girano qui ({lista.length})
-      </div>
-      <div style={{ fontSize: 12.5, color: "#6b7280", marginBottom: 8 }}>
-        Clicca un agente per vedere cosa fa, cosa lo fa partire e cosa può o non può toccare.
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(238px, 1fr))", gap: 8 }}>
-        {lista.map((a) => {
-          const g = GRUPPI[a.gruppo], attivo = ap === a.id;
-          return (
-            <button key={a.id} onClick={() => setAp(attivo ? null : a.id)}
-              style={{ textAlign: "left", cursor: "pointer", font: "inherit", width: "100%",
-                background: attivo ? "#0b1220" : "#fff", color: attivo ? "#e2e8f0" : "#111827",
-                border: `1px solid ${attivo ? g.col : a.orfano ? "#fca5a5" : "#e5e7eb"}`,
-                borderLeft: `4px solid ${a.orfano ? "#ef4444" : g.col}`,
-                borderRadius: 10, padding: "9px 12px", transition: "all .15s",
-                boxShadow: attivo ? `0 6px 18px ${g.col}33` : "0 1px 2px rgba(0,0,0,.04)" }}>
-              <div style={{ fontSize: 13.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 15 }}>{a.icona}</span>{a.nome}
-                {a.orfano && <span style={{ background: "#fee2e2", color: "#b91c1c", borderRadius: 999, padding: "1px 8px", fontSize: 10.5, fontWeight: 700 }}>non collegato</span>}
-              </div>
-              <div style={{ fontSize: 12, lineHeight: 1.4, color: attivo ? "#cbd5e1" : "#6b7280", marginTop: 3 }}>
-                {a.trigger}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {agente && (
-        <div style={{ marginTop: 10, background: "#0b1220", border: `1px solid ${GRUPPI[agente.gruppo].col}`, borderRadius: 12, padding: "13px 16px", color: "#e2e8f0" }}>
-          <div style={{ fontSize: 13.5, lineHeight: 1.6, color: "#cbd5e1" }}>{agente.cosaFa}</div>
-          {agente.regola && (
-            <div style={{ marginTop: 10, background: "#0f2b22", borderLeft: "3px solid #34d399", borderRadius: 8, padding: "8px 11px", fontSize: 12.5, lineHeight: 1.5, color: "#a7f3d0" }}>
-              <b>Come si protegge dagli errori.</b> {agente.regola}
-            </div>
-          )}
-          <div style={{ marginTop: 10 }}>
-            {[["Modello", agente.modello], ["Cosa legge", agente.legge], ["Cosa scrive", agente.scrive], ["Dove vive", agente.file]].map(([k, v]) => (
-              <div key={k} style={{ display: "flex", gap: 10, padding: "6px 0", borderTop: "1px solid #1e293b", fontSize: 12.5, lineHeight: 1.5 }}>
-                <span style={{ minWidth: 96, color: "#94a3b8", fontWeight: 600, flexShrink: 0 }}>{k}</span>
-                <span style={k === "Dove vive" ? { fontFamily: "ui-monospace, monospace", color: "#a5b4fc" } : undefined}>{v}</span>
-              </div>
-            ))}
-          </div>
-          {agente.note && (
-            <div style={{ marginTop: 10, background: "#1e293b", borderLeft: "3px solid #fbbf24", borderRadius: 8, padding: "8px 11px", fontSize: 12.5, lineHeight: 1.5, color: "#fde68a" }}>
-              <b>Da sapere.</b> {agente.note}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function ComeAgiscono() {
-  return (
-    <div style={{ marginTop: 22, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: "16px 18px" }}>
-      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>Come agiscono — vale per tutti allo stesso modo</div>
-      <p style={{ margin: "0 0 14px", fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
-        Nessun agente decide da solo. Tutti seguono questa catena, e il quarto passaggio sei tu.
-      </p>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "stretch" }}>
-        {PASSI.map((p, i) => {
-          const gate = p.t === "Tu approvi";
-          return (
-            <div key={p.t} style={{ display: "flex", alignItems: "stretch", gap: 8, flex: "1 1 175px" }}>
-              <div style={{ flex: 1, background: gate ? "#0b1220" : "#f8fafc",
-                border: `1px solid ${gate ? "#e879f9" : "#e5e7eb"}`, borderRadius: 11, padding: "11px 12px",
-                color: gate ? "#e2e8f0" : "#111827" }}>
-                <div style={{ fontSize: 19, marginBottom: 3 }}>{p.i}</div>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 3 }}>{p.t}</div>
-                <div style={{ fontSize: 11.8, lineHeight: 1.42, color: gate ? "#cbd5e1" : "#6b7280" }}>{p.d}</div>
-              </div>
-              {i < PASSI.length - 1 && (
-                <div style={{ alignSelf: "center", color: "#cbd5e1", fontSize: 17, flexShrink: 0 }}>→</div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <p style={{ margin: "13px 0 0", fontSize: 12.5, color: "#64748b", lineHeight: 1.55 }}>
-        Le uniche cose che saltano il tuo passaggio sono <b>le notifiche</b> (ti avvisano e basta) e
-        <b> la sincronizzazione notturna delle prenotazioni</b> (copia dati da Kross, non decide niente).
-        Tutto il resto — una risposta a un ospite, un documento archiviato, un dato scritto in scheda —
-        aspetta che sia tu a dire di sì.
-      </p>
-    </div>
-  );
-}
 
 export default function Ecosistema() {
   const canvasRef = useRef(null);
@@ -286,10 +158,10 @@ export default function Ecosistema() {
 
   const n = NODI[sel];
   return (
-    <div style={{ maxWidth: 1080 }}>
+    <div style={{ maxWidth: 1000 }}>
       <h2 style={{ margin: "0 0 4px", fontSize: 22 }}>🌐 Ecosistema Valente Living</h2>
       <p style={{ margin: "0 0 14px", color: "#6b7280", fontSize: 14 }}>
-        Come è fatto il tuo sistema, come si muovono le informazioni e <b>quali agenti girano su ogni pezzo</b>. Le lucine che scorrono sono i dati che viaggiano. <b>Clicca un nodo</b>: sotto compaiono la spiegazione e gli agenti che ci lavorano.
+        Come è fatto il tuo sistema e come si muovono le informazioni. Le lucine che scorrono sono i dati che viaggiano. <b>Clicca un nodo</b> per la spiegazione.
       </p>
       <div ref={wrapRef} style={{ position: "relative", borderRadius: 16, overflow: "hidden", border: "1px solid #1e293b", boxShadow: "0 10px 40px rgba(2,6,23,.5)" }}>
         <canvas ref={canvasRef} style={{ display: "block", cursor: "pointer" }} />
@@ -298,8 +170,6 @@ export default function Ecosistema() {
         <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>{n.icona} {n.label}</div>
         <div style={{ fontSize: 13.5, lineHeight: 1.5, color: "#cbd5e1" }}>{n.desc}</div>
       </div>
-      <AgentiDelNodo nodo={sel} />
-
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
         {Object.keys(NODI).map((id) => (
           <button key={id} onClick={() => setSel(id)}
@@ -308,8 +178,6 @@ export default function Ecosistema() {
           </button>
         ))}
       </div>
-
-      <ComeAgiscono />
     </div>
   );
 }

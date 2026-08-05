@@ -3,8 +3,6 @@ import Archivio from "./Archivio";
 import Schede from "./Schede";
 import MessaggiAI from "./MessaggiAI";
 import Ecosistema from "./Ecosistema";
-import AgentiAI from "./AgentiAI";
-import Manuale from "./Manuale";
 import Guida from "./Guida";
 import Compliance from "./Compliance";
 import Ricorrenti from "./Ricorrenti";
@@ -3463,30 +3461,6 @@ function App({ utente, onLogout }) {
   const [leads, setLeads] = useState([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
   const [leadsError, setLeadsError] = useState("");
-  const [valutaPrefill, setValutaPrefill] = useState("");
-
-  /* Dalla scheda lead al valutatore: portiamo di là tutto quello che il proprietario
-     ha gia' scritto sul sito, cosi' resta solo da cercare l'indirizzo su BNBCalc. */
-  function valutaLead(l) {
-    const g = l.grezzo || {};
-    const q = new URLSearchParams();
-    q.set("lead", "1");
-    const metti = (k, v) => { if (v) q.set(k, String(v)); };
-    metti("comune", g.citta);
-    metti("indirizzo", g.indirizzo);
-    metti("camere", g.camere);
-    metti("mq", g.mq);
-    metti("tipo", g.tipo);
-    metti("formula", g.formula);
-    metti("stato", g.stato_immobile);
-    metti("specs", g.caratteristiche);
-    metti("nome", g.nome);
-    metti("telefono", g.telefono);
-    metti("email", g.email);
-    metti("lead_id", String(l.id || "").replace(/^sito-/, ""));
-    setValutaPrefill(q.toString());
-    setView("valutazione");
-  }
   const [notifStato, setNotifStato] = useState("idle"); // idle|loading|on|denied|unsupported (v20)
   const [notifCount, setNotifCount] = useState(0); // notifiche email non gestite
   // Tendine del menu: quali gruppi sono aperti (ricordato sul dispositivo)
@@ -3596,52 +3570,15 @@ function App({ utente, onLogout }) {
 
   const loadLeads = useCallback(async () => {
     setLeadsLoading(true); setLeadsError("");
-    let daHubspot = [];
-    let erroreHubspot = "";
-    // 1) contatti assegnati a me su HubSpot
     try {
       const r = await fetch("/.netlify/functions/hubspot", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "leads" }),
       });
       const data = await r.json();
-      if (!r.ok) erroreHubspot = data.error || "Errore nel caricamento dei lead HubSpot.";
-      else daHubspot = (data.leads || []).map(l => ({ ...l, fonte: "hubspot" }));
-    } catch { erroreHubspot = "Impossibile contattare HubSpot."; }
-
-    // 2) richieste arrivate dal sito vetrina (tabella lead_sito)
-    let daSito = [];
-    try {
-      const { data, ok } = await sb.get("lead_sito", "?select=*&order=created_at.desc&limit=200");
-      if (ok && Array.isArray(data)) {
-        daSito = data.map(l => ({
-          id: "sito-" + l.id,
-          fonte: "sito",
-          nome: l.nome || l.email || "Richiesta dal sito",
-          email: l.email || "",
-          telefono: l.telefono || "",
-          citta: l.citta || "",
-          azienda: "",
-          stato: l.stato || "nuovo",
-          creato: l.created_at,
-          indirizzo: [l.indirizzo, l.citta].filter(Boolean).join(", "),
-          dettaglio: [l.tipo, l.situazione, l.formula, l.camere ? l.camere + " camere" : null, l.mq ? l.mq + " m²" : null, l.stato_immobile, l.motivo]
-            .filter(Boolean).join(" · "),
-          caratteristiche: l.caratteristiche || "",
-          grezzo: { tipo: l.tipo || "", citta: l.citta || "", indirizzo: l.indirizzo || "",
-                    camere: l.camere || "", mq: l.mq || "", formula: l.formula || "",
-                    stato_immobile: l.stato_immobile || "", caratteristiche: l.caratteristiche || "",
-                    nome: l.nome || "", telefono: l.telefono || "", email: l.email || "" },
-          messaggio: l.messaggio || l.note || "",
-          campagna: (l.tracking && (l.tracking.utm_campaign || l.tracking.utm_source)) || "",
-          fotoN: l.foto_n || 0,
-          foto: Array.isArray(l.foto_urls) ? l.foto_urls : [],
-        }));
-      }
-    } catch { /* se il sito non risponde mostro comunque HubSpot */ }
-
-    if (erroreHubspot && !daSito.length) { setLeadsError(erroreHubspot); setLeads([]); }
-    else { setLeadsError(erroreHubspot); setLeads([...daSito, ...daHubspot]); }
+      if (!r.ok) { setLeadsError(data.error || "Errore nel caricamento dei lead."); setLeads([]); }
+      else setLeads(data.leads || []);
+    } catch { setLeadsError("Impossibile contattare HubSpot. Riprova."); setLeads([]); }
     setLeadsLoading(false);
   }, []);
 
@@ -3712,8 +3649,6 @@ function App({ utente, onLogout }) {
     { id: "compliance", label: "Compliance", icon: "✅", count: stats.senzaCin > 0 ? stats.senzaCin : null, group: "Operativo" },
     { id: "schede", label: "Schede Immobili", icon: "🏠", count: null, group: "Operativo" },
     { id: "ecosistema", label: "Ecosistema", icon: "🌐", count: null, group: "Operativo" },
-    { id: "agenti-ai", label: "Agenti AI", icon: "🕹️", count: null, group: "Operativo" },
-    { id: "manuale", label: "Manuale operativo", icon: "📘", count: null, group: "Operativo" },
     { id: "smistamento", label: "Smistamento doc", icon: "📥", count: null, group: "Documenti" },
     { id: "archivio", label: "Archivio", icon: "🗂️", count: null, group: "Documenti" },
     { id: "ricorrenti", label: "Ricorrenti", icon: "📅", count: null, group: "Documenti" },
@@ -3850,7 +3785,7 @@ function App({ utente, onLogout }) {
           ) :
           /* Il valutatore resta accessibile anche a chi aspetta l'approvazione:
               un agente può valutare un immobile prima ancora di averne in gestione. */
-           inAttesa && view === "valutazione" ? <Valutazione nomeAgente={mioNome} prefill={valutaPrefill} vedoTutto={vedoTutto} /> :
+           inAttesa && view === "valutazione" ? <Valutazione nomeAgente={mioNome} /> :
            inAttesa ? (
             <div className="fi" style={{ maxWidth: 520, margin: "60px auto", textAlign: "center", background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 16, boxShadow: "var(--shadow)", padding: 40 }}>
               <div style={{ fontSize: 34, marginBottom: 12 }}>⏳</div>
@@ -3875,16 +3810,14 @@ function App({ utente, onLogout }) {
             view === "schede" ? <Schede /> :
             view === "messaggiai" ? <MessaggiAI /> :
             view === "ecosistema" ? <Ecosistema /> :
-            view === "agenti-ai" ? <AgentiAI /> :
-            view === "manuale" ? <Manuale /> :
             view === "ricorrenti" ? <Ricorrenti proprieta={proprieta} owners={owners} /> :
             view === "team" ? <Team proprieta={proprieta} sonoMaster={sonoMaster} onDataChanged={load} /> :
             view === "portale" ? <PortaleAgente proprieta={proprieta} nomeAgente={mioNome} sb={sb} onDataChanged={load} /> :
-            view === "valutazione" ? <Valutazione nomeAgente={mioNome} prefill={valutaPrefill} vedoTutto={vedoTutto} /> :
+            view === "valutazione" ? <Valutazione nomeAgente={mioNome} /> :
             view === "lead" ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
-                  <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Lead</h1><p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Richieste dal sito + contatti assegnati a te su HubSpot{leads.length ? ` · ${leads.length}` : ""}</p></div>
+                  <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Lead</h1><p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Contatti assegnati a te su HubSpot{leads.length ? ` · ${leads.length}` : ""}</p></div>
                   <button className="bg" onClick={loadLeads} disabled={leadsLoading}>{leadsLoading ? "Aggiorno…" : "↻ Aggiorna"}</button>
                 </div>
                 <div className="gl" style={{ marginBottom: 24 }} />
@@ -3896,56 +3829,20 @@ function App({ utente, onLogout }) {
                 ) : leadsLoading ? (
                   <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento lead da HubSpot…</div>
                 ) : leads.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessun lead: n\u00e9 dal sito n\u00e9 assegnato a te su HubSpot.</div>
+                  <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessun lead assegnato a te.</div>
                 ) : (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
                     {leads.map(l => (
                       <div key={l.id} className="card fi" style={{ cursor: "default" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
                           <h3 style={{ fontSize: 15, fontWeight: 600 }}>{l.nome}</h3>
-                          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                            {l.fonte === "sito" && <span className="tag" style={{ background: "var(--gold)", color: "#fff" }}>Sito</span>}
-                            {l.stato && <span className="tag">{l.stato}</span>}
-                          </div>
+                          {l.stato && <span className="tag">{l.stato}</span>}
                         </div>
                         {l.email && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 4, wordBreak: "break-all" }}>✉ {l.email}</p>}
                         {l.telefono && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 4 }}>📞 {l.telefono}</p>}
-                        {l.fonte === "sito" && l.indirizzo ? (
-                          <p style={{ fontSize: 12, marginTop: 2 }}>📍 <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(l.indirizzo)}`} target="_blank" rel="noreferrer" style={{ color: "var(--gold)", textDecoration: "none" }}>{l.indirizzo}</a></p>
-                        ) : ((l.citta || l.azienda) && <p style={{ fontSize: 12, color: "var(--gray)" }}>{[l.azienda, l.citta].filter(Boolean).join(" · ")}</p>)}
-                        {l.dettaglio && <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{l.dettaglio}</p>}
-                        {l.caratteristiche && <p style={{ fontSize: 11.5, color: "var(--gray)", marginTop: 3, display: "flex", flexWrap: "wrap", gap: 5 }}>
-                          {l.caratteristiche.split(", ").filter(Boolean).map((c, i) => (
-                            <span key={i} style={{ background: "rgba(192,148,86,.14)", color: "#8a6a2f", borderRadius: 20, padding: "2px 9px", fontSize: 11 }}>{c}</span>
-                          ))}
-                        </p>}
-                        {l.messaggio && <p style={{ fontSize: 12, marginTop: 8, lineHeight: 1.45 }}>{l.messaggio}</p>}
-                        {l.foto && l.foto.length > 0 && (
-                          <div style={{ marginTop: 10 }}>
-                            <p style={{ fontSize: 11, color: "var(--gray)", marginBottom: 6 }}>📷 {l.foto.length} foto allegate</p>
-                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                              {l.foto.map((u, i) => (
-                                <a key={i} href={u} target="_blank" rel="noreferrer" title="Apri a schermo intero">
-                                  <img src={u} alt={`Foto ${i + 1}`} loading="lazy"
-                                       style={{ width: 62, height: 62, objectFit: "cover", borderRadius: 6, border: "1px solid var(--cd)", display: "block" }} />
-                                </a>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {(!l.foto || !l.foto.length) && l.fotoN > 0 && <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 6 }}>📷 {l.fotoN} foto allegate</p>}
-                        {l.campagna && <p style={{ fontSize: 11, color: "var(--gold)", marginTop: 6 }}>campagna: {l.campagna}</p>}
-                        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--cd)", display: "flex", gap: 14, flexWrap: "wrap" }}>
-                          {l.fonte === "sito" ? (
-                            <>
-                              {l.creato && <span style={{ fontSize: 11, color: "var(--gray)" }}>{new Date(l.creato).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>}
-                              <button onClick={() => valutaLead(l)} style={{ fontSize: 11, color: "#fff", background: "var(--gold)", fontWeight: 700, border: 0, borderRadius: 6, padding: "4px 11px", cursor: "pointer" }}>Valuta con BNBCalc →</button>
-                              {l.telefono && <a href={`https://wa.me/39${String(l.telefono).replace(/\D/g, "").replace(/^39/, "")}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>WhatsApp →</a>}
-                              {l.email && <a href={`mailto:${l.email}`} style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Email →</a>}
-                            </>
-                          ) : (
-                            <a href={`https://app.hubspot.com/contacts/25704633/record/0-1/${l.id}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Apri su HubSpot →</a>
-                          )}
+                        {(l.citta || l.azienda) && <p style={{ fontSize: 12, color: "var(--gray)" }}>{[l.azienda, l.citta].filter(Boolean).join(" · ")}</p>}
+                        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--cd)" }}>
+                          <a href={`https://app.hubspot.com/contacts/25704633/record/0-1/${l.id}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Apri su HubSpot →</a>
                         </div>
                       </div>
                     ))}
