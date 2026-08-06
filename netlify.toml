@@ -68,6 +68,13 @@
 [functions."sync-krossbooking"]
   schedule = "0 3 * * *"
 
+# Sincronizzazione via API ufficiali Kross v5 -> tabelle kross_*
+# Incrementale ogni 4 ore. Ricarica completa a mano con ?full=1.
+# Resta in parallelo allo scraper finche la tab "Verifica" non mostra
+# zero differenze: solo allora lo scraper si puo spegnere.
+[functions."kross-sync-background"]
+  schedule = "20 */4 * * *"
+
 [[redirects]]
   from = "/api/ai-agent"
   to = "/.netlify/functions/ai-agent"
