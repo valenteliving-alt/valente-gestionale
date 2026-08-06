@@ -2,56 +2,6 @@
   command = "npm run build"
   publish = "dist"
 
-
-[functions]
-  directory = "netlify/functions"
-  node_bundler = "esbuild"
-
-
-# Controllo nuovi lead HubSpot ogni 15 minuti → notifica push
-[functions."controlla-lead"]
-  schedule = "*/15 * * * *"
-
-
-# Agente notturno: briefing mattutino alle 7:00 italiane (5:00 UTC in estate)
-[functions."agente-notturno"]
-  schedule = "0 5 * * *"
-
-
-# Sincronizzazione Krossbooking → CRM: prenotazioni ogni notte alle 3:00 UTC
-[functions."sync-krossbooking"]
-  schedule = "0 3 * * *"
-
-# Sincronizzazione via API ufficiali Kross v5 -> tabelle kross_*
-# Incrementale ogni 4 ore. Ricarica completa a mano con ?full=1.
-# Resta in parallelo allo scraper finche la tab "Verifica" non mostra
-# zero differenze: solo allora lo scraper si puo spegnere.
-[functions."kross-sync-background"]
-  schedule = "20 */4 * * *"
-
-
-[[redirects]]
-  from = "/api/ai-agent"
-  to = "/.netlify/functions/ai-agent"
-  status = 200
-
-
-# Valutatore immobili: pagina a sé, servita dallo stesso dominio del CRM
-[[redirects]]
-  from = "/valutazione"
-  to = "/valutazione.html"
-  status = 200
-
-
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-
-[build]
-  command = "npm run build"
-  publish = "dist"
-
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
@@ -65,13 +15,14 @@
   schedule = "0 5 * * *"
 
 # Sincronizzazione Krossbooking → CRM: prenotazioni ogni notte alle 3:00 UTC
+# (versione vecchia, via scraping del sito + 2FA letta da email)
 [functions."sync-krossbooking"]
   schedule = "0 3 * * *"
 
-# Sincronizzazione via API ufficiali Kross v5 -> tabelle kross_*
+# Sincronizzazione via API ufficiali Kross v5 → tabelle kross_*
 # Incrementale ogni 4 ore. Ricarica completa a mano con ?full=1.
-# Resta in parallelo allo scraper finche la tab "Verifica" non mostra
-# zero differenze: solo allora lo scraper si puo spegnere.
+# Resta in parallelo allo scraper finché la tab "Verifica" non mostra
+# zero differenze: solo allora lo scraper si può spegnere.
 [functions."kross-sync-background"]
   schedule = "20 */4 * * *"
 
