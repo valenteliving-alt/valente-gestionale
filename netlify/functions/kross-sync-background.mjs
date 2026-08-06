@@ -1,9 +1,11 @@
-// netlify/functions/kross-sync-background.js
+// netlify/functions/kross-sync-background.mjs
 // Sincronizza Kross → Supabase usando le API v5 (niente scraping, niente 2FA).
 //
 // Scrive su: kross_appartamenti, kross_prenotazioni, kross_addebiti, kross_documenti.
 // Funzione "background": Netlify le concede fino a 15 minuti, il tempo che serve
 // per rispettare il limite di 8 chiamate al minuto senza correre.
+// NON e schedulata direttamente: la schedulazione sta in kross-sync-cron,
+// perche Netlify risponde 403 alle chiamate HTTP verso funzioni schedulate.
 //
 // Modalita:
 //   /.netlify/functions/kross-sync-background            → incrementale (solo cio che e cambiato)
@@ -13,7 +15,7 @@
 // Girando in background la risposta HTTP e sempre 202: l'esito finisce in
 // kross_stato.ultimo_esito e nei log della funzione.
 
-const K = require("./lib/kross");
+import * as K from "./lib/kross.mjs";
 
 const ANNO_MINIMO = 2025;      // dei dati precedenti non ci interessa nulla
 const PAGINA = 200;
@@ -200,7 +202,7 @@ async function sincronizzaDocumenti(dal, al, log) {
 }
 
 // ─────────────────── handler ───────────────────
-exports.handler = async (event) => {
+export const handler = async (event) => {
   const righeLog = [];
   const log = (m) => { righeLog.push(m); console.log("[kross-sync]", m); };
   const qs = (event && event.queryStringParameters) || {};

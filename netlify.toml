@@ -20,10 +20,12 @@
   schedule = "0 3 * * *"
 
 # Sincronizzazione via API ufficiali Kross v5 → tabelle kross_*
-# Incrementale ogni 4 ore. Ricarica completa a mano con ?full=1.
+# Incrementale ogni 4 ore. Lo stub schedulato avvia kross-sync-background
+# (Netlify blocca le chiamate dirette alle funzioni schedulate, quindi la
+# funzione di lavoro resta libera per il pulsante del CRM).
 # Resta in parallelo allo scraper finché la tab "Verifica" non mostra
 # zero differenze: solo allora lo scraper si può spegnere.
-[functions."kross-sync-background"]
+[functions."kross-sync-cron"]
   schedule = "20 */4 * * *"
 
 [[redirects]]

@@ -1,9 +1,9 @@
-// netlify/functions/lib/kross.js
-// Pezzi condivisi fra kross-api.js (proxy per il frontend) e
-// kross-sync-background.js (sincronizzazione su Supabase).
-//
-// NB: sta in una sottocartella "lib" apposta — Netlify non la registra come
-// funzione perche il file non si chiama lib.js.
+// netlify/functions/lib/kross.mjs
+// Pezzi condivisi fra kross-api (proxy per il frontend) e
+// kross-sync-background (sincronizzazione su Supabase).
+// In formato ESM: il package.json del progetto ha "type": "module",
+// e le funzioni in CommonJS con require() di file locali non venivano
+// impacchettate correttamente (Runtime.HandlerNotFound).
 
 const BASE = "https://api.krossbooking.com/v5";
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://heabtbdmwbjlgujsisor.supabase.co";
@@ -119,7 +119,7 @@ async function upsert(tabella, righe, conflitto) {
   return righe.length;
 }
 
-module.exports = {
+export {
   BASE, SUPABASE_URL, SERVICE_KEY, MAX_AL_MINUTO,
   sbUrl, sbHead, statoLeggi, statoScrivi,
   prendiToken, prenotaChiamata, chiamaKross, chiamaConAttesa, attendi, upsert,

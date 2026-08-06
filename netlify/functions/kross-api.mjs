@@ -1,4 +1,4 @@
-// netlify/functions/kross-api.js
+// netlify/functions/kross-api.mjs
 // Proxy in SOLA LETTURA verso le API Kross Booking v5.
 //
 // Perche esiste: le credenziali Kross non possono stare nel frontend, perche il
@@ -13,7 +13,7 @@
 //   POST /.netlify/functions/kross-api
 //   { "path": "/rooms/get-room-types", "payload": { ... }, "forza": false }
 
-const K = require("./lib/kross");
+import * as K from "./lib/kross.mjs";
 
 const CACHE_SECONDI = 600;
 
@@ -59,7 +59,13 @@ async function cacheScrivi(chiave, risposta) {
   });
 }
 
-exports.handler = async (event) => {
+const risp = (statusCode, body) => ({
+  statusCode,
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+export const handler = async (event) => {
   if (event.httpMethod !== "POST") return risp(405, { ok: false, errore: "Usare POST" });
   if (!K.SERVICE_KEY) return risp(500, { ok: false, errore: "SUPABASE_SERVICE_ROLE_KEY non configurata" });
   if (!process.env.KROSS_API_KEY || !process.env.KROSS_API_USER) {
@@ -82,8 +88,7 @@ exports.handler = async (event) => {
   }
 
   if (!(await K.prenotaChiamata())) {
-    // Meglio restituire un dato vecchio che un errore: il limite e condiviso
-    // con il sync e con chi sta lavorando dentro Kross.
+    // Meglio un dato vecchio che un errore: il limite e condiviso con il sync.
     const c = await cacheLeggi(chiave);
     if (c) return risp(200, { ok: true, daCache: true, scaduta: true, ...c.risposta });
     return risp(429, { ok: false, errore: "Limite Kross raggiunto (8 chiamate al minuto). Riprova fra un minuto." });
@@ -99,9 +104,3 @@ exports.handler = async (event) => {
     return risp(502, { ok: false, errore: String(e.message || e), ruid: e.ruid || null });
   }
 };
-
-const risp = (statusCode, body) => ({
-  statusCode,
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(body),
-});
