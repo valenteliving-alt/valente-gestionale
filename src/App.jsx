@@ -11,6 +11,7 @@ import Ricorrenti from "./Ricorrenti";
 import Team from "./Team";
 import PortaleAgente from "./PortaleAgente";
 import Valutazione from "./Valutazione";
+import Krossbooking from "./Krossbooking";
 
 const SUPABASE_URL = "https://heabtbdmwbjlgujsisor.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
@@ -2386,6 +2387,7 @@ function ContabilitaView({ proprieta, owners }) {
         <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "var(--gray)", marginBottom: 6 }}>Panoramica</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
           <button className={tab === "panoramica" ? "bp" : "bg"} onClick={() => { setTab("panoramica"); setMsg(""); }}>📊 Dashboard prenotazioni</button>
+          <button className={tab === "kross" ? "bp" : "bg"} onClick={() => { setTab("kross"); setMsg(""); }}>🔌 Krossbooking (API)</button>
         </div>
         <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "var(--gray)", marginBottom: 6 }}>Contabilità interna</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
@@ -2399,6 +2401,7 @@ function ContabilitaView({ proprieta, owners }) {
       {msg && <div style={{ marginBottom: 14, fontSize: 13, fontWeight: 500, color: "var(--gold)" }}>{msg}</div>}
 
       {tab === "panoramica" && <DashboardGestione />}
+      {tab === "kross" && <Krossbooking />}
       {tab === "spese" && <SpeseTab spese={spese} proprieta={proprieta} propNome={propNome} onNew={() => setModalS("new")} onEdit={setModalS} onDel={delSpesa} />}
       {tab === "fatture" && <FattureTab fatture={fatture} ownerNome={ownerNome} propNome={propNome} onNew={() => setModalF("new")} onEdit={setModalF} onDel={delFatt} onIncassa={incassaFatt} />}
       {tab === "rendiconti" && <RendicontiTab rendiconti={rendiconti} spese={spese} pren={pren} proprieta={proprieta} owners={owners} ownerNome={ownerNome} propNome={propNome} onChanged={load} setMsg={setMsg} />}
