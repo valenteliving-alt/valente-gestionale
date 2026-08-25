@@ -100,6 +100,15 @@ const auth = {
   },
 };
 
+/* Nella scheda di un lead conta sapere COSA VUOLE, come si chiama, come lo
+   raggiungi e quando ha scritto. Tutto il resto — quante pagine ha visto, la
+   città del suo indirizzo IP, i clic su Facebook — è rumore che nasconde
+   l'unica riga che serve davvero. */
+const CAMPO_RUMORE = /analytics|pageview|page_view|session|clicks|social|^ip_|_ip$|timezone|traffic|referring|first_page|last_page|event_|notification|revenue|^num_|calculated|hs_email|hs_sales|owner_assigned|unworked|object_id|timestamp|latest_source|time_(first|last)|_score|hs_v2|membership|marketable/i;
+/* Il rumore ha la precedenza: "ip_city" contiene "city" ma resta rumore.
+   Senza questa priorità la scheda si riempie di nuovo di roba inutile. */
+const utileDavvero = (c) => !CAMPO_RUMORE.test(c.chiave) && !CAMPO_RUMORE.test(c.gruppo || "");
+
 const sb = {
   async req(method, table, body, query = "", riprova = true) {
     const s = auth.leggi();
@@ -3468,7 +3477,8 @@ function App({ utente, onLogout }) {
   const [leadsLoading, setLeadsLoading] = useState(false);
   const [leadsError, setLeadsError] = useState("");
   const [mostraArchiviati, setMostraArchiviati] = useState(false);   // Lead: vedere anche quelli messi via
-  const [leadAperto, setLeadAperto] = useState(null);                // Lead: scheda espansa con tutti i campi
+  const [leadAperto, setLeadAperto] = useState(null);                // Lead: scheda espansa
+  const [leadTuttoIl, setLeadTuttoIl] = useState(null);              // Lead: mostra anche i campi di contorno
   const [valutaPrefill, setValutaPrefill] = useState("");
 
   /* Dalla scheda lead al valutatore: portiamo di là tutto quello che il proprietario
@@ -4028,23 +4038,42 @@ function App({ utente, onLogout }) {
 
                         {/* Tutti i campi valorizzati su HubSpot, raggruppati come li ha
                             organizzati HubSpot stesso. Serve a non dover uscire dal CRM. */}
-                        {leadAperto === l.id && l.campi && (
+                        {leadAperto === l.id && l.campi && (() => {
+                          const utili = l.campi.filter(utileDavvero);
+                          const resto = l.campi.filter(c => !utileDavvero(c));
+                          /* Il messaggio del lead va per primo e per intero: è
+                             la ragione per cui apri la scheda. */
+                          const messaggio = utili.filter(c => /message|descrizione|description|note|richiest/i.test(c.chiave));
+                          const altri = utili.filter(c => !messaggio.includes(c));
+                          const mostraResto = leadTuttoIl === l.id;
+                          return (
                           <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--cd)" }}>
-                            {[...new Set(l.campi.map(c => c.gruppo))].sort().map(g => (
-                              <div key={g} style={{ marginBottom: 12 }}>
-                                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--gold)", marginBottom: 5 }}>
-                                  {g.replace(/_/g, " ")}
-                                </div>
-                                {l.campi.filter(c => c.gruppo === g).map(c => (
-                                  <div key={c.chiave} style={{ display: "flex", gap: 8, padding: "3px 0", fontSize: 11.5, borderBottom: "1px solid rgba(0,0,0,.04)" }}>
-                                    <span style={{ color: "var(--gray)", minWidth: 118, flexShrink: 0 }}>{c.etichetta}</span>
-                                    <span style={{ wordBreak: "break-word" }}>{c.valore.length > 220 ? c.valore.slice(0, 220) + "…" : c.valore}</span>
-                                  </div>
-                                ))}
+                            {messaggio.map(c => (
+                              <div key={c.chiave} style={{ marginBottom: 12, padding: "10px 12px", background: "rgba(192,148,86,.08)", borderLeft: "3px solid var(--gold)", borderRadius: 6 }}>
+                                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--gold)", marginBottom: 4 }}>Cosa chiede</div>
+                                <div style={{ fontSize: 12.5, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{c.valore}</div>
                               </div>
                             ))}
-                          </div>
-                        )}
+                            {altri.map(c => (
+                              <div key={c.chiave} style={{ display: "flex", gap: 8, padding: "3px 0", fontSize: 11.5, borderBottom: "1px solid rgba(0,0,0,.04)" }}>
+                                <span style={{ color: "var(--gray)", minWidth: 118, flexShrink: 0 }}>{c.etichetta}</span>
+                                <span style={{ wordBreak: "break-word" }}>{c.valore}</span>
+                              </div>
+                            ))}
+                            {resto.length > 0 && (
+                              <button onClick={() => setLeadTuttoIl(mostraResto ? null : l.id)}
+                                style={{ marginTop: 10, fontSize: 11, color: "var(--gray)", background: "none", border: 0, padding: 0, cursor: "pointer", textDecoration: "underline" }}>
+                                {mostraResto ? "Nascondi i dati tecnici" : `Mostra anche i dati tecnici (${resto.length})`}
+                              </button>
+                            )}
+                            {mostraResto && resto.map(c => (
+                              <div key={c.chiave} style={{ display: "flex", gap: 8, padding: "2px 0", fontSize: 11, color: "var(--gray)", borderBottom: "1px solid rgba(0,0,0,.03)" }}>
+                                <span style={{ minWidth: 118, flexShrink: 0 }}>{c.etichetta}</span>
+                                <span style={{ wordBreak: "break-word" }}>{c.valore.length > 160 ? c.valore.slice(0, 160) + "…" : c.valore}</span>
+                              </div>
+                            ))}
+                          </div>);
+                        })()}
                       </div>
                     ))}
                   </div>
