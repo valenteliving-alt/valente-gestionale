@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 import Archivio from "./Archivio";
+import Utm from "./Utm";
 import Schede from "./Schede";
 import MessaggiAI from "./MessaggiAI";
 import Ecosistema from "./Ecosistema";
@@ -3466,6 +3467,8 @@ function App({ utente, onLogout }) {
   const [leads, setLeads] = useState([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
   const [leadsError, setLeadsError] = useState("");
+  const [mostraArchiviati, setMostraArchiviati] = useState(false);   // Lead: vedere anche quelli messi via
+  const [leadAperto, setLeadAperto] = useState(null);                // Lead: scheda espansa con tutti i campi
   const [valutaPrefill, setValutaPrefill] = useState("");
 
   /* Dalla scheda lead al valutatore: portiamo di là tutto quello che il proprietario
@@ -3612,6 +3615,15 @@ function App({ utente, onLogout }) {
       else daHubspot = (data.leads || []).map(l => ({ ...l, fonte: "hubspot" }));
     } catch { erroreHubspot = "Impossibile contattare HubSpot."; }
 
+    // 1b) elenco dei lead HubSpot che abbiamo scelto di non vedere più nel CRM
+    //     (su HubSpot restano intatti: qui li nascondiamo soltanto)
+    let nascosti = new Set();
+    try {
+      const { data, ok } = await sb.get("lead_nascosti", "?select=id");
+      if (ok && Array.isArray(data)) nascosti = new Set(data.map(x => String(x.id)));
+    } catch { /* se non riesco a leggerli li mostro tutti: meglio troppi che nessuno */ }
+    daHubspot = daHubspot.map(l => ({ ...l, archiviato: nascosti.has(String(l.id)) }));
+
     // 2) richieste arrivate dal sito vetrina (tabella lead_sito)
     let daSito = [];
     try {
@@ -3626,6 +3638,8 @@ function App({ utente, onLogout }) {
           citta: l.citta || "",
           azienda: "",
           stato: l.stato || "nuovo",
+          archiviato: l.stato === "archiviato",
+          idRiga: l.id,
           creato: l.created_at,
           indirizzo: [l.indirizzo, l.citta].filter(Boolean).join(", "),
           dettaglio: [l.tipo, l.situazione, l.formula, l.camere ? l.camere + " camere" : null, l.mq ? l.mq + " m²" : null, l.stato_immobile, l.motivo]
@@ -3646,6 +3660,33 @@ function App({ utente, onLogout }) {
     if (erroreHubspot && !daSito.length) { setLeadsError(erroreHubspot); setLeads([]); }
     else { setLeadsError(erroreHubspot); setLeads([...daSito, ...daHubspot]); }
     setLeadsLoading(false);
+  }, []);
+
+  /* Archiviare, non cancellare. Un lead è un contatto: se lo si elimina davvero
+     si perde la storia e non si torna indietro. Qui sparisce dall'elenco e si può
+     rimettere quando serve. I contatti HubSpot restano intatti su HubSpot: nel CRM
+     ne teniamo solo una lista di quelli da non mostrare più. */
+  const archiviaLead = useCallback(async (l) => {
+    if (!window.confirm(`Mettere via "${l.nome}"?\n\nSparisce dall'elenco ma non viene cancellato: lo ritrovi con "Mostra archiviati".`)) return;
+    try {
+      if (l.fonte === "sito") {
+        await sb.patch("lead_sito", l.idRiga, { stato: "archiviato" });
+      } else {
+        await sb.post("lead_nascosti", [{ id: String(l.id), nascosto_da: "CRM", motivo: "archiviato dall'elenco Lead" }]);
+      }
+      setLeads(prev => prev.map(x => x.id === l.id ? { ...x, archiviato: true, stato: "archiviato" } : x));
+    } catch { alert("Non sono riuscito ad archiviarlo. Riprova."); }
+  }, []);
+
+  const ripristinaLead = useCallback(async (l) => {
+    try {
+      if (l.fonte === "sito") {
+        await sb.patch("lead_sito", l.idRiga, { stato: "nuovo" });
+      } else {
+        await sb.del("lead_nascosti", encodeURIComponent(String(l.id)));
+      }
+      setLeads(prev => prev.map(x => x.id === l.id ? { ...x, archiviato: false, stato: "nuovo" } : x));
+    } catch { alert("Non sono riuscito a ripristinarlo. Riprova."); }
   }, []);
 
   useEffect(() => { if (view === "lead") loadLeads(); }, [view, loadLeads]);
@@ -3712,6 +3753,7 @@ function App({ utente, onLogout }) {
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length, group: "Operativo" },
     { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding, group: "Operativo" },
     { id: "lead", label: "Lead", icon: "🎯", count: null, group: "Operativo" },
+    { id: "utm", label: "Link tracciati", icon: "🔗", count: null, group: "Operativo" },
     { id: "compliance", label: "Compliance", icon: "✅", count: stats.senzaCin > 0 ? stats.senzaCin : null, group: "Operativo" },
     { id: "schede", label: "Schede Immobili", icon: "🏠", count: null, group: "Operativo" },
     { id: "ecosistema", label: "Ecosistema", icon: "🌐", count: null, group: "Operativo" },
@@ -3884,11 +3926,26 @@ function App({ utente, onLogout }) {
             view === "team" ? <Team proprieta={proprieta} sonoMaster={sonoMaster} onDataChanged={load} /> :
             view === "portale" ? <PortaleAgente proprieta={proprieta} nomeAgente={mioNome} sb={sb} onDataChanged={load} /> :
             view === "valutazione" ? <Valutazione nomeAgente={mioNome} prefill={valutaPrefill} vedoTutto={vedoTutto} /> :
+            view === "utm" ? <Utm /> :
             view === "lead" ? (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
-                  <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Lead</h1><p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>Richieste dal sito + contatti assegnati a te su HubSpot{leads.length ? ` · ${leads.length}` : ""}</p></div>
-                  <button className="bg" onClick={loadLeads} disabled={leadsLoading}>{leadsLoading ? "Aggiorno…" : "↻ Aggiorna"}</button>
+                  <div>
+                    <h1 style={{ fontSize: 26, fontWeight: 700 }}>Lead</h1>
+                    <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>
+                      Richieste dal sito + contatti assegnati a te su HubSpot
+                      {leads.length ? ` · ${leads.filter(l => !l.archiviato).length} attivi` : ""}
+                      {leads.filter(l => l.archiviato).length ? ` · ${leads.filter(l => l.archiviato).length} archiviati` : ""}
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    {leads.some(l => l.archiviato) && (
+                      <button className="bg" onClick={() => setMostraArchiviati(v => !v)}>
+                        {mostraArchiviati ? "Nascondi archiviati" : `Mostra archiviati (${leads.filter(l => l.archiviato).length})`}
+                      </button>
+                    )}
+                    <button className="bg" onClick={loadLeads} disabled={leadsLoading}>{leadsLoading ? "Aggiorno…" : "↻ Aggiorna"}</button>
+                  </div>
                 </div>
                 <div className="gl" style={{ marginBottom: 24 }} />
                 {leadsError ? (
@@ -3902,8 +3959,8 @@ function App({ utente, onLogout }) {
                   <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessun lead: n\u00e9 dal sito n\u00e9 assegnato a te su HubSpot.</div>
                 ) : (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
-                    {leads.map(l => (
-                      <div key={l.id} className="card fi" style={{ cursor: "default" }}>
+                    {leads.filter(l => mostraArchiviati ? l.archiviato : !l.archiviato).map(l => (
+                      <div key={l.id} className="card fi" style={{ cursor: "default", opacity: l.archiviato ? .6 : 1 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
                           <h3 style={{ fontSize: 15, fontWeight: 600 }}>{l.nome}</h3>
                           <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -3917,6 +3974,7 @@ function App({ utente, onLogout }) {
                           <p style={{ fontSize: 12, marginTop: 2 }}>📍 <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(l.indirizzo)}`} target="_blank" rel="noreferrer" style={{ color: "var(--gold)", textDecoration: "none" }}>{l.indirizzo}</a></p>
                         ) : ((l.citta || l.azienda) && <p style={{ fontSize: 12, color: "var(--gray)" }}>{[l.azienda, l.citta].filter(Boolean).join(" · ")}</p>)}
                         {l.dettaglio && <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{l.dettaglio}</p>}
+                        {l.fonte !== "sito" && l.lifecyclestage && <p style={{ fontSize: 11.5, color: "var(--gray)", marginTop: 4 }}>fase: {l.lifecyclestage}</p>}
                         {l.caratteristiche && <p style={{ fontSize: 11.5, color: "var(--gray)", marginTop: 3, display: "flex", flexWrap: "wrap", gap: 5 }}>
                           {l.caratteristiche.split(", ").filter(Boolean).map((c, i) => (
                             <span key={i} style={{ background: "rgba(192,148,86,.14)", color: "#8a6a2f", borderRadius: 20, padding: "2px 9px", fontSize: 11 }}>{c}</span>
@@ -3947,9 +4005,46 @@ function App({ utente, onLogout }) {
                               {l.email && <a href={`mailto:${l.email}`} style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Email →</a>}
                             </>
                           ) : (
-                            <a href={`https://app.hubspot.com/contacts/25704633/record/0-1/${l.id}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Apri su HubSpot →</a>
+                            <>
+                              {l.createdate && <span style={{ fontSize: 11, color: "var(--gray)" }}>{new Date(l.createdate).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "2-digit" })}</span>}
+                              {l.telefono && <a href={`https://wa.me/${String(l.telefono).replace(/\D/g, "")}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>WhatsApp →</a>}
+                              {l.email && <a href={`mailto:${l.email}`} style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Email →</a>}
+                              <a href={`https://app.hubspot.com/contacts/25704633/record/0-1/${l.id}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>HubSpot →</a>
+                            </>
+                          )}
+                          {/* Mettere via / rimettere: vale per entrambe le fonti */}
+                          {l.fonte !== "sito" && l.campi && l.campi.length > 0 && (
+                            <button onClick={() => setLeadAperto(leadAperto === l.id ? null : l.id)}
+                              style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, background: "none", border: 0, padding: 0, cursor: "pointer" }}>
+                              {leadAperto === l.id ? "Chiudi dettaglio" : `Tutti i dati (${l.campi.length}) →`}
+                            </button>
+                          )}
+                          {l.archiviato ? (
+                            <button onClick={() => ripristinaLead(l)} style={{ marginLeft: "auto", fontSize: 11, color: "var(--gray)", background: "none", border: "1px solid var(--cd)", borderRadius: 6, padding: "3px 9px", cursor: "pointer" }}>↩ Rimetti</button>
+                          ) : (
+                            <button onClick={() => archiviaLead(l)} title="Sparisce dall'elenco ma non viene cancellato" style={{ marginLeft: "auto", fontSize: 11, color: "var(--gray)", background: "none", border: "1px solid var(--cd)", borderRadius: 6, padding: "3px 9px", cursor: "pointer" }}>Metti via</button>
                           )}
                         </div>
+
+                        {/* Tutti i campi valorizzati su HubSpot, raggruppati come li ha
+                            organizzati HubSpot stesso. Serve a non dover uscire dal CRM. */}
+                        {leadAperto === l.id && l.campi && (
+                          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--cd)" }}>
+                            {[...new Set(l.campi.map(c => c.gruppo))].sort().map(g => (
+                              <div key={g} style={{ marginBottom: 12 }}>
+                                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--gold)", marginBottom: 5 }}>
+                                  {g.replace(/_/g, " ")}
+                                </div>
+                                {l.campi.filter(c => c.gruppo === g).map(c => (
+                                  <div key={c.chiave} style={{ display: "flex", gap: 8, padding: "3px 0", fontSize: 11.5, borderBottom: "1px solid rgba(0,0,0,.04)" }}>
+                                    <span style={{ color: "var(--gray)", minWidth: 118, flexShrink: 0 }}>{c.etichetta}</span>
+                                    <span style={{ wordBreak: "break-word" }}>{c.valore.length > 220 ? c.valore.slice(0, 220) + "…" : c.valore}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
