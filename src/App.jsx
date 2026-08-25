@@ -3479,6 +3479,9 @@ function App({ utente, onLogout }) {
   const [mostraArchiviati, setMostraArchiviati] = useState(false);   // Lead: vedere anche quelli messi via
   const [leadAperto, setLeadAperto] = useState(null);                // Lead: scheda espansa
   const [leadTuttoIl, setLeadTuttoIl] = useState(null);              // Lead: mostra anche i campi di contorno
+  const [leadTipo, setLeadTipo] = useState("gestione");              // Lead: quale famiglia sto guardando
+  const [soloMiei, setSoloMiei] = useState(false);                   // Lead: solo quelli assegnati a me su HubSpot
+  const classificazioneInCorso = useRef(false);                      // evita di rilanciare la classificazione su se stessa
   const [valutaPrefill, setValutaPrefill] = useState("");
 
   /* Dalla scheda lead al valutatore: portiamo di là tutto quello che il proprietario
@@ -3667,9 +3670,52 @@ function App({ utente, onLogout }) {
       }
     } catch { /* se il sito non risponde mostro comunque HubSpot */ }
 
-    if (erroreHubspot && !daSito.length) { setLeadsError(erroreHubspot); setLeads([]); }
-    else { setLeadsError(erroreHubspot); setLeads([...daSito, ...daHubspot]); }
+    /* 3) la classificazione: separa i proprietari che offrono un immobile da chi
+          cerca casa e da chi ha bisogno di assistenza. Senza, il lead che vale
+          resta sepolto in mezzo agli altri. */
+    const tutti = [...daSito, ...daHubspot];
+    const testoDi = (l) => [l.messaggio, l.dettaglio, (l.properties || {}).descrizione].filter(Boolean).join(" ").trim();
+    try {
+      const { data, ok } = await sb.get("lead_classificato", "?select=id,tipo,motivo,urgente,citta");
+      const cls = ok && Array.isArray(data) ? new Map(data.map(c => [String(c.id), c])) : new Map();
+      tutti.forEach(l => {
+        const c = cls.get(String(l.id));
+        if (c) { l.tipo = c.tipo; l.motivoTipo = c.motivo; l.urgente = c.urgente; l.cittaAI = c.citta; }
+        else if (testoDi(l).length < 15) l.tipo = "senza_richiesta";
+      });
+    } catch { /* senza classificazione si vede tutto insieme: nessun blocco */ }
+
+    setLeadsError(erroreHubspot);
+    setLeads(erroreHubspot && !daSito.length ? [] : tutti);
     setLeadsLoading(false);
+
+    /* I lead nuovi con un messaggio non ancora letto: li mando a classificare in
+       sottofondo e ricarico solo se ne ha classificato davvero qualcuno. */
+    const daClassificare = tutti.filter(l => !l.tipo && testoDi(l).length >= 15)
+      .map(l => ({ id: l.id, nome: l.nome, testo: testoDi(l) }));
+    /* Un solo giro di classificazione per volta: se qualcuno resta indietro lo si
+       recupera al prossimo Aggiorna, non rilanciando all'infinito. */
+    if (daClassificare.length && !classificazioneInCorso.current) {
+      classificazioneInCorso.current = true;
+      try {
+        const r = await fetch("/.netlify/functions/classifica-lead", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lead: daClassificare }),
+        });
+        const j = await r.json();
+        if (j && j.classificati > 0) {
+          const { data, ok } = await sb.get("lead_classificato", "?select=id,tipo,motivo,urgente,citta");
+          if (ok && Array.isArray(data)) {
+            const cls = new Map(data.map(c => [String(c.id), c]));
+            setLeads(prev => prev.map(l => {
+              const c = cls.get(String(l.id));
+              return c ? { ...l, tipo: c.tipo, motivoTipo: c.motivo, urgente: c.urgente, cittaAI: c.citta } : l;
+            }));
+          }
+        }
+      } catch { /* se non risponde, i lead restano non classificati: si vedono lo stesso */ }
+      finally { classificazioneInCorso.current = false; }
+    }
   }, []);
 
   /* Archiviare, non cancellare. Un lead è un contatto: se lo si elimina davvero
@@ -3957,7 +4003,53 @@ function App({ utente, onLogout }) {
                     <button className="bg" onClick={loadLeads} disabled={leadsLoading}>{leadsLoading ? "Aggiorno…" : "↻ Aggiorna"}</button>
                   </div>
                 </div>
-                <div className="gl" style={{ marginBottom: 24 }} />
+                <div className="gl" style={{ marginBottom: 16 }} />
+                {/* Le famiglie di lead. Chi offre un immobile in gestione vale molto
+                    di più di chi cerca casa: qui si apre su quello e basta. */}
+                {leads.length > 0 && (() => {
+                  const visibili = leads
+                    .filter(l => mostraArchiviati ? l.archiviato : !l.archiviato)
+                    .filter(l => !soloMiei || l.fonte === "sito" || l.mio);
+                  const conta = (t) => visibili.filter(l => (l.tipo || "da_leggere") === t).length;
+                  const VOCI = [
+                    { k: "gestione",     eti: "Da gestire",   desc: "proprietari che offrono un immobile" },
+                    { k: "assistenza",   eti: "Assistenza",   desc: "chi ha gi\u00e0 prenotato e ha un problema" },
+                    { k: "ospite",       eti: "Cercano casa", desc: "ospiti in cerca di un alloggio" },
+                    { k: "partnership",  eti: "Partnership",  desc: "agenzie, agenti, fornitori" },
+                    { k: "altro",        eti: "Altro",        desc: "non classificabile o spam" },
+                    { k: "senza_richiesta", eti: "Senza messaggio", desc: "solo nome e contatto, non hanno scritto nulla" },
+                    { k: "tutti",        eti: "Tutti",        desc: "l'elenco intero" },
+                  ];
+                  const urgenti = visibili.filter(l => l.urgente).length;
+                  return (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18, alignItems: "center" }}>
+                      {VOCI.map(v => {
+                        const n = v.k === "tutti" ? visibili.length : conta(v.k);
+                        if (!n && v.k !== "gestione" && v.k !== "tutti") return null;
+                        const attivo = leadTipo === v.k;
+                        return (
+                          <button key={v.k} onClick={() => setLeadTipo(v.k)} title={v.desc}
+                            style={{ padding: "6px 13px", borderRadius: 20, fontSize: 12.5, cursor: "pointer",
+                              border: "1px solid " + (attivo ? "var(--gold)" : "var(--cd)"),
+                              background: attivo ? "var(--gold)" : "var(--white)",
+                              color: attivo ? "#fff" : "var(--gray)", fontWeight: attivo ? 600 : 400 }}>
+                            {v.eti} <span style={{ opacity: .75 }}>{n}</span>
+                          </button>
+                        );
+                      })}
+                      {conta("da_leggere") > 0 && (
+                        <span style={{ fontSize: 11.5, color: "var(--gray)" }}>
+                          {conta("da_leggere")} ancora da leggere \u2014 premi Aggiorna tra poco
+                        </span>
+                      )}
+                      {urgenti > 0 && (
+                        <span style={{ fontSize: 11.5, color: "var(--red)", fontWeight: 600 }}>
+                          \u26a0 {urgenti} da rispondere in fretta
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
                 {leadsError ? (
                   <div style={{ padding: 20, background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", fontSize: 13 }}>
                     <div style={{ color: "var(--red)", fontWeight: 600, marginBottom: 6 }}>{leadsError}</div>
@@ -3969,15 +4061,23 @@ function App({ utente, onLogout }) {
                   <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessun lead: n\u00e9 dal sito n\u00e9 assegnato a te su HubSpot.</div>
                 ) : (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
-                    {leads.filter(l => mostraArchiviati ? l.archiviato : !l.archiviato).map(l => (
+                    {leads
+                      .filter(l => mostraArchiviati ? l.archiviato : !l.archiviato)
+                      .filter(l => !soloMiei || l.fonte === "sito" || l.mio)
+                      .filter(l => leadTipo === "tutti" || (l.tipo || "da_leggere") === leadTipo)
+                      /* gli urgenti in cima: una cancellazione che aspetta \u00e8 un danno */
+                      .sort((a, b) => (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0))
+                      .map(l => (
                       <div key={l.id} className="card fi" style={{ cursor: "default", opacity: l.archiviato ? .6 : 1 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
                           <h3 style={{ fontSize: 15, fontWeight: 600 }}>{l.nome}</h3>
                           <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                            {l.urgente && <span className="tag" style={{ background: "var(--red)", color: "#fff" }}>urgente</span>}
                             {l.fonte === "sito" && <span className="tag" style={{ background: "var(--gold)", color: "#fff" }}>Sito</span>}
                             {l.stato && <span className="tag">{l.stato}</span>}
                           </div>
                         </div>
+                        {l.motivoTipo && <p style={{ fontSize: 11.5, color: "var(--gray)", fontStyle: "italic", marginBottom: 8, lineHeight: 1.4 }}>{l.motivoTipo}</p>}
                         {l.email && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 4, wordBreak: "break-all" }}>✉ {l.email}</p>}
                         {l.telefono && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 4 }}>📞 {l.telefono}</p>}
                         {l.fonte === "sito" && l.indirizzo ? (

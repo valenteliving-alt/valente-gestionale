@@ -90,21 +90,64 @@ async function hsPost(path, token, payload) {
   return r.json();
 }
 
+/* I contatti che vale la pena guardare.
+
+   Fermarsi a "assegnati a Tommaso" lasciava fuori i lead arrivati senza
+   assegnazione, che su HubSpot sono la maggioranza. Qui il bacino è più largo:
+   ogni gruppo di filtri è un motivo diverso per cui un contatto merita di essere
+   visto. HubSpot mette i gruppi in OR fra loro e in AND al loro interno, quindi
+   basta un motivo solo perché il contatto entri.
+
+   Il rumore non è un problema: la classificazione lo mette da parte da sola. */
+const GRUPPI = [
+  // 1. assegnati a te: restano la priorità
+  [{ propertyName: "hubspot_owner_id", operator: "EQ", value: OWNER_ID }],
+  // 2. chi ha scritto qualcosa: se ha lasciato un messaggio, ha una richiesta
+  [{ propertyName: "descrizione", operator: "HAS_PROPERTY" }],
+  [{ propertyName: "message", operator: "HAS_PROPERTY" }],
+  // 3. chi è stato marcato come lead nel ciclo di vita
+  [{ propertyName: "lifecyclestage", operator: "IN",
+     values: ["lead", "marketingqualifiedlead", "salesqualifiedlead", "opportunity", "subscriber"] }],
+  // 4. chi ha uno stato di lavorazione aperto
+  [{ propertyName: "hs_lead_status", operator: "IN",
+     values: ["NEW", "OPEN", "IN_PROGRESS", "OPEN_DEAL", "ATTEMPTED_TO_CONTACT", "CONNECTED"] }],
+  // 5. chi è arrivato da un modulo del sito
+  [{ propertyName: "hs_analytics_source", operator: "IN",
+     values: ["ORGANIC_SEARCH", "PAID_SEARCH", "PAID_SOCIAL", "SOCIAL_MEDIA", "REFERRALS", "DIRECT_TRAFFIC", "OFFLINE", "EMAIL_MARKETING"] },
+   { propertyName: "lifecyclestage", operator: "HAS_PROPERTY" }],
+  // 6. chi ha lasciato un telefono: raramente lo fa chi non vuole essere richiamato
+  [{ propertyName: "phone", operator: "HAS_PROPERTY" }],
+  [{ propertyName: "mobilephone", operator: "HAS_PROPERTY" }],
+];
+
+const TETTO = 1500;   // oltre non si guarda: sarebbe l'intera rubrica, non i lead
+
 async function leadsAssignedToMe(token, props) {
-  const out = [];
-  let after;
-  do {
-    const payload = {
-      filterGroups: [{ filters: [{ propertyName: "hubspot_owner_id", operator: "EQ", value: OWNER_ID }] }],
-      properties: props,
-      sorts: [{ propertyName: "createdate", direction: "DESCENDING" }],
-      limit: 100,
-    };
-    if (after) payload.after = after;
-    const data = await hsPost("/crm/v3/objects/contacts/search", token, payload);
-    out.push(...(data.results || []));
-    after = data.paging && data.paging.next ? data.paging.next.after : undefined;
-  } while (after);
+  const visti = new Map();          // per id: i gruppi si sovrappongono, i doppioni no
+  for (const filters of GRUPPI) {
+    let after;
+    try {
+      do {
+        const payload = {
+          filterGroups: [{ filters }],
+          properties: props,
+          sorts: [{ propertyName: "createdate", direction: "DESCENDING" }],
+          limit: 100,
+        };
+        if (after) payload.after = after;
+        const data = await hsPost("/crm/v3/objects/contacts/search", token, payload);
+        (data.results || []).forEach((c) => { if (!visti.has(c.id)) visti.set(c.id, c); });
+        after = data.paging && data.paging.next ? data.paging.next.after : undefined;
+      } while (after && visti.size < TETTO);
+    } catch (e) {
+      /* Una proprietà che non esiste su questo account fa fallire il suo gruppo:
+         non deve far cadere tutto il resto. */
+      continue;
+    }
+    if (visti.size >= TETTO) break;
+  }
+  const out = [...visti.values()];
+  out.sort((a, b) => String((b.properties || {}).createdate || "").localeCompare(String((a.properties || {}).createdate || "")));
   return out;
 }
 
@@ -118,6 +161,7 @@ function simplify(c, etichette = {}) {
   const p = c.properties || {};
   return {
     id: c.id,
+    mio: String(p.hubspot_owner_id || "") === OWNER_ID,   // assegnato a te, o pescato dal bacino largo
     firstname: p.firstname || "",
     lastname: p.lastname || "",
     nome: [p.firstname, p.lastname].filter(Boolean).join(" "),
