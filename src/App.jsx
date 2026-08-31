@@ -3704,11 +3704,42 @@ function App({ utente, onLogout }) {
       }
     } catch { /* se il sito non risponde mostro comunque HubSpot */ }
 
+    /* 2b) Le conversazioni. Su HubSpot il messaggio del lead \u00e8 quasi sempre una
+           email associata al contatto, non un suo campo: senza questo passaggio
+           nella scheda si vedono solo date e contatori. */
+    const senzaTesto = daHubspot
+      .filter(l => !l.archiviato && !l.messaggio)
+      .slice(0, 400)
+      .map(l => String(l.id));
+    if (senzaTesto.length) {
+      for (let i = 0; i < senzaTesto.length; i += 100) {
+        try {
+          const r = await fetch("/.netlify/functions/hubspot", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "attivita", ids: senzaTesto.slice(i, i + 100) }),
+          });
+          const d = await r.json();
+          const conv = (d && d.conversazioni) || {};
+          daHubspot = daHubspot.map(l => {
+            const c = conv[String(l.id)];
+            if (!c || !c.length) return l;
+            /* Il primo messaggio in arrivo \u00e8 la richiesta originale: quella
+               che dice davvero cosa vuole. Se non c'\u00e8, il primo qualsiasi. */
+            const primo = c.find(x => x.inArrivo) || c[0];
+            return { ...l, conversazione: c, messaggio: l.messaggio || primo.testo };
+          });
+        } catch { /* senza conversazioni si vede comunque il resto */ }
+      }
+    }
+
     /* 3) la classificazione: separa i proprietari che offrono un immobile da chi
           cerca casa e da chi ha bisogno di assistenza. Senza, il lead che vale
           resta sepolto in mezzo agli altri. */
     const tutti = [...daSito, ...daHubspot];
-    const testoDi = (l) => [l.messaggio, l.dettaglio, (l.properties || {}).descrizione].filter(Boolean).join(" ").trim();
+    const testoDi = (l) => [
+      l.messaggio, l.dettaglio, (l.properties || {}).descrizione,
+      (l.conversazione || []).filter(c => c.inArrivo).map(c => [c.oggetto, c.testo].filter(Boolean).join(" \u2014 ")).join("\n"),
+    ].filter(Boolean).join(" ").trim();
     try {
       const { data, ok } = await sb.get("lead_classificato", "?select=id,tipo,motivo,urgente,citta");
       const cls = ok && Array.isArray(data) ? new Map(data.map(c => [String(c.id), c])) : new Map();
@@ -4124,7 +4155,20 @@ function App({ utente, onLogout }) {
                             <span key={i} style={{ background: "rgba(192,148,86,.14)", color: "#8a6a2f", borderRadius: 20, padding: "2px 9px", fontSize: 11 }}>{c}</span>
                           ))}
                         </p>}
-                        {l.messaggio && <p style={{ fontSize: 12, marginTop: 8, lineHeight: 1.45 }}>{l.messaggio}</p>}
+                        {l.messaggio && (
+                          <div style={{ marginTop: 9, padding: "9px 11px", background: "rgba(192,148,86,.09)", borderLeft: "3px solid var(--gold)", borderRadius: 6 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--gold)", marginBottom: 4 }}>Cosa chiede</div>
+                            <div style={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                              {leadAperto === l.id || l.messaggio.length <= 420 ? l.messaggio : l.messaggio.slice(0, 420).trimEnd() + "\u2026"}
+                            </div>
+                            {leadAperto !== l.id && l.messaggio.length > 420 && (
+                              <button onClick={() => setLeadAperto(l.id)}
+                                style={{ marginTop: 6, fontSize: 11, color: "var(--gold)", background: "none", border: 0, padding: 0, cursor: "pointer", textDecoration: "underline" }}>
+                                leggi tutto
+                              </button>
+                            )}
+                          </div>
+                        )}
                         {l.foto && l.foto.length > 0 && (
                           <div style={{ marginTop: 10 }}>
                             <p style={{ fontSize: 11, color: "var(--gray)", marginBottom: 6 }}>📷 {l.foto.length} foto allegate</p>
@@ -4189,8 +4233,36 @@ function App({ utente, onLogout }) {
                           const messaggio = utili.filter(c => paginaMessaggio(c) && sembraTesto(c.valore));
                           const altri = utili.filter(c => !messaggio.includes(c));
                           const mostraResto = leadTuttoIl === l.id;
+                          const conv = l.conversazione || [];
                           return (
                           <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--cd)" }}>
+                            {/* Le email scambiate con il lead. Su HubSpot il contenuto
+                                sta qui, non nei campi del contatto. */}
+                            {conv.length > 0 && (
+                              <div style={{ marginBottom: 14 }}>
+                                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--gold)", marginBottom: 6 }}>
+                                  Conversazione ({conv.length})
+                                </div>
+                                {conv.map(m => (
+                                  <div key={m.id} style={{
+                                    marginBottom: 8, padding: "9px 11px", borderRadius: 8,
+                                    background: m.inArrivo ? "rgba(192,148,86,.09)" : "rgba(0,0,0,.03)",
+                                    borderLeft: "3px solid " + (m.inArrivo ? "var(--gold)" : "var(--cd)"),
+                                  }}>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline", fontSize: 10.5, color: "var(--gray)", marginBottom: 4 }}>
+                                      <strong style={{ color: m.inArrivo ? "var(--gold)" : "var(--gray)" }}>
+                                        {m.inArrivo ? "\u2190 da lui" : "\u2192 da noi"}
+                                      </strong>
+                                      <span>{m.genere}</span>
+                                      {m.quando && <span>{leggibile(m.quando)}</span>}
+                                      {m.allegati && m.allegati.length > 0 && <span>📎 {m.allegati.length}</span>}
+                                    </div>
+                                    {m.oggetto && <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 3 }}>{m.oggetto}</div>}
+                                    <div style={{ fontSize: 12.5, lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.testo}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                             {messaggio.map(c => (
                               <div key={c.chiave} style={{ marginBottom: 12, padding: "10px 12px", background: "rgba(192,148,86,.08)", borderLeft: "3px solid var(--gold)", borderRadius: 6 }}>
                                 <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--gold)", marginBottom: 4 }}>Cosa chiede</div>
