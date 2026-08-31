@@ -109,6 +109,20 @@ const CAMPO_RUMORE = /analytics|pageview|page_view|session|clicks|social|^ip_|_i
    Senza questa priorità la scheda si riempie di nuovo di roba inutile. */
 const utileDavvero = (c) => !CAMPO_RUMORE.test(c.chiave) && !CAMPO_RUMORE.test(c.gruppo || "");
 
+/* HubSpot restituisce date ISO e stringhe "true"/"false": illeggibili in un elenco,
+   e su un telefono stretto una data ISO si spezza una cifra per riga. */
+const leggibile = (v) => {
+  const t = String(v == null ? "" : v);
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(t)) {
+    const d = new Date(t);
+    if (!isNaN(d)) return d.toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" }) +
+                          " \u00b7 " + d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+  }
+  if (t === "true") return "s\u00ec";
+  if (t === "false") return "no";
+  return t;
+};
+
 const sb = {
   async req(method, table, body, query = "", riprova = true) {
     const s = auth.leggi();
@@ -281,6 +295,9 @@ tbody tr:hover{background:rgba(99,102,241,.05)}
 .fg{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px}
 .msgai-top{position:fixed;top:14px;right:18px;z-index:450;display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,#6366F1,#818CF8);color:#fff;border:none;border-radius:999px;padding:10px 20px;font-size:12.5px;font-weight:700;letter-spacing:.02em;cursor:pointer;box-shadow:0 4px 18px rgba(99,102,241,.4);transition:transform .15s}
 .msgai-top:hover{transform:scale(1.05)}
+.lead-riga{display:flex;gap:8px;padding:3px 0;border-bottom:1px solid rgba(0,0,0,.04)}
+.lead-eti{color:var(--gray);min-width:118px;flex-shrink:0}
+.lead-val{word-break:break-word;overflow-wrap:anywhere;min-width:0;flex:1}
 @media (max-width:768px){
   .sidebar{transform:translateX(-100%);transition:transform .25s ease;width:min(82vw,300px);box-shadow:0 0 40px rgba(0,0,0,.45)}
   .sidebar.open{transform:translateX(0)}
@@ -296,6 +313,14 @@ tbody tr:hover{background:rgba(99,102,241,.05)}
   input,select,textarea{font-size:16px;padding:12px 14px}
   .bp,.bg,.bd{padding-top:11px;padding-bottom:11px}
   table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  /* Sul telefono due colonne non ci stanno: l'etichetta va sopra e il valore
+     prende tutta la larghezza, altrimenti si legge una lettera per riga. */
+  .lead-riga{flex-direction:column;gap:1px;padding:6px 0}
+  .lead-eti{min-width:0;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;opacity:.75}
+  .lead-val{font-size:13px}
+  /* Il pulsante flottante copriva le schede: sul telefono resta solo l'icona. */
+  .msgai-top{padding:0;width:42px;height:42px;justify-content:center;border-radius:50%;font-size:18px}
+  .msgai-top .msgai-testo{display:none}
 }
 `;
 
@@ -3625,7 +3650,16 @@ function App({ utente, onLogout }) {
       });
       const data = await r.json();
       if (!r.ok) erroreHubspot = data.error || "Errore nel caricamento dei lead HubSpot.";
-      else daHubspot = (data.leads || []).map(l => ({ ...l, fonte: "hubspot" }));
+      /* Il messaggio sta in un campo personalizzato ("descrizione"): lo tiro fuori
+         subito, cos\u00ec si legge gi\u00e0 sulla scheda senza doverla aprire \u2014 sul
+         telefono \u00e8 la differenza fra vedere il lead e non vederlo. */
+      else daHubspot = (data.leads || []).map(l => {
+        const p = l.properties || {};
+        const testo = [p.descrizione, p.message, p.messaggio, p.richiesta]
+          .map(x => String(x || "").trim())
+          .find(x => x.length > 2 && !/^\d{4}-\d{2}-\d{2}T/.test(x)) || "";
+        return { ...l, fonte: "hubspot", messaggio: testo };
+      });
     } catch { erroreHubspot = "Impossibile contattare HubSpot."; }
 
     // 1b) elenco dei lead HubSpot che abbiamo scelto di non vedere più nel CRM
@@ -3929,7 +3963,7 @@ function App({ utente, onLogout }) {
         {/* Messaggi AI Ospiti: sezione a sé, sempre a portata di mano in alto a destra */}
         {vedoTutto && view !== "messaggiai" && (
           <button className="msgai-top" onClick={() => { setView("messaggiai"); setSidebarOpen(false); }} title="Apri Messaggi AI Ospiti">
-            🤖 Messaggi AI Ospiti
+            🤖<span className="msgai-testo">Messaggi AI Ospiti</span>
           </button>
         )}
 
@@ -4143,7 +4177,16 @@ function App({ utente, onLogout }) {
                           const resto = l.campi.filter(c => !utileDavvero(c));
                           /* Il messaggio del lead va per primo e per intero: è
                              la ragione per cui apri la scheda. */
-                          const messaggio = utili.filter(c => /message|descrizione|description|note|richiest/i.test(c.chiave));
+                          /* Attenzione: campi come "notes_last_contacted" contengono
+                             una DATA, non un messaggio. Prima il nome del campo deve
+                             essere davvero quello di un testo, poi il valore non deve
+                             somigliare a una data o a un numero. */
+                          const paginaMessaggio = (c) =>
+                            /^(message|descrizione|description|richiesta|messaggio|comments?|inquiry|note)$/i.test(c.chiave) ||
+                            /(^|_)(message|messaggio|descrizione|richiesta|comment|inquiry)(_|$)/i.test(c.chiave);
+                          const sembraTesto = (v) =>
+                            !/^\d{4}-\d{2}-\d{2}T/.test(v) && !/^-?\d+([.,]\d+)?$/.test(v) && v.trim().length > 2;
+                          const messaggio = utili.filter(c => paginaMessaggio(c) && sembraTesto(c.valore));
                           const altri = utili.filter(c => !messaggio.includes(c));
                           const mostraResto = leadTuttoIl === l.id;
                           return (
@@ -4155,9 +4198,9 @@ function App({ utente, onLogout }) {
                               </div>
                             ))}
                             {altri.map(c => (
-                              <div key={c.chiave} style={{ display: "flex", gap: 8, padding: "3px 0", fontSize: 11.5, borderBottom: "1px solid rgba(0,0,0,.04)" }}>
-                                <span style={{ color: "var(--gray)", minWidth: 118, flexShrink: 0 }}>{c.etichetta}</span>
-                                <span style={{ wordBreak: "break-word" }}>{c.valore}</span>
+                              <div key={c.chiave} className="lead-riga" style={{ fontSize: 11.5 }}>
+                                <span className="lead-eti">{c.etichetta}</span>
+                                <span className="lead-val">{leggibile(c.valore)}</span>
                               </div>
                             ))}
                             {resto.length > 0 && (
@@ -4167,9 +4210,9 @@ function App({ utente, onLogout }) {
                               </button>
                             )}
                             {mostraResto && resto.map(c => (
-                              <div key={c.chiave} style={{ display: "flex", gap: 8, padding: "2px 0", fontSize: 11, color: "var(--gray)", borderBottom: "1px solid rgba(0,0,0,.03)" }}>
-                                <span style={{ minWidth: 118, flexShrink: 0 }}>{c.etichetta}</span>
-                                <span style={{ wordBreak: "break-word" }}>{c.valore.length > 160 ? c.valore.slice(0, 160) + "…" : c.valore}</span>
+                              <div key={c.chiave} className="lead-riga" style={{ fontSize: 11, color: "var(--gray)" }}>
+                                <span className="lead-eti">{c.etichetta}</span>
+                                <span className="lead-val">{leggibile(c.valore).slice(0, 160)}{c.valore.length > 160 ? "\u2026" : ""}</span>
                               </div>
                             ))}
                           </div>);
