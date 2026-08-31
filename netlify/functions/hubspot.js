@@ -75,8 +75,9 @@ exports.handler = async (event) => {
     if (action === "attivita" || action === "conversazioni") {
       const ids = (Array.isArray(body.ids) ? body.ids : [body.id]).filter(Boolean).map(String).slice(0, 100);
       if (!ids.length) return resp(200, { ok: true, conversazioni: {} });
-      const conv = await conversazioniDi(token, ids);
-      return resp(200, { ok: true, conversazioni: conv });
+      const problemi = [];
+      const conv = await conversazioniDi(token, ids, problemi);
+      return resp(200, { ok: true, conversazioni: conv, problemi });
     }
 
     const props = await tutteLeProprieta(token);
@@ -129,7 +130,7 @@ function testoDaHtml(h) {
     .trim();
 }
 
-async function conversazioniDi(token, ids) {
+async function conversazioniDi(token, ids, problemi = []) {
   const perContatto = {};
   ids.forEach((i) => { perContatto[i] = []; });
 
@@ -176,7 +177,15 @@ async function conversazioniDi(token, ids) {
         });
       }
     } catch (e) {
-      /* Permesso mancante o tipo non disponibile: si prosegue con gli altri. */
+      /* Permesso mancante o tipo non disponibile: si prosegue con gli altri,
+         ma si dice quale e perché — altrimenti il contenuto sparisce in silenzio
+         e non si capisce se è HubSpot a non averlo o noi a non poterlo leggere. */
+      const msg = String(e.message || e);
+      problemi.push({
+        tipo,
+        errore: msg.slice(0, 300),
+        permessoMancante: /403|MISSING_SCOPES|scope/i.test(msg),
+      });
       continue;
     }
   }
