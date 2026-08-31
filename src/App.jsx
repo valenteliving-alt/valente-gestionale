@@ -3506,6 +3506,8 @@ function App({ utente, onLogout }) {
   const [leadTuttoIl, setLeadTuttoIl] = useState(null);              // Lead: mostra anche i campi di contorno
   const [leadTipo, setLeadTipo] = useState("gestione");              // Lead: quale famiglia sto guardando
   const [soloMiei, setSoloMiei] = useState(false);                   // Lead: solo quelli assegnati a me su HubSpot
+  const [convProfonde, setConvProfonde] = useState({});              // Lead: conversazioni cercate a fondo, per id
+  const [convInCorso, setConvInCorso] = useState(null);              // Lead: sto cercando le conversazioni di questo
   const classificazioneInCorso = useRef(false);                      // evita di rilanciare la classificazione su se stessa
   const [valutaPrefill, setValutaPrefill] = useState("");
 
@@ -3785,6 +3787,33 @@ function App({ utente, onLogout }) {
       finally { classificazioneInCorso.current = false; }
     }
   }, []);
+
+  /* Aprire una scheda vuol dire volerne leggere il contenuto. Le associazioni in
+     blocco non trovano tutto (le email della casella Conversazioni di HubSpot
+     sfuggono), quindi qui si va a cercare a fondo su quel singolo contatto. */
+  const cercaConversazione = useCallback(async (l) => {
+    const id = String(l.id);
+    if (l.fonte === "sito" || convProfonde[id]) return;
+    setConvInCorso(id);
+    try {
+      const r = await fetch("/.netlify/functions/hubspot", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "attivita_una", id }),
+      });
+      const d = await r.json();
+      setConvProfonde(prev => ({ ...prev, [id]: { attivita: d.attivita || [], problemi: d.problemi || [] } }));
+    } catch {
+      setConvProfonde(prev => ({ ...prev, [id]: { attivita: [], problemi: [{ tipo: "rete", errore: "non raggiungibile" }] } }));
+    } finally { setConvInCorso(null); }
+  }, [convProfonde]);
+
+  const apriLead = useCallback((l) => {
+    setLeadAperto(prev => {
+      const nuovo = prev === l.id ? null : l.id;
+      if (nuovo) cercaConversazione(l);
+      return nuovo;
+    });
+  }, [cercaConversazione]);
 
   /* Archiviare, non cancellare. Un lead è un contatto: se lo si elimina davvero
      si perde la storia e non si torna indietro. Qui sparisce dall'elenco e si può
@@ -4165,7 +4194,7 @@ function App({ utente, onLogout }) {
                               {leadAperto === l.id || l.messaggio.length <= 420 ? l.messaggio : l.messaggio.slice(0, 420).trimEnd() + "\u2026"}
                             </div>
                             {leadAperto !== l.id && l.messaggio.length > 420 && (
-                              <button onClick={() => setLeadAperto(l.id)}
+                              <button onClick={() => apriLead(l)}
                                 style={{ marginTop: 6, fontSize: 11, color: "var(--gold)", background: "none", border: 0, padding: 0, cursor: "pointer", textDecoration: "underline" }}>
                                 leggi tutto
                               </button>
@@ -4205,7 +4234,7 @@ function App({ utente, onLogout }) {
                           )}
                           {/* Mettere via / rimettere: vale per entrambe le fonti */}
                           {l.fonte !== "sito" && l.campi && l.campi.length > 0 && (
-                            <button onClick={() => setLeadAperto(leadAperto === l.id ? null : l.id)}
+                            <button onClick={() => apriLead(l)}
                               style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, background: "none", border: 0, padding: 0, cursor: "pointer" }}>
                               {leadAperto === l.id ? "Chiudi dettaglio" : `Tutti i dati (${l.campi.length}) →`}
                             </button>
@@ -4236,11 +4265,31 @@ function App({ utente, onLogout }) {
                           const messaggio = utili.filter(c => paginaMessaggio(c) && sembraTesto(c.valore));
                           const altri = utili.filter(c => !messaggio.includes(c));
                           const mostraResto = leadTuttoIl === l.id;
-                          const conv = l.conversazione || [];
+                          const profonda = convProfonde[String(l.id)];
+                          /* Si uniscono le due fonti senza doppioni: quella del
+                             caricamento in blocco e quella cercata all'apertura. */
+                          const conv = (() => {
+                            const m = new Map();
+                            [...(l.conversazione || []), ...((profonda && profonda.attivita) || [])]
+                              .forEach(x => { if (!m.has(String(x.id))) m.set(String(x.id), x); });
+                            return [...m.values()].sort((a, b) => String(a.quando).localeCompare(String(b.quando)));
+                          })();
+                          const cercando = convInCorso === String(l.id);
+                          const guai = (profonda && profonda.problemi) || [];
                           return (
                           <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--cd)" }}>
                             {/* Le email scambiate con il lead. Su HubSpot il contenuto
                                 sta qui, non nei campi del contatto. */}
+                            {cercando && (
+                              <div style={{ fontSize: 11.5, color: "var(--gray)", marginBottom: 10 }}>Cerco le email di questo contatto\u2026</div>
+                            )}
+                            {!cercando && profonda && conv.length === 0 && (
+                              <div style={{ fontSize: 11.5, color: "var(--gray)", marginBottom: 10, padding: "8px 10px", background: "rgba(0,0,0,.03)", borderRadius: 6 }}>
+                                {guai.some(g => g.permessoMancante)
+                                  ? "Le email ci sono su HubSpot ma il token non ha il permesso di leggerle: va aggiunto lo scope sales-email-read all'app privata."
+                                  : "Nessuna email o nota registrata su questo contatto."}
+                              </div>
+                            )}
                             {conv.length > 0 && (
                               <div style={{ marginBottom: 14 }}>
                                 <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--gold)", marginBottom: 6 }}>

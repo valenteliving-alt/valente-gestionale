@@ -80,6 +80,18 @@ exports.handler = async (event) => {
       return resp(200, { ok: true, conversazioni: conv, problemi });
     }
 
+    /* Un contatto solo, ma scavando a fondo: si usa quando apri la scheda.
+       Le associazioni in blocco non trovano tutto \u2014 le email arrivate dalla
+       casella Conversazioni di HubSpot spesso non risultano associate al
+       contatto nel modo classico. Questo elenco invece le prende. */
+    if (action === "attivita_una") {
+      const id = String(body.id || "");
+      if (!id) return resp(200, { ok: true, attivita: [] });
+      const problemi = [];
+      const att = await attivitaDiUnContatto(token, id, problemi);
+      return resp(200, { ok: true, attivita: att, problemi });
+    }
+
     const props = await tutteLeProprieta(token);
     const etichette = await etichetteProprieta(token);
     let raw;
@@ -327,6 +339,51 @@ function simplify(c, etichette = {}) {
 /* Gli stessi criteri che il CRM usava a video, applicati però qui: ogni campo
    scartato alla fonte è peso in meno moltiplicato per il numero di contatti. */
 const RUMORE = /analytics|pageview|page_view|session|clicks|social|^ip_|_ip$|timezone|traffic|referring|first_page|last_page|event_|notification|revenue|^num_|calculated|hs_email_(optout|bad|quarantine|hard|sends|opens|clicks|delivered|bounce)|hs_sales|owner_assigned|unworked|object_id|_timestamp$|latest_source|time_(first|last)|_score|hs_v2|membership|marketable|hs_predictive|hs_prospecting|hs_pipeline|currently_enrolled|hs_count|hs_is_|hs_lifecycle|hs_date_entered|hs_date_exited|hs_time_in|hs_latest|hs_first|hs_last_sales|hs_merged|hs_user_ids|hs_calculated|hs_full_name|hs_searchable|webinar|_history$/i;
+
+/* Tutte le attivit\u00e0 di UN contatto, dall'elenco storico di HubSpot.
+
+   \u00c8 un endpoint pi\u00f9 vecchio ma pi\u00f9 generoso: restituisce in una sola chiamata
+   email in entrata e in uscita, note, chiamate e riunioni, comprese quelle che
+   le associazioni in blocco non vedono. Una chiamata per contatto \u00e8 troppo per
+   un elenco di centinaia, ma \u00e8 perfetta quando apri una scheda sola. */
+async function attivitaDiUnContatto(token, id, problemi = []) {
+  const fuori = [];
+  try {
+    const r = await fetch(`${HUBSPOT_BASE}/engagements/v1/engagements/associated/contact/${id}/paged?limit=100`, {
+      headers: { Authorization: "Bearer " + token },
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      problemi.push({ tipo: "storico", stato: r.status, errore: t.slice(0, 300), permessoMancante: /403|scope/i.test(t) || r.status === 403 });
+      return fuori;
+    }
+    const d = await r.json();
+    (d.results || []).forEach((e) => {
+      const en = e.engagement || {}, m = e.metadata || {};
+      const genere =
+        en.type === "INCOMING_EMAIL" ? "email" : en.type === "EMAIL" ? "email" :
+        en.type === "NOTE" ? "nota" : en.type === "CALL" ? "chiamata" :
+        en.type === "MEETING" ? "incontro" : String(en.type || "").toLowerCase();
+      const testo = String(m.text || "").trim() || testoDaHtml(m.html || m.body || "");
+      if (!testo) return;
+      fuori.push({
+        id: String(en.id),
+        genere,
+        oggetto: m.subject || m.title || "",
+        da: (m.from && (m.from.email || m.from.firstName)) || "",
+        /* Una email in ENTRATA l'ha scritta il lead: \u00e8 quella che conta. */
+        inArrivo: en.type === "INCOMING_EMAIL" || (en.type !== "EMAIL"),
+        quando: en.timestamp ? new Date(en.timestamp).toISOString() : "",
+        testo: testo.slice(0, 8000),
+        allegati: (m.attachments || []).map((a) => String(a.id || "")).filter(Boolean),
+      });
+    });
+  } catch (e) {
+    problemi.push({ tipo: "storico", errore: String(e.message || e).slice(0, 300) });
+  }
+  fuori.sort((a, b) => String(a.quando).localeCompare(String(b.quando)));
+  return fuori;
+}
 
 function resp(statusCode, obj) {
   return {
