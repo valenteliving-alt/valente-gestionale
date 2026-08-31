@@ -3707,9 +3707,12 @@ function App({ utente, onLogout }) {
     /* 2b) Le conversazioni. Su HubSpot il messaggio del lead \u00e8 quasi sempre una
            email associata al contatto, non un suo campo: senza questo passaggio
            nella scheda si vedono solo date e contatori. */
+    /* Solo i pi\u00f9 recenti: ogni conversazione \u00e8 una chiamata ad HubSpot e i
+       lead vecchi non si rileggono. Se un giorno servisse di pi\u00f9, si alza qui. */
+    const QUANTE_CONVERSAZIONI = 100;
     const senzaTesto = daHubspot
       .filter(l => !l.archiviato && !l.messaggio)
-      .slice(0, 400)
+      .slice(0, QUANTE_CONVERSAZIONI)
       .map(l => String(l.id));
     if (senzaTesto.length) {
       for (let i = 0; i < senzaTesto.length; i += 100) {
