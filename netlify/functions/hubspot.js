@@ -25,11 +25,16 @@ async function tutteLeProprieta(token) {
     });
     if (!r.ok) return LEAD_PROPS;
     const d = await r.json();
-    const nomi = (d.results || [])
+    /* Chiedere tutte le 250 proprietà per 1.500 contatti produce una risposta da
+       oltre 6 MB, che Netlify rifiuta: la sezione Lead resta bianca. Quindi si
+       chiede solo quello che serve davvero — l'elenco di riserva più i campi
+       PERSONALIZZATI vostri, che sono gli unici interessanti fra quelli in più
+       (i campi di sistema di HubSpot iniziano tutti per "hs_" e sono contatori). */
+    const personalizzati = (d.results || [])
       .filter(p => !p.hidden && !p.calculated)   // i calcolati non si possono chiedere in blocco
+      .filter(p => !/^hs_/.test(p.name))
       .map(p => p.name);
-    // HubSpot accetta un numero limitato di proprietà per chiamata: tengo le prime 250
-    const lista = [...new Set([...LEAD_PROPS, ...nomi])].slice(0, 250);
+    const lista = [...new Set([...LEAD_PROPS, ...personalizzati])].slice(0, 120);
     cacheProp = { quando: Date.now(), lista };
     return lista;
   } catch { return LEAD_PROPS; }
@@ -222,11 +227,17 @@ const GRUPPI = [
   [{ propertyName: "mobilephone", operator: "HAS_PROPERTY" }],
 ];
 
-const TETTO = 1500;   // oltre non si guarda: sarebbe l'intera rubrica, non i lead
+/* Due limiti, e servono entrambi. Il TETTO tiene la risposta sotto i 6 MB che
+   Netlify accetta; il TEMPO evita che la funzione venga tagliata a 10 secondi
+   lasciando la sezione bianca. Meglio meno lead ma sempre visibili. */
+const TETTO = 500;
+const TEMPO = 7000;
 
 async function leadsAssignedToMe(token, props) {
+  const inizio = Date.now();
   const visti = new Map();          // per id: i gruppi si sovrappongono, i doppioni no
   for (const filters of GRUPPI) {
+    if (Date.now() - inizio > TEMPO) break;
     let after;
     try {
       do {
@@ -240,7 +251,7 @@ async function leadsAssignedToMe(token, props) {
         const data = await hsPost("/crm/v3/objects/contacts/search", token, payload);
         (data.results || []).forEach((c) => { if (!visti.has(c.id)) visti.set(c.id, c); });
         after = data.paging && data.paging.next ? data.paging.next.after : undefined;
-      } while (after && visti.size < TETTO);
+      } while (after && visti.size < TETTO && Date.now() - inizio < TEMPO);
     } catch (e) {
       /* Una proprietà che non esiste su questo account fa fallire il suo gruppo:
          non deve far cadere tutto il resto. */
@@ -279,20 +290,34 @@ function simplify(c, etichette = {}) {
     stato: p.hs_lead_status || "",
     createdate: p.createdate || "",
     lastmodifieddate: p.lastmodifieddate || "",
-    properties: p,
-    /* Tutti i campi che hanno davvero un valore, con nome leggibile e raggruppati.
-       È questo che permette di lavorare dal CRM senza aprire HubSpot. */
+    /* Solo i campi che il CRM legge per nome. L'oggetto `properties` intero
+       moltiplicato per centinaia di contatti sfondava il limite di Netlify. */
+    properties: {
+      descrizione: p.descrizione || "", message: p.message || "",
+      messaggio: p.messaggio || "", richiesta: p.richiesta || "",
+      hubspot_owner_id: p.hubspot_owner_id || "", createdate: p.createdate || "",
+    },
+    /* I campi con un valore, con nome leggibile e raggruppati: è questo che
+       permette di lavorare dal CRM senza aprire HubSpot. I contatori e le
+       metriche di navigazione si scartano qui, non a video: non servono a
+       nessuno e pesano su ogni singolo contatto. */
     campi: Object.entries(p)
       .filter(([k, v]) => v !== null && v !== "" && v !== undefined && !k.startsWith("hs_object"))
+      .filter(([k, v]) => !RUMORE.test(k) && String(v) !== "0" && String(v) !== "0.0")
       .map(([k, v]) => ({
         chiave: k,
         etichetta: (etichette[k] && etichette[k].label) || k,
         gruppo: (etichette[k] && etichette[k].gruppo) || "altro",
-        valore: String(v),
+        valore: String(v).slice(0, 500),
       }))
-      .sort((a, b) => a.etichetta.localeCompare(b.etichetta, "it")),
+      .sort((a, b) => a.etichetta.localeCompare(b.etichetta, "it"))
+      .slice(0, 60),
   };
 }
+
+/* Gli stessi criteri che il CRM usava a video, applicati però qui: ogni campo
+   scartato alla fonte è peso in meno moltiplicato per il numero di contatti. */
+const RUMORE = /analytics|pageview|page_view|session|clicks|social|^ip_|_ip$|timezone|traffic|referring|first_page|last_page|event_|notification|revenue|^num_|calculated|hs_email_(optout|bad|quarantine|hard|sends|opens|clicks|delivered|bounce)|hs_sales|owner_assigned|unworked|object_id|_timestamp$|latest_source|time_(first|last)|_score|hs_v2|membership|marketable|hs_predictive|hs_prospecting|hs_pipeline|currently_enrolled|hs_count|hs_is_|hs_lifecycle|hs_date_entered|hs_date_exited|hs_time_in|hs_latest|hs_first|hs_last_sales|hs_merged|hs_user_ids|hs_calculated|hs_full_name|hs_searchable|webinar|_history$/i;
 
 function resp(statusCode, obj) {
   return {
