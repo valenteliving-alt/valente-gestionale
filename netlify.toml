@@ -10,6 +10,12 @@
 [functions."controlla-lead"]
   schedule = "*/15 * * * *"
 
+# Valutazioni da acquisire: i lead che contano davvero per Valente Living non
+# stanno su HubSpot (la' c'e' la compravendita dell'agenzia) ma nell'app di
+# valutazione. Avvisa solo sopra la soglia di margine: ~4-5 volte al mese.
+[functions."controlla-valutazioni"]
+  schedule = "*/15 * * * *"
+
 # Agente notturno: briefing mattutino alle 7:00 italiane (5:00 UTC in estate)
 [functions."agente-notturno"]
   schedule = "0 5 * * *"

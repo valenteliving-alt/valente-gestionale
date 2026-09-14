@@ -364,10 +364,16 @@ async function attivitaDiUnContatto(token, id, problemi = []) {
         en.type === "INCOMING_EMAIL" ? "email" : en.type === "EMAIL" ? "email" :
         en.type === "NOTE" ? "nota" : en.type === "CALL" ? "chiamata" :
         en.type === "MEETING" ? "incontro" : String(en.type || "").toLowerCase();
-      const testo = String(m.text || "").trim() || testoDaHtml(m.html || m.body || "");
-      if (!testo) return;
+      let testo = String(m.text || "").trim() || testoDaHtml(m.html || m.body || "");
+      /* HubSpot non oscura l'email: la restituisce con dentro una frase in
+         inglese che spiega che manca il permesso. Se la lasciassimo passare
+         sembrerebbe il messaggio del lead. */
+      const oscurata = /content of this email has been redacted|sales-email-read scope/i.test(testo);
+      if (oscurata) testo = "";
+      if (!testo && !oscurata) return;
       fuori.push({
         id: String(en.id),
+        oscurata,
         genere,
         oggetto: m.subject || m.title || "",
         da: (m.from && (m.from.email || m.from.firstName)) || "",

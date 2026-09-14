@@ -4310,7 +4310,13 @@ function App({ utente, onLogout }) {
                                       {m.allegati && m.allegati.length > 0 && <span>📎 {m.allegati.length}</span>}
                                     </div>
                                     {m.oggetto && <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 3 }}>{m.oggetto}</div>}
-                                    <div style={{ fontSize: 12.5, lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.testo}</div>
+                                    {m.oscurata ? (
+                                      <div style={{ fontSize: 12, lineHeight: 1.5, color: "var(--red)" }}>
+                                        HubSpot non lascia leggere il testo di questa email: all'app privata manca il permesso <strong>sales-email-read</strong>.
+                                      </div>
+                                    ) : (
+                                      <div style={{ fontSize: 12.5, lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.testo}</div>
+                                    )}
                                   </div>
                                 ))}
                               </div>
