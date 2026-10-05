@@ -19,7 +19,8 @@
    Non scrive ai proprietari, non tocca HubSpot, non cambia lo stato dei lead.
 
    Chiamata: POST con header x-riepilogo-key = riepilogo_lead_config.cron_key
-   Body opzionale: { giorni: 3, prova: true }  (prova = non segna come inviati)
+   Body opzionale: { giorni: 3, prova: true, rimanda: true }
+   (prova = non manda e non segna; rimanda = include anche i lead già inviati)
    Schedulata da pg_cron (job "riepilogo-lead-telegram"). */
 
 const TG_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
@@ -29,6 +30,16 @@ const SB_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const APP = "https://valentelivingcrm.netlify.app";
 const HUBSPOT_PORTAL = "25704633";
 const SOGLIA_MARGINE = 10000;
+
+/* Campi HubSpot che non dicono niente a chi deve telefonare */
+const TECNICI = new Set(["createdate", "lastmodifieddate", "lifecyclestage", "hubspot_owner_id", "firstname", "lastname",
+  "email", "phone", "mobilephone", "descrizione", "message", "messaggio", "richiesta", "city", "address", "hs_lead_status",
+  "notes_last_updated", "notes_last_contacted", "iso"]);
+const ETICHETTE: Record<string, string> = {
+  tipo_di_esigenza: "Esigenza", tipo_immobile: "Tipo immobile", superficie: "Superficie (mq)", n__locali: "Locali",
+  zona: "Zona", budget_prezzo_richiesto: "Prezzo richiesto", fonte: "Fonte", company: "Azienda", jobtitle: "Ruolo",
+  state: "Regione", zip: "CAP", country: "Paese", website: "Sito",
+};
 
 const sbH = { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json" };
 
@@ -119,6 +130,7 @@ function aPezzi(blocchi: string[], max = 3800) {
 type Lead = {
   id: string; fonte: "hubspot" | "sito"; nome: string; telefono: string; email: string;
   citta: string; creato: string; testo: string; link: string;
+  dati: [string, string][];
   tipo?: string; motivo?: string; urgente?: boolean; cittaAI?: string;
 };
 
@@ -129,7 +141,7 @@ Deno.serve(async (req) => {
     const key = cfg.find((c) => c.chiave === "cron_key")?.valore;
     if (!key || req.headers.get("x-riepilogo-key") !== key) return new Response("unauthorized", { status: 401 });
 
-    let opz: { giorni?: number; prova?: boolean } = {};
+    let opz: { giorni?: number; prova?: boolean; rimanda?: boolean } = {};
     try { opz = await req.json(); } catch { /* niente body */ }
     const giorni = Math.min(Math.max(Number(opz.giorni) || 3, 1), 30);
     const prova = !!opz.prova;
@@ -139,7 +151,8 @@ Deno.serve(async (req) => {
       sb("GET", "lead_riepilogati?select=lead_id") as Promise<{ lead_id: string }[]>,
       sb("GET", "lead_nascosti?select=id") as Promise<{ id: string }[]>,
     ]);
-    const visti = new Set(giaInviati.map((x) => String(x.lead_id)));
+    /* rimanda: rimanda anche quelli già inviati (es. per rifare il messaggio del giorno) */
+    const visti = new Set(opz.rimanda ? [] : giaInviati.map((x) => String(x.lead_id)));
     const fuori = new Set(nascosti.map((x) => String(x.id)));
 
     /* 2) i lead nuovi */
@@ -153,13 +166,19 @@ Deno.serve(async (req) => {
         const t = Date.parse(l.createdate || l.properties?.createdate || "");
         if (!t || t < da || visti.has(id) || fuori.has(id)) continue;
         const p = l.properties || {};
+        const campi: { chiave: string; etichetta: string; valore: string }[] = l.campi || [];
+        const val = (k: string) => campi.find((c) => c.chiave === k)?.valore || "";
         const testo = [p.descrizione, p.message, p.messaggio, p.richiesta]
           .map((x: unknown) => String(x || "").trim())
           .find((x: string) => x.length > 2 && !/^\d{4}-\d{2}-\d{2}T/.test(x)) || "";
+        const telefoni = [...new Set([l.telefono, val("mobilephone"), val("phone")].map((x) => String(x || "").trim()).filter(Boolean))];
+        const dati: [string, string][] = campi
+          .filter((c) => !TECNICI.has(c.chiave) && !/^\d{4}-\d{2}-\d{2}T/.test(c.valore))
+          .map((c) => [ETICHETTE[c.chiave] || c.etichetta, c.valore]);
         leads.push({
-          id, fonte: "hubspot", nome: l.nome || l.email || "Senza nome", telefono: l.telefono || "",
-          email: l.email || "", citta: l.citta || "", creato: l.createdate, testo,
-          link: `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL}/record/0-1/${id}`,
+          id, fonte: "hubspot", nome: l.nome || l.email || "Senza nome", telefono: telefoni.join(" / "),
+          email: l.email || "", citta: [val("address"), l.citta].filter(Boolean).join(", "), creato: l.createdate, testo,
+          link: `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL}/record/0-1/${id}`, dati,
         });
       }
       /* il messaggio vero di solito è una email associata al contatto */
@@ -187,7 +206,11 @@ Deno.serve(async (req) => {
       leads.push({
         id, fonte: "sito", nome: l.nome || l.email || "Richiesta dal sito", telefono: l.telefono || "",
         email: l.email || "", citta: [l.indirizzo, l.citta].filter(Boolean).join(", "), creato: l.created_at,
-        testo: [l.messaggio, l.note, dettaglio].filter(Boolean).join(" — "), link: `${APP}/?view=lead`,
+        testo: [l.messaggio, l.note].filter(Boolean).join("\n"), link: `${APP}/?view=lead`,
+        dati: ([["Tipo", l.tipo], ["Situazione", l.situazione], ["Formula", l.formula], ["Camere", l.camere], ["Mq", l.mq],
+          ["Stato immobile", l.stato_immobile], ["Caratteristiche", l.caratteristiche], ["Budget allestimento", l.budget_allestimento],
+          ["Motivo", l.motivo], ["Foto allegate", l.foto_n ? String(l.foto_n) : ""]] as [string, string][])
+          .filter(([, v]) => v && String(v).trim()).map(([k, v]) => [k, String(v)]),
         /* dal sito arriva solo chi propone un immobile: è un proprietario per costruzione */
         tipo: "gestione", motivo: dettaglio || "Richiesta di gestione dal sito",
       });
@@ -202,14 +225,15 @@ Deno.serve(async (req) => {
       for (const l of daHs) {
         const c = mappa.get(l.id);
         if (c) Object.assign(l, { tipo: c.tipo, motivo: c.motivo, urgente: c.urgente, cittaAI: c.citta });
-        else if (l.testo.trim().length < 15) l.tipo = "senza_richiesta";
         else {
-          const d = await classifica(l.nome, l.testo);
+          const perAI = [l.testo, l.dati.map(([k, v]) => `${k}: ${v}`).join("; ")].filter(Boolean).join("\n");
+          if (perAI.trim().length < 15) { l.tipo = "senza_richiesta"; continue; }
+          const d = await classifica(l.nome, perAI);
           if (!d) continue; // resta senza tipo: si riprova al prossimo giro
           Object.assign(l, { tipo: d.tipo, motivo: String(d.motivo || ""), urgente: !!d.urgente, cittaAI: String(d.citta || "") });
           await sb("POST", "lead_classificato?on_conflict=id", [{
             id: l.id, tipo: d.tipo, motivo: String(d.motivo || "").slice(0, 300), urgente: !!d.urgente,
-            citta: String(d.citta || "").slice(0, 80), impronta: impronta(l.testo), classificato_il: new Date().toISOString(),
+            citta: String(d.citta || "").slice(0, 80), impronta: impronta(perAI), classificato_il: new Date().toISOString(),
           }], "resolution=merge-duplicates,return=minimal");
         }
       }
@@ -226,6 +250,7 @@ Deno.serve(async (req) => {
       .sort((a, b) => Number(!!b.urgente) - Number(!!a.urgente) || Date.parse(b.creato) - Date.parse(a.creato));
     const agenzie = leads.filter((l) => l.tipo === "partnership");
     const conta = (t: string) => leads.filter((l) => l.tipo === t).length;
+    const giornoOra = (s: string) => new Date(s).toLocaleString("it-IT", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" });
     const giorno = (s: string) => new Date(s).toLocaleDateString("it-IT", { day: "numeric", month: "short", timeZone: "Europe/Rome" });
 
     const blocchi: string[] = [];
@@ -235,16 +260,23 @@ Deno.serve(async (req) => {
         ? `${proprietari.length} proprietar${proprietari.length === 1 ? "io" : "i"} da chiamare` + (valNuove.length ? ` · ${valNuove.length} valutazion${valNuove.length === 1 ? "e" : "i"} da acquisire` : "")
         : "Nessun proprietario nuovo da chiamare."));
 
-    proprietari.forEach((l, i) => {
+    /* Una scheda per proprietario, in un messaggio a sé: si copia o si inoltra
+       a chi deve chiamare senza bisogno di aprire HubSpot. */
+    const schede: string[] = proprietari.map((l, i) => {
       const dove = l.cittaAI || l.citta;
-      const estratto = l.testo.replace(/\s+/g, " ").trim().slice(0, 220);
-      blocchi.push(
-        `${l.urgente ? "🔴" : "🏠"} <b>${i + 1}. ${esc(l.nome)}</b>${dove ? " — " + esc(dove) : ""}\n` +
-        (l.telefono ? `📞 ${esc(l.telefono)}\n` : "") +
-        (l.email ? `✉️ ${esc(l.email)}\n` : "") +
-        `💬 ${esc(l.motivo || "")}\n` +
-        (estratto && estratto !== l.motivo ? `<i>"${esc(estratto)}${l.testo.length > 220 ? "…" : ""}"</i>\n` : "") +
-        `${l.fonte === "sito" ? "🌐 dal sito" : "🔗"} · ${esc(giorno(l.creato))} · <a href="${l.link}">apri</a>`);
+      const righe = [
+        `${l.urgente ? "🔴 URGENTE — " : "🏠 "}<b>PROPRIETARIO ${i + 1} di ${proprietari.length}</b>`,
+        `<b>Nome:</b> ${esc(l.nome)}`,
+        `<b>Telefono:</b> ${esc(l.telefono || "non indicato")}`,
+        `<b>Email:</b> ${esc(l.email || "non indicata")}`,
+        dove ? `<b>Zona:</b> ${esc(dove)}` : "",
+        l.citta && l.cittaAI && l.citta !== l.cittaAI ? `<b>Indirizzo/città:</b> ${esc(l.citta)}` : "",
+        ...l.dati.map(([k, v]) => `<b>${esc(k)}:</b> ${esc(v)}`),
+        `<b>Arrivato:</b> ${esc(giornoOra(l.creato))} (${l.fonte === "sito" ? "sito Valente Living" : "HubSpot"})`,
+        `<b>In sintesi:</b> ${esc(l.motivo || "")}`,
+        l.testo.trim() ? `\n<b>Cosa ha scritto:</b>\n${esc(l.testo.trim().slice(0, 2800))}${l.testo.trim().length > 2800 ? "…" : ""}` : "",
+      ];
+      return righe.filter(Boolean).join("\n");
     });
 
     if (valNuove.length) {
@@ -256,7 +288,7 @@ Deno.serve(async (req) => {
 
     if (agenzie.length) {
       blocchi.push("🤝 <b>Agenzie / collaborazioni</b>\n" + agenzie.map((l) =>
-        `• ${esc(l.nome)}${l.telefono ? " · " + esc(l.telefono) : ""} — ${esc(l.motivo || "")}`).join("\n"));
+        `• <b>${esc(l.nome)}</b>${l.telefono ? " · " + esc(l.telefono) : ""}${l.email ? " · " + esc(l.email) : ""}\n  ${esc(l.motivo || "")}`).join("\n"));
     }
 
     const resto = [
@@ -268,7 +300,9 @@ Deno.serve(async (req) => {
 
     /* 6) invio */
     const dest = (await sb("GET", "bot_utenti?select=chat_id&riceve_riepilogo_lead=eq.true") as { chat_id: number }[]);
-    const pezzi = aPezzi(blocchi);
+    const intestazione = blocchi[0];
+    const coda = aPezzi(blocchi.slice(1));
+    const pezzi = [intestazione, ...schede.flatMap((t) => aPezzi([t], 4000)), ...coda];
     if (!prova) {
       for (const d of dest) for (const p of pezzi) await tgSend(d.chat_id, p);
 
