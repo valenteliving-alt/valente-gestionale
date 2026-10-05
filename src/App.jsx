@@ -101,6 +101,23 @@ const auth = {
   },
 };
 
+/* L'esigenza del lead, dal campo HubSpot "Tipo di esigenza". Serve a separare chi
+   vuole affidare l'immobile in gestione da chi lo vuole vendere o cerca casa da
+   comprare: l'AI che legge il messaggio vede "villa 140 mq" e pensa "gestione",
+   ma su HubSpot c'e' scritto chiaramente "Vendita". Dal sito arriva solo gestione. */
+function esigenzaLead(l) {
+  if (l.fonte === "sito") return "Gestione";
+  const v = String(((l.campi || []).find(c => c.chiave === "tipo_di_esigenza") || {}).valore || "").toLowerCase();
+  if (!v) return "Non indicata";
+  if (/gestione|affitto/.test(v)) return "Gestione";
+  if (/vendita/.test(v)) return "Vendita";
+  if (/acquisto/.test(v)) return "Acquisto";
+  if (/investimento/.test(v)) return "Investimento";
+  if (/recruiting|hr/.test(v)) return "Recruiting / HR";
+  if (/stand by/.test(v)) return "Stand by";
+  return "Altro";
+}
+
 /* Nella scheda di un lead conta sapere COSA VUOLE, come si chiama, come lo
    raggiungi e quando ha scritto. Tutto il resto — quante pagine ha visto, la
    città del suo indirizzo IP, i clic su Facebook — è rumore che nasconde
@@ -3506,6 +3523,7 @@ function App({ utente, onLogout }) {
   const [leadAperto, setLeadAperto] = useState(null);                // Lead: scheda espansa
   const [leadTuttoIl, setLeadTuttoIl] = useState(null);              // Lead: mostra anche i campi di contorno
   const [leadTipo, setLeadTipo] = useState("gestione");              // Lead: quale famiglia sto guardando
+  const [leadEsigenza, setLeadEsigenza] = useState("tutte");          // Lead: gestione / vendita / acquisto (campo HubSpot "Tipo di esigenza")
   const [soloMiei, setSoloMiei] = useState(false);                   // Lead: solo quelli assegnati a me su HubSpot
   const [convProfonde, setConvProfonde] = useState({});              // Lead: conversazioni cercate a fondo, per id
   const [convInCorso, setConvInCorso] = useState(null);              // Lead: sto cercando le conversazioni di questo
@@ -4108,10 +4126,20 @@ function App({ utente, onLogout }) {
                 {/* Le famiglie di lead. Chi offre un immobile in gestione vale molto
                     di più di chi cerca casa: qui si apre su quello e basta. */}
                 {leads.length > 0 && (() => {
-                  const visibili = leads
+                  const visibiliTutti = leads
                     .filter(l => mostraArchiviati ? l.archiviato : !l.archiviato)
                     .filter(l => !soloMiei || l.fonte === "sito" || l.mio);
+                  const visibili = visibiliTutti
+                    .filter(l => leadEsigenza === "tutte" || esigenzaLead(l) === leadEsigenza);
                   const conta = (t) => visibili.filter(l => (l.tipo || "da_leggere") === t).length;
+                  /* le esigenze contate sulla famiglia scelta (Da gestire, Tutti...) */
+                  const nellaFamiglia = visibiliTutti.filter(l => leadTipo === "tutti" || (l.tipo || "da_leggere") === leadTipo);
+                  const ESIGENZE = ["Gestione", "Vendita", "Acquisto", "Investimento", "Recruiting / HR", "Stand by", "Altro", "Non indicata"];
+                  const contaEs = (e) => nellaFamiglia.filter(l => esigenzaLead(l) === e).length;
+                  const chip = (attivo) => ({ padding: "4px 11px", borderRadius: 20, fontSize: 11.5, cursor: "pointer",
+                    border: "1px solid " + (attivo ? "var(--navy, #1f2a44)" : "var(--cd)"),
+                    background: attivo ? "var(--navy, #1f2a44)" : "var(--white)",
+                    color: attivo ? "#fff" : "var(--gray)", fontWeight: attivo ? 600 : 400 });
                   const VOCI = [
                     { k: "gestione",     eti: "Da gestire",   desc: "proprietari che offrono un immobile" },
                     { k: "assistenza",   eti: "Assistenza",   desc: "chi ha gi\u00e0 prenotato e ha un problema" },
@@ -4123,6 +4151,22 @@ function App({ utente, onLogout }) {
                   ];
                   const urgenti = visibili.filter(l => l.urgente).length;
                   return (
+                    <>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
+                      <span style={{ fontSize: 11.5, color: "var(--gray)", marginRight: 2 }}>Esigenza:</span>
+                      <button onClick={() => setLeadEsigenza("tutte")} style={chip(leadEsigenza === "tutte")}>
+                        Tutte <span style={{ opacity: .75 }}>{nellaFamiglia.length}</span>
+                      </button>
+                      {ESIGENZE.map(e => {
+                        const n = contaEs(e);
+                        if (!n && leadEsigenza !== e) return null;
+                        return (
+                          <button key={e} onClick={() => setLeadEsigenza(e)} style={chip(leadEsigenza === e)}>
+                            {e} <span style={{ opacity: .75 }}>{n}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18, alignItems: "center" }}>
                       {VOCI.map(v => {
                         const n = v.k === "tutti" ? visibili.length : conta(v.k);
@@ -4149,6 +4193,7 @@ function App({ utente, onLogout }) {
                         </span>
                       )}
                     </div>
+                    </>
                   );
                 })()}
                 {leadsError ? (
@@ -4166,6 +4211,7 @@ function App({ utente, onLogout }) {
                       .filter(l => mostraArchiviati ? l.archiviato : !l.archiviato)
                       .filter(l => !soloMiei || l.fonte === "sito" || l.mio)
                       .filter(l => leadTipo === "tutti" || (l.tipo || "da_leggere") === leadTipo)
+                      .filter(l => leadEsigenza === "tutte" || esigenzaLead(l) === leadEsigenza)
                       /* gli urgenti in cima: una cancellazione che aspetta \u00e8 un danno */
                       .sort((a, b) => (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0))
                       .map(l => (
@@ -4175,6 +4221,7 @@ function App({ utente, onLogout }) {
                           <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                             {l.urgente && <span className="tag" style={{ background: "var(--red)", color: "#fff" }}>urgente</span>}
                             {l.fonte === "sito" && <span className="tag" style={{ background: "var(--gold)", color: "#fff" }}>Sito</span>}
+                            {l.fonte !== "sito" && esigenzaLead(l) !== "Non indicata" && <span className="tag" style={esigenzaLead(l) === "Gestione" ? { background: "#2e7d4f", color: "#fff" } : esigenzaLead(l) === "Vendita" ? { background: "#b5651d", color: "#fff" } : {}}>{esigenzaLead(l)}</span>}
                             {l.stato && <span className="tag">{l.stato}</span>}
                           </div>
                         </div>

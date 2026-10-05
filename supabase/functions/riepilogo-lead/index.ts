@@ -34,12 +34,27 @@ const SOGLIA_MARGINE = 10000;
 /* Campi HubSpot che non dicono niente a chi deve telefonare */
 const TECNICI = new Set(["createdate", "lastmodifieddate", "lifecyclestage", "hubspot_owner_id", "firstname", "lastname",
   "email", "phone", "mobilephone", "descrizione", "message", "messaggio", "richiesta", "city", "address", "hs_lead_status",
-  "notes_last_updated", "notes_last_contacted", "iso"]);
+  "notes_last_updated", "notes_last_contacted", "iso", "tipo_di_esigenza"]);
 const ETICHETTE: Record<string, string> = {
-  tipo_di_esigenza: "Esigenza", tipo_immobile: "Tipo immobile", superficie: "Superficie (mq)", n__locali: "Locali",
+  tipo_immobile: "Tipo immobile", superficie: "Superficie (mq)", n__locali: "Locali",
   zona: "Zona", budget_prezzo_richiesto: "Prezzo richiesto", fonte: "Fonte", company: "Azienda", jobtitle: "Ruolo",
   state: "Regione", zip: "CAP", country: "Paese", website: "Sito",
 };
+
+/* Stessa regola di esigenzaLead() in src/App.jsx: il campo HubSpot "Tipo di
+   esigenza" dice se il proprietario vuole gestione o vendita. L'AI da sola non
+   lo distingue: "villa 140 mq" sembra sempre gestione. */
+function esigenzaDa(v: string) {
+  const x = String(v || "").toLowerCase();
+  if (!x) return "Non indicata";
+  if (/gestione|affitto/.test(x)) return "Gestione";
+  if (/vendita/.test(x)) return "Vendita";
+  if (/acquisto/.test(x)) return "Acquisto";
+  if (/investimento/.test(x)) return "Investimento";
+  if (/recruiting|hr/.test(x)) return "Recruiting / HR";
+  if (/stand by/.test(x)) return "Stand by";
+  return "Altro";
+}
 
 const sbH = { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, "Content-Type": "application/json" };
 
@@ -131,6 +146,7 @@ type Lead = {
   id: string; fonte: "hubspot" | "sito"; nome: string; telefono: string; email: string;
   citta: string; creato: string; testo: string; link: string;
   dati: [string, string][];
+  esigenza: string;
   tipo?: string; motivo?: string; urgente?: boolean; cittaAI?: string;
 };
 
@@ -179,6 +195,7 @@ Deno.serve(async (req) => {
           id, fonte: "hubspot", nome: l.nome || l.email || "Senza nome", telefono: telefoni.join(" / "),
           email: l.email || "", citta: [val("address"), l.citta].filter(Boolean).join(", "), creato: l.createdate, testo,
           link: `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL}/record/0-1/${id}`, dati,
+          esigenza: esigenzaDa(val("tipo_di_esigenza")),
         });
       }
       /* il messaggio vero di solito è una email associata al contatto */
@@ -211,6 +228,7 @@ Deno.serve(async (req) => {
           ["Stato immobile", l.stato_immobile], ["Caratteristiche", l.caratteristiche], ["Budget allestimento", l.budget_allestimento],
           ["Motivo", l.motivo], ["Foto allegate", l.foto_n ? String(l.foto_n) : ""]] as [string, string][])
           .filter(([, v]) => v && String(v).trim()).map(([k, v]) => [k, String(v)]),
+        esigenza: "Gestione",
         /* dal sito arriva solo chi propone un immobile: è un proprietario per costruzione */
         tipo: "gestione", motivo: dettaglio || "Richiesta di gestione dal sito",
       });
@@ -246,27 +264,37 @@ Deno.serve(async (req) => {
     const valNuove = (val || []).filter((v) => !visti.has("val-" + v.id));
 
     /* 5) il messaggio */
-    const proprietari = leads.filter((l) => l.tipo === "gestione")
-      .sort((a, b) => Number(!!b.urgente) - Number(!!a.urgente) || Date.parse(b.creato) - Date.parse(a.creato));
+    const ordina = (a: Lead, b: Lead) => Number(!!b.urgente) - Number(!!a.urgente) || Date.parse(b.creato) - Date.parse(a.creato);
+    const nonProprietario = (l: Lead) => ["ospite", "assistenza", "partnership"].includes(l.tipo || "");
+    /* GESTIONE: chi su HubSpot ha esigenza Gestione, oppure nessuna esigenza ma
+       l'AI ha letto che vuole affidare l'immobile. VENDITA: chi vuole vendere.
+       Chi cerca casa da comprare, recruiting ecc. resta fuori. */
+    const proprietari = leads.filter((l) => !nonProprietario(l) &&
+      (l.esigenza === "Gestione" || (l.esigenza === "Non indicata" && l.tipo === "gestione"))).sort(ordina);
+    const venditori = leads.filter((l) => !nonProprietario(l) && l.esigenza === "Vendita").sort(ordina);
+    const inLista = new Set([...proprietari, ...venditori].map((l) => l.id));
     const agenzie = leads.filter((l) => l.tipo === "partnership");
-    const conta = (t: string) => leads.filter((l) => l.tipo === t).length;
+    const conta = (t: string) => leads.filter((l) => !inLista.has(l.id) && l.tipo !== "partnership" && l.tipo === t).length;
+    const contaEs = (e: string) => leads.filter((l) => !inLista.has(l.id) && l.tipo !== "partnership" && !["ospite", "assistenza"].includes(l.tipo || "") && l.esigenza === e).length;
     const giornoOra = (s: string) => new Date(s).toLocaleString("it-IT", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Rome" });
     const giorno = (s: string) => new Date(s).toLocaleDateString("it-IT", { day: "numeric", month: "short", timeZone: "Europe/Rome" });
 
     const blocchi: string[] = [];
     const oggi = new Date().toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Rome" });
     blocchi.push(`📋 <b>Lead del ${esc(oggi)}</b>\n` +
-      (proprietari.length || valNuove.length
-        ? `${proprietari.length} proprietar${proprietari.length === 1 ? "io" : "i"} da chiamare` + (valNuove.length ? ` · ${valNuove.length} valutazion${valNuove.length === 1 ? "e" : "i"} da acquisire` : "")
+      (proprietari.length || venditori.length || valNuove.length
+        ? [`🏠 Gestione: ${proprietari.length}`, `🏷️ Vendita: ${venditori.length}`,
+           valNuove.length ? `📊 Valutazioni da acquisire: ${valNuove.length}` : ""].filter(Boolean).join("\n")
         : "Nessun proprietario nuovo da chiamare."));
 
     /* Una scheda per proprietario, in un messaggio a sé: si copia o si inoltra
        a chi deve chiamare senza bisogno di aprire HubSpot. */
-    const schede: string[] = proprietari.map((l, i) => {
+    const scheda = (l: Lead, i: number, tot: number, cosa: string, icona: string) => {
       const dove = l.cittaAI || l.citta;
       const righe = [
-        `${l.urgente ? "🔴 URGENTE — " : "🏠 "}<b>PROPRIETARIO ${i + 1} di ${proprietari.length}</b>`,
+        `${l.urgente ? "🔴 URGENTE — " : icona + " "}<b>${cosa} ${i + 1} di ${tot}</b>`,
         `<b>Nome:</b> ${esc(l.nome)}`,
+        `<b>Esigenza:</b> ${esc(l.esigenza === "Non indicata" ? "non indicata su HubSpot (dal messaggio sembra gestione)" : l.esigenza)}`,
         `<b>Telefono:</b> ${esc(l.telefono || "non indicato")}`,
         `<b>Email:</b> ${esc(l.email || "non indicata")}`,
         dove ? `<b>Zona:</b> ${esc(dove)}` : "",
@@ -277,7 +305,11 @@ Deno.serve(async (req) => {
         l.testo.trim() ? `\n<b>Cosa ha scritto:</b>\n${esc(l.testo.trim().slice(0, 2800))}${l.testo.trim().length > 2800 ? "…" : ""}` : "",
       ];
       return righe.filter(Boolean).join("\n");
-    });
+    };
+    const schede: string[] = [
+      ...proprietari.map((l, i) => scheda(l, i, proprietari.length, "GESTIONE", "🏠")),
+      ...venditori.map((l, i) => scheda(l, i, venditori.length, "VENDITA", "🏷️")),
+    ];
 
     if (valNuove.length) {
       blocchi.push("📊 <b>Valutazioni da acquisire</b>\n" + valNuove.map((v) =>
@@ -292,8 +324,10 @@ Deno.serve(async (req) => {
     }
 
     const resto = [
+      ["cercano casa da comprare", contaEs("Acquisto")], ["recruiting/HR", contaEs("Recruiting / HR")],
       ["ospiti", conta("ospite")], ["assistenza", conta("assistenza")],
-      ["senza messaggio", conta("senza_richiesta")], ["altro/spam", conta("altro")],
+      ["senza messaggio", leads.filter((l) => !inLista.has(l.id) && l.tipo === "senza_richiesta" && !["Acquisto", "Recruiting / HR"].includes(l.esigenza)).length],
+      ["altro/spam", leads.filter((l) => !inLista.has(l.id) && l.tipo === "altro" && !["Acquisto", "Recruiting / HR"].includes(l.esigenza)).length],
     ].filter(([, n]) => Number(n) > 0).map(([t, n]) => `${n} ${t}`);
     if (resto.length) blocchi.push(`Scartati: ${resto.join(" · ")}`);
     if (problemi.length) blocchi.push("⚠️ " + esc(problemi.join(" | ")));
@@ -316,7 +350,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({
       ok: true, prova, giorni, destinatari: dest.length, messaggi: pezzi.length,
-      proprietari: proprietari.length, valutazioni: valNuove.length, agenzie: agenzie.length,
+      proprietari: proprietari.length, venditori: venditori.length, valutazioni: valNuove.length, agenzie: agenzie.length,
       totale_lead: leads.length, problemi, anteprima: prova ? pezzi : undefined,
     }), { headers: { "Content-Type": "application/json" } });
   } catch (e) {
