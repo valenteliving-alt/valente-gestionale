@@ -13,6 +13,7 @@ import Team from "./Team";
 import PortaleAgente from "./PortaleAgente";
 import Valutazione from "./Valutazione";
 import Krossbooking from "./Krossbooking";
+import ReportAppartamenti from "./ReportAppartamenti";
 
 const SUPABASE_URL = "https://heabtbdmwbjlgujsisor.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
@@ -3586,7 +3587,7 @@ function App({ utente, onLogout }) {
   useEffect(() => {
     if (!ruoloLetto) return;
     // L'agente ha due sole sezioni: i suoi immobili e il valutatore
-    if (sonoAgente) { if (view !== "portale" && view !== "valutazione") setView("portale"); return; }
+    if (sonoAgente) { if (view !== "portale" && view !== "valutazione" && view !== "report") setView("portale"); return; }
     if (!vedoTutto && ["home", "notifiche", "gestione", "lead", "lancio", "smistamento", "ricorrenti", "archivio", "team", "portale"].includes(view)) {
       setView("proprieta");
     }
@@ -3902,6 +3903,8 @@ function App({ utente, onLogout }) {
     /* I property manager hanno una vista essenziale: solo i loro immobili,
        i proprietari collegati, i documenti e la compliance. */
     { id: "gestione", label: "Gestione & Contabilità", icon: "📊", count: null, group: "Operativo" },
+    // Quanto fa ogni appartamento (dati Kross). Ognuno vede solo gli immobili che gli competono
+    { id: "report", label: "Report appartamenti", icon: "📈", count: null, ...(sonoAgente ? {} : { group: "Operativo" }) },
     { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale, group: "Operativo" },
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length, group: "Operativo" },
     { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding, group: "Operativo" },
@@ -3924,10 +3927,10 @@ function App({ utente, onLogout }) {
   ].filter(i => vedoTutto
     ? true
     : sonoAgente
-      ? (i.id === "portale" || i.id === "valutazione")
+      ? (i.id === "portale" || i.id === "report" || i.id === "valutazione")
       : (ruoloLetto && !mioNome)
         ? false // account senza scheda in Team: nessuna voce, c'è il messaggio a schermo
-        : ["proprieta", "proprietari", "compliance", "guida", "valutazione"].includes(i.id)); // property manager
+        : ["proprieta", "proprietari", "report", "compliance", "guida", "valutazione"].includes(i.id)); // property manager
 
   return (
     <>
@@ -4077,6 +4080,7 @@ function App({ utente, onLogout }) {
             view === "manuale" ? <Manuale /> :
             view === "ricorrenti" ? <Ricorrenti proprieta={proprieta} owners={owners} /> :
             view === "team" ? <Team proprieta={proprieta} sonoMaster={sonoMaster} onDataChanged={load} /> :
+            view === "report" ? <ReportAppartamenti sb={sb} vedoTutto={vedoTutto} sonoAgente={sonoAgente} /> :
             view === "portale" ? <PortaleAgente proprieta={proprieta} nomeAgente={mioNome} sb={sb} onDataChanged={load} /> :
             view === "valutazione" ? <Valutazione nomeAgente={mioNome} prefill={valutaPrefill} vedoTutto={vedoTutto} /> :
             view === "utm" ? <Utm /> :
