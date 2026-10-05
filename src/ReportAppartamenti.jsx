@@ -50,16 +50,16 @@ function totali(righe) {
 }
 
 const Kpi = ({ l, v, sub }) => (
-  <div style={{ flex: "1 1 130px", minWidth: 120, padding: "12px 14px", borderRadius: 12, background: "var(--card, #141414)", border: "1px solid var(--bordo, #262626)" }}>
-    <div style={{ fontSize: 10, letterSpacing: 1.1, textTransform: "uppercase", color: "var(--gray, #8a8a8a)" }}>{l}</div>
+  <div style={{ flex: "1 1 130px", minWidth: 120, padding: "12px 14px", borderRadius: 12, background: "var(--white, #fff)", border: "1px solid var(--gl, #E2E8F0)", boxShadow: "var(--shadow)" }}>
+    <div style={{ fontSize: 10, letterSpacing: 1.1, textTransform: "uppercase", color: "var(--gray, #64748B)" }}>{l}</div>
     <div style={{ fontSize: 20, fontWeight: 700, marginTop: 3 }}>{v}</div>
-    {sub && <div style={{ fontSize: 11, color: "var(--gray, #8a8a8a)", marginTop: 2 }}>{sub}</div>}
+    {sub && <div style={{ fontSize: 11, color: "var(--gray, #64748B)", marginTop: 2 }}>{sub}</div>}
   </div>
 );
 
 const Riga = ({ l, v, forte, meno }) => (
-  <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13, borderBottom: "1px solid rgba(255,255,255,.05)", fontWeight: forte ? 700 : 400 }}>
-    <span style={{ color: forte ? "inherit" : "var(--gray, #8a8a8a)" }}>{l}</span>
+  <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13, borderBottom: "1px solid var(--cd, #ECEEF3)", fontWeight: forte ? 700 : 400 }}>
+    <span style={{ color: forte ? "inherit" : "var(--gray, #64748B)" }}>{l}</span>
     <span>{meno && v !== "—" ? "− " : ""}{v}</span>
   </div>
 );
@@ -100,7 +100,7 @@ export default function ReportAppartamenti({ sb, vedoTutto, sonoAgente }) {
   const elencoCitta = useMemo(() => [...new Set((righe || []).map((r) => r.citta).filter(Boolean))].sort(), [righe]);
   const tot = useMemo(() => totali(appartamenti.flatMap((a) => a.mesi)), [appartamenti]);
 
-  if (righe === null) return <div style={{ textAlign: "center", padding: 60, color: "var(--gray, #8a8a8a)" }}>Caricamento report…</div>;
+  if (righe === null) return <div style={{ textAlign: "center", padding: 60, color: "var(--gray, #64748B)" }}>Caricamento report…</div>;
 
   const vediMargine = !sonoAgente; // gli agenti non vedono provvigione e margine Valente
 
@@ -108,12 +108,12 @@ export default function ReportAppartamenti({ sb, vedoTutto, sonoAgente }) {
     <div style={{ maxWidth: 1100 }}>
       <div style={{ marginBottom: 14 }}>
         <h2 style={{ fontSize: 22 }}>Report appartamenti</h2>
-        <div style={{ fontSize: 12, color: "var(--gray, #8a8a8a)", marginTop: 3 }}>
+        <div style={{ fontSize: 12, color: "var(--gray, #64748B)", marginTop: 3 }}>
           {sonoAgente ? "Quanto fanno gli immobili che hai portato. " : ""}Dati Kross aggiornati ogni 4 ore · mese di check-out · tassa di soggiorno esclusa
         </div>
       </div>
 
-      {errore && <div style={{ padding: 12, borderRadius: 10, background: "rgba(224,116,92,.12)", color: "#e0745c", fontSize: 13, marginBottom: 12 }}>{errore}</div>}
+      {errore && <div style={{ padding: 12, borderRadius: 10, background: "#FFE4E6", color: "var(--red, #E11D48)", fontSize: 13, marginBottom: 12 }}>{errore}</div>}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
         {PERIODI().map(([id, l]) => (
@@ -131,7 +131,7 @@ export default function ReportAppartamenti({ sb, vedoTutto, sonoAgente }) {
       </div>
 
       {appartamenti.length === 0 ? (
-        <div style={{ padding: 40, textAlign: "center", color: "var(--gray, #8a8a8a)", fontSize: 13 }}>
+        <div style={{ padding: 40, textAlign: "center", color: "var(--gray, #64748B)", fontSize: 13 }}>
           {righe.length === 0
             ? (sonoAgente ? "Non ci sono ancora immobili collegati a te su Kross. Se ne hai portati, chiedi in ufficio di indicarti come agente nella scheda dell'immobile." : "Nessun dato Kross disponibile.")
             : "Nessun dato nel periodo scelto."}
@@ -151,22 +151,22 @@ export default function ReportAppartamenti({ sb, vedoTutto, sonoAgente }) {
             {appartamenti.map((a) => {
               const t = a.t; const sub = a.tipo === "sublocazione"; const open = aperto === a.id;
               return (
-                <div key={a.id} style={{ borderRadius: 12, background: "var(--card, #141414)", border: "1px solid var(--bordo, #262626)" }}>
+                <div key={a.id} style={{ borderRadius: 12, background: "var(--white, #fff)", border: "1px solid var(--gl, #E2E8F0)", boxShadow: "var(--shadow)" }}>
                   <button onClick={() => setAperto(open ? null : a.id)} style={{ width: "100%", textAlign: "left", background: "none", border: "none", color: "inherit", padding: "14px 16px", cursor: "pointer" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 15 }}>{a.nome}</div>
-                        <div style={{ fontSize: 11, color: "var(--gray, #8a8a8a)", marginTop: 2 }}>
+                        <div style={{ fontSize: 11, color: "var(--gray, #64748B)", marginTop: 2 }}>
                           {a.citta || "—"} · {sub ? "sublocazione" : "gestione"}{vedoTutto && a.agente ? ` · agente ${a.agente}` : ""}
                         </div>
                       </div>
                       <div style={{ fontSize: 20, fontWeight: 700 }}>{EUR(t.lordo)}</div>
                     </div>
-                    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12, color: "var(--gray, #8a8a8a)", marginTop: 8 }}>
+                    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12, color: "var(--gray, #64748B)", marginTop: 8 }}>
                       <span>{t.notti} notti</span>
                       <span>occupazione {PCT(t.occ)}</span>
                       <span>{EUR(t.adr)}/notte</span>
-                      {!sub && t.pn !== null && <span>netto proprietario <b style={{ color: "var(--text, #eee)" }}>{EUR(t.pn)}</b></span>}
+                      {!sub && t.pn !== null && <span>netto proprietario <b style={{ color: "var(--black, #0F172A)" }}>{EUR(t.pn)}</b></span>}
                       {t.fut > 0 && <span>{t.fut} prenotazioni future</span>}
                       <span style={{ marginLeft: "auto" }}>{open ? "▲" : "▼ dettaglio"}</span>
                     </div>
@@ -188,15 +188,15 @@ export default function ReportAppartamenti({ sb, vedoTutto, sonoAgente }) {
                       <div style={{ overflowX: "auto" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                           <thead>
-                            <tr style={{ color: "var(--gray, #8a8a8a)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1 }}>
+                            <tr style={{ color: "var(--gray, #64748B)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1 }}>
                               {["Mese", "Notti", "Occ.", "Lordo", "Portali", "Pulizie", ...(sub ? [] : ["Netto propr."]), ...(vediMargine ? [sub ? "Netto Valente" : "Provv. Valente"] : [])].map((h, i) => (
-                                <th key={h} style={{ textAlign: i ? "right" : "left", padding: "6px 8px", borderBottom: "1px solid var(--bordo, #262626)" }}>{h}</th>
+                                <th key={h} style={{ textAlign: i ? "right" : "left", padding: "6px 8px", borderBottom: "1px solid var(--gl, #E2E8F0)" }}>{h}</th>
                               ))}
                             </tr>
                           </thead>
                           <tbody>
                             {a.mesi.map((m) => (
-                              <tr key={m.mese} style={{ borderBottom: "1px solid rgba(255,255,255,.05)", opacity: m.mese > oggiMese ? 0.7 : 1 }}>
+                              <tr key={m.mese} style={{ borderBottom: "1px solid var(--cd, #ECEEF3)", opacity: m.mese > oggiMese ? 0.7 : 1 }}>
                                 <td style={{ padding: "6px 8px", whiteSpace: "nowrap" }}>{meseBreve(m.mese)}{m.mese > oggiMese ? " ·prenotato" : ""}</td>
                                 <td style={{ padding: "6px 8px", textAlign: "right" }}>{m.notti}</td>
                                 <td style={{ padding: "6px 8px", textAlign: "right" }}>{PCT(m.giorni_mese ? (100 * m.notti_nel_mese) / m.giorni_mese : null)}</td>
