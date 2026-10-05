@@ -36,12 +36,13 @@ function filtraPeriodo(righe, periodo) {
 }
 
 function totali(righe) {
-  const t = { pren: 0, notti: 0, nottiMese: 0, giorni: 0, lordo: 0, comm: 0, pul: 0, netto: 0, prov: null, pl: null, ced: null, pn: null, tr: null, fut: 0 };
+  const t = { incSub: 0, pren: 0, notti: 0, nottiMese: 0, giorni: 0, lordo: 0, comm: 0, pul: 0, netto: 0, prov: null, pl: null, ced: null, pn: null, tr: null, fut: 0 };
   const add = (k, v) => { if (v !== null && v !== undefined) t[k] = (t[k] || 0) + n(v); };
   righe.forEach((r) => {
     t.pren += n(r.prenotazioni); t.notti += n(r.notti); t.nottiMese += n(r.notti_nel_mese); t.giorni += n(r.giorni_mese);
     t.lordo += n(r.totale_ospite); t.comm += n(r.commissione_ota); t.pul += n(r.pulizie); t.netto += n(r.netto_ota);
     t.fut += n(r.future);
+    if (r.tipo_gestione === "sublocazione") t.incSub += n(r.totale_ospite);
     add("prov", r.provvigione_pm); add("pl", r.proprietario_lordo); add("ced", r.cedolare); add("pn", r.proprietario_netto); add("tr", r.trattenuto_gestione);
   });
   t.occ = t.giorni ? (100 * t.nottiMese) / t.giorni : null;
@@ -49,8 +50,8 @@ function totali(righe) {
   return t;
 }
 
-const Kpi = ({ l, v, sub }) => (
-  <div style={{ flex: "1 1 130px", minWidth: 120, padding: "12px 14px", borderRadius: 12, background: "var(--white, #fff)", border: "1px solid var(--gl, #E2E8F0)", boxShadow: "var(--shadow)" }}>
+const Kpi = ({ l, v, sub, forte }) => (
+  <div style={{ flex: "1 1 130px", minWidth: 120, padding: "12px 14px", borderRadius: 12, background: forte ? "#EEF2FF" : "var(--white, #fff)", border: forte ? "1px solid var(--gold, #6366F1)" : "1px solid var(--gl, #E2E8F0)", boxShadow: "var(--shadow)" }}>
     <div style={{ fontSize: 10, letterSpacing: 1.1, textTransform: "uppercase", color: "var(--gray, #64748B)" }}>{l}</div>
     <div style={{ fontSize: 20, fontWeight: 700, marginTop: 3 }}>{v}</div>
     {sub && <div style={{ fontSize: 11, color: "var(--gray, #64748B)", marginTop: 2 }}>{sub}</div>}
@@ -63,6 +64,101 @@ const Riga = ({ l, v, forte, meno }) => (
     <span>{meno && v !== "—" ? "− " : ""}{v}</span>
   </div>
 );
+
+/* Controllo fatturazione (solo titolare e soci): fatture emesse su Kross per mese
+   e prenotazioni concluse che non hanno ancora fattura o ricevuta. */
+function Fatturazione({ sb }) {
+  const [mesi, setMesi] = useState(null);
+  const [lista, setLista] = useState(null);
+  const [aperta, setAperta] = useState(false);
+
+  useEffect(() => {
+    sb.post("rpc/report_fatturazione", {}).then(({ data }) => setMesi(Array.isArray(data) ? data : []));
+  }, [sb]);
+
+  const apri = async () => {
+    setAperta(!aperta);
+    if (!lista) {
+      const { data } = await sb.post("rpc/lista_da_fatturare", {});
+      setLista(Array.isArray(data) ? data : []);
+    }
+  };
+
+  if (!mesi || mesi.length === 0) return null;
+  const totDa = mesi.reduce((a, m) => a + n(m.da_fatturare_n), 0);
+  const impDa = mesi.reduce((a, m) => a + n(m.da_fatturare_importo), 0);
+  const emesso = mesi.reduce((a, m) => a + n(m.emesso_totale), 0);
+  const cella = { padding: "6px 8px", textAlign: "right", whiteSpace: "nowrap" };
+  const th = { padding: "6px 8px", borderBottom: "1px solid var(--gl, #E2E8F0)" };
+
+  return (
+    <div style={{ borderRadius: 12, background: "var(--white, #fff)", border: "1px solid var(--gl, #E2E8F0)", boxShadow: "var(--shadow)", padding: 16, marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10, alignItems: "baseline" }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>Controllo fatturazione</div>
+          <div style={{ fontSize: 11, color: "var(--gray, #64748B)", marginTop: 2 }}>Fatture emesse su Kross dal 23/02/2026 (IVA inclusa, note di credito sottratte) · prenotazioni concluse ancora senza fattura</div>
+        </div>
+        <div style={{ display: "flex", gap: 18, fontSize: 13, flexWrap: "wrap" }}>
+          <span>Emesso <b>{EUR(emesso)}</b></span>
+          <span style={{ color: totDa ? "var(--red, #E11D48)" : "inherit" }}>Senza fattura <b>{totDa}</b> pren. · <b>{EUR(impDa)}</b></span>
+        </div>
+      </div>
+      <div style={{ overflowX: "auto", marginTop: 10 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr style={{ color: "var(--gray, #64748B)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1 }}>
+              {["Mese", "Fatture emesse", "Importo emesso", "Pren. concluse", "Senza fattura", "Importo senza fattura"].map((h, i) => (
+                <th key={h} style={{ ...th, textAlign: i ? "right" : "left" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {mesi.map((m) => (
+              <tr key={m.mese} style={{ borderBottom: "1px solid var(--cd, #ECEEF3)" }}>
+                <td style={{ ...cella, textAlign: "left" }}>{meseBreve(m.mese)}</td>
+                <td style={cella}>{m.fatture_n}</td>
+                <td style={cella}>{EUR(m.emesso_totale)}</td>
+                <td style={cella}>{m.concluse_n}</td>
+                <td style={{ ...cella, fontWeight: 600, color: n(m.da_fatturare_n) > 10 ? "var(--red, #E11D48)" : "inherit" }}>{m.da_fatturare_n}</td>
+                <td style={cella}>{EUR(m.da_fatturare_importo)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {totDa > 0 && (
+        <button className="bg" style={{ fontSize: 12, marginTop: 10 }} onClick={apri}>{aperta ? "Nascondi" : "Vedi"} le prenotazioni senza fattura</button>
+      )}
+      {aperta && (
+        <div style={{ overflowX: "auto", marginTop: 10, maxHeight: 420, overflowY: "auto" }}>
+          {!lista ? <div style={{ fontSize: 12, color: "var(--gray, #64748B)" }}>Caricamento…</div> : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ color: "var(--gray, #64748B)", fontSize: 10, textTransform: "uppercase", letterSpacing: 1 }}>
+                  {["Check-out", "Appartamento", "Ospite", "Canale", "Tipo", "Importo ospite"].map((h, i) => (
+                    <th key={h} style={{ ...th, textAlign: i === 5 ? "right" : "left" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {lista.map((r) => (
+                  <tr key={r.cod_reservation} style={{ borderBottom: "1px solid var(--cd, #ECEEF3)" }}>
+                    <td style={{ padding: "6px 8px", whiteSpace: "nowrap" }}>{(r.partenza || "").split("-").reverse().join("/")}</td>
+                    <td style={{ padding: "6px 8px" }}>{r.appartamento || "—"}</td>
+                    <td style={{ padding: "6px 8px" }}>{r.ospite || "—"}</td>
+                    <td style={{ padding: "6px 8px" }}>{r.canale || "—"}</td>
+                    <td style={{ padding: "6px 8px" }}>{r.tipo_gestione || "—"}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right" }}>{EUR(r.totale_ospite)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ReportAppartamenti({ sb, vedoTutto, sonoAgente }) {
   const [righe, setRighe] = useState(null);
@@ -144,8 +240,16 @@ export default function ReportAppartamenti({ sb, vedoTutto, sonoAgente }) {
             <Kpi l="Occupazione" v={PCT(tot.occ)} />
             <Kpi l="Prezzo medio notte" v={EUR(tot.adr)} sub="pulizie escluse" />
             {tot.pn !== null && <Kpi l="Netto proprietari" v={EUR(tot.pn)} sub="dopo cedolare 21%" />}
-            {vediMargine && tot.prov !== null && <Kpi l="Provvigioni Valente" v={EUR(tot.prov)} sub="solo gestioni" />}
+            {vedoTutto ? (
+              <>
+                <Kpi l="Provvigioni gestioni" v={EUR(tot.prov || 0)} sub="quota Valente sulle gestioni" />
+                <Kpi l="Incasso sublocazioni" v={EUR(tot.incSub)} sub="tutto fatturato Valente" />
+                <Kpi l="Fatturato Valente" v={EUR(n(tot.prov) + tot.incSub)} sub="provvigioni + sublocazioni" forte />
+              </>
+            ) : vediMargine && tot.prov !== null && <Kpi l="Provvigioni Valente" v={EUR(tot.prov)} sub="solo gestioni" />}
           </div>
+
+          {vedoTutto && <Fatturazione sb={sb} />}
 
           <div style={{ display: "grid", gap: 10 }}>
             {appartamenti.map((a) => {
