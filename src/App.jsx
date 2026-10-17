@@ -14,6 +14,7 @@ import PortaleAgente from "./PortaleAgente";
 import Valutazione from "./Valutazione";
 import Krossbooking from "./Krossbooking";
 import ReportAppartamenti from "./ReportAppartamenti";
+import Planner from "./Planner";
 
 const SUPABASE_URL = "https://heabtbdmwbjlgujsisor.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
@@ -3921,6 +3922,9 @@ function App({ utente, onLogout }) {
     /* I property manager hanno una vista essenziale: solo i loro immobili,
        i proprietari collegati, i documenti e la compliance. */
     { id: "gestione", label: "Gestione & Contabilità", icon: "📊", count: null, group: "Operativo" },
+    /* Il planner: le prenotazioni Kross giorno per giorno, con lo stato della
+       fattura su ogni barra. I property manager lo vedono, gli agenti no. */
+    { id: "planner", label: "Planner", icon: "🗓️", count: null, group: "Operativo" },
     // Quanto fa ogni appartamento (dati Kross). Ognuno vede solo gli immobili che gli competono
     { id: "report", label: "Report appartamenti", icon: "📈", count: null, ...(sonoAgente ? {} : { group: "Operativo" }) },
     { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale, group: "Operativo" },
@@ -3948,7 +3952,7 @@ function App({ utente, onLogout }) {
       ? (i.id === "portale" || i.id === "report" || i.id === "valutazione")
       : (ruoloLetto && !mioNome)
         ? false // account senza scheda in Team: nessuna voce, c'è il messaggio a schermo
-        : ["proprieta", "proprietari", "report", "compliance", "guida", "valutazione"].includes(i.id)); // property manager
+        : ["proprieta", "proprietari", "report", "planner", "compliance", "guida", "valutazione"].includes(i.id)); // property manager
 
   return (
     <>
@@ -4101,6 +4105,7 @@ function App({ utente, onLogout }) {
             view === "report" ? <ReportAppartamenti sb={sb} vedoTutto={vedoTutto} sonoAgente={sonoAgente} /> :
             view === "portale" ? <PortaleAgente proprieta={proprieta} nomeAgente={mioNome} sb={sb} onDataChanged={load} /> :
             view === "valutazione" ? <Valutazione nomeAgente={mioNome} prefill={valutaPrefill} vedoTutto={vedoTutto} /> :
+            view === "planner" ? <Planner /> :
             view === "utm" ? <Utm /> :
             view === "lead" ? (
               <>
