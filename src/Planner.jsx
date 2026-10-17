@@ -108,7 +108,7 @@ export default function Planner() {
       scoperte: scoperte.length,
       euroScoperti: scoperte.reduce((s, r) => s + (Number(r.totale_addebiti) || 0), 0),
       incasso: righe.reduce((s, r) => s + (Number(r.totale_addebiti) || 0), 0),
-      quotaPm: righe.reduce((s, r) => s + (Number(r.quota_pm) || 0), 0),
+      pulizie: righe.reduce((s, r) => s + (Number(r.pulizie) || 0), 0),
     };
   }, [righe]);
 
@@ -144,7 +144,7 @@ export default function Planner() {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <Riquadro titolo="Prenotazioni" valore={conti.totali} nota="che toccano il mese" />
         <Riquadro titolo="Valore" valore={euro(conti.incasso)} nota="totale addebiti" />
-        <Riquadro titolo="Quota PM" valore={euro(conti.quotaPm)} nota="prima dei costi" />
+        <Riquadro titolo="Pulizie" valore={euro(conti.pulizie)} nota="addebitate agli ospiti" />
         <Riquadro titolo="Da fatturare" valore={conti.scoperte}
           nota={conti.scoperte ? euro(conti.euroScoperti) + " già partite" : "tutto in regola"}
           allarme={conti.scoperte > 0} />
@@ -362,12 +362,15 @@ function Dettaglio({ r, onChiudi }) {
         <div style={{ marginTop: 6, padding: "11px 13px", background: "rgba(192,148,86,.08)", borderLeft: "3px solid var(--gold)", borderRadius: 7 }}>
           <Riga eti="Totale addebiti" val={euro(r.totale_addebiti)} grosso />
           <Riga eti="Incassato" val={euro(r.incassato)} />
-          <Riga eti="Quota proprietario" val={euro(r.quota_proprietario)} />
-          <Riga eti="Quota PM" val={euro(r.quota_pm)} grosso />
-          <div style={{ fontSize: 10.5, color: "var(--gray)", marginTop: 7, lineHeight: 1.4 }}>
-            La quota PM è lorda: non toglie pulizie, provvigione agente, né i costi fissi.
-            Il margine vero si vedrà quando la tabella dei costi fissi sarà compilata.
-          </div>
+          {r.quota_proprietario != null && <Riga eti="Quota proprietario" val={euro(r.quota_proprietario)} />}
+          {r.quota_pm != null && <Riga eti="Quota PM" val={euro(r.quota_pm)} grosso />}
+          {r.quota_pm == null && (
+            <div style={{ fontSize: 10.5, color: "var(--gray)", marginTop: 7, lineHeight: 1.4 }}>
+              La ripartizione fra proprietario e Valente Living non arriva da Kross:
+              quei campi sono vuoti su tutte le prenotazioni. Finché non si decide come
+              calcolarla, preferisco non mostrarti un numero inventato.
+            </div>
+          )}
         </div>
 
         {r.proprietario && (
