@@ -4126,6 +4126,16 @@ function App({ utente, onLogout }) {
 
         {/* Main */}
         <main className="main">
+          {/* Un segnale discreto mentre si aggiorna, al posto della pagina che
+              si svuotava. Non sposta nulla: galleggia sopra il contenuto. */}
+          {loading && !!proprieta.length && (
+            <div style={{
+              position: "fixed", top: 14, left: "50%", transform: "translateX(-50%)",
+              zIndex: 300, background: "rgba(15,18,38,.9)", color: "#fff",
+              padding: "6px 15px", borderRadius: 999, fontSize: 12, letterSpacing: ".01em",
+              boxShadow: "0 4px 16px rgba(0,0,0,.25)", pointerEvents: "none",
+            }}>aggiorno…</div>
+          )}
           {/* Account senza scheda in Team: senza un profilo collegato non vedrebbe nulla
               e ogni salvataggio verrebbe rifiutato. Meglio dirlo che lasciarlo a vuoto. */}
           {ruoloLetto && !mioNome && !vedoTutto && !inAttesa ? (
@@ -4155,7 +4165,14 @@ function App({ utente, onLogout }) {
                 Intanto valuta un immobile →
               </button>
             </div>
-          ) : loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
+          ) : (loading && !proprieta.length) ? (
+            /* La schermata di attesa si mette SOLO al primo caricamento, quando
+               non c'è ancora niente da mostrare. Prima bastava `loading` e la
+               pagina si svuotava a ogni salvataggio: sembrava che il CRM si
+               ricaricasse da solo a ogni clic. Ora i dati restano a schermo e
+               l'aggiornamento si vede solo dalla scritta in alto. */
+            <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div>
+          ) :
             view === "home" ? <HomeView proprieta={proprieta} owners={owners} stats={stats} onVai={(v) => setView(v)} onApriProp={setDetP} mioNome={mioNome} vedoTutto={vedoTutto} /> :
             view === "gestione" ? <ContabilitaView proprieta={proprieta} owners={owners} /> :
             view === "notifiche" ? <NotificheView onDataChanged={load} /> :
