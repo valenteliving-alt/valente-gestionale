@@ -3946,7 +3946,25 @@ function App({ utente, onLogout }) {
     ...(sonoAgente ? [{ id: "portale", label: "I miei immobili", icon: "🏠", count: proprieta.length || null }] : []),
     // Il valutatore serve a tutti: l'agente lo usa prima ancora di avere immobili in gestione
     { id: "valutazione", label: "Valuta immobile", icon: "📐", count: null, group: "Documenti" },
-  ].filter(i => vedoTutto
+  ]
+    /* 18/10/2026 — semplificazione decisa da Tommaso: in vista restano solo lead,
+       proprietari, appartamenti con stato di avanzamento e report fatturato/utile.
+       Tutto il resto finisce nella tendina "In pausa" (chiusa): non si cancella niente,
+       per chi vede tutto. Property manager e agenti restano come prima. */
+    .map(i => {
+      if (!vedoTutto) return i;
+      const ATTIVE = ["home", "notifiche", "team", "lead", "proprietari", "proprieta", "lancio", "report"];
+      if (!ATTIVE.includes(i.id)) return { ...i, group: "In pausa" };
+      const { group, ...resto } = i; // le voci attive stanno sempre in vista, fuori dalle tendine
+      return resto;
+    })
+    .sort((a, b) => {
+      if (!vedoTutto) return 0;
+      const ORDINE = ["home", "notifiche", "team", "lead", "proprietari", "proprieta", "lancio", "report"];
+      const pa = ORDINE.indexOf(a.id), pb = ORDINE.indexOf(b.id);
+      return (pa < 0 ? 99 : pa) - (pb < 0 ? 99 : pb);
+    })
+    .filter(i => vedoTutto
     ? true
     : sonoAgente
       ? (i.id === "portale" || i.id === "report" || i.id === "valutazione")
