@@ -916,7 +916,7 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit, onApriScheda }) 
   const tutteInLancio = proprieta.filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato));
   /* Il filtro per persona in cima e' stato tolto: con pochi immobili in lancio
      era una fila di pulsanti quasi tutti a zero. Chi ci lavora si vede comunque
-     dentro ogni scheda, alla riga "Assegnata a". */
+     dentro ogni scheda, dalla tendina sotto gli step. */
   const inLancio = tutteInLancio;
 
   const apriNote = (p) => {
@@ -1015,28 +1015,38 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit, onApriScheda }) 
                     );
                   })}
                 </div>
-                {/* Assegnazione a chi ci lavora */}
+                {/* Chi segue l'immobile: una tendina, non quindici pulsanti.
+                    Quindici nomi affiancati occupavano due righe per dire una
+                    cosa sola, e quella sola si legge meglio da chiusa. */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)" }}>Assegnata a</span>
-                  {attivi.map(c => {
-                    const sel = p.gestore_interno === c.nome;
-                    return (
-                      <button key={c.id} onClick={() => assegna(p, sel ? "" : c.nome)} disabled={busy}
-                        title={sel ? "Clic per togliere l'assegnazione" : `Assegna a ${c.nome}${c.ruolo ? " · " + c.ruolo : ""}`}
-                        style={{
-                          display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", fontSize: 11.5, fontWeight: 600,
-                          border: `1.5px solid ${sel ? (c.colore || "#94A3B8") : "var(--gl)"}`,
-                          background: sel ? (c.colore || "#94A3B8") : "transparent",
-                          color: sel ? "#fff" : "var(--gray)",
-                        }}>
-                        <span style={{ width: 16, height: 16, borderRadius: "50%", background: sel ? "rgba(255,255,255,.25)" : (c.colore || "#94A3B8"), color: "#fff", fontSize: 9, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{c.nome[0]}</span>
-                        {c.nome}
-                      </button>
-                    );
-                  })}
-                  <button onClick={() => setNuovoColl({ nome: "", ruolo: "" })} title="Aggiungi un collaboratore"
-                    style={{ padding: "5px 10px", fontSize: 11.5, fontWeight: 600, border: "1px dashed var(--gl)", background: "transparent", color: "var(--gray)" }}>+ Collaboratore</button>
-                  {!p.gestore_interno && <span style={{ fontSize: 11, color: "var(--red)" }}>non assegnata</span>}
+                  {p.gestore_interno && (
+                    <span style={{
+                      width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+                      background: (attivi.find(c => c.nome === p.gestore_interno) || {}).colore || "#94A3B8",
+                      color: "#fff", fontSize: 10, fontWeight: 700,
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    }}>{p.gestore_interno[0].toUpperCase()}</span>
+                  )}
+                  <select
+                    value={p.gestore_interno || ""}
+                    onChange={(e) => e.target.value === "__nuovo"
+                      ? setNuovoColl({ nome: "", ruolo: "" })
+                      : assegna(p, e.target.value)}
+                    disabled={busy}
+                    title="Chi segue questo immobile"
+                    style={{
+                      padding: "5px 10px", fontSize: 11.5, fontWeight: 600, borderRadius: 7,
+                      border: `1px solid ${p.gestore_interno ? "var(--gl)" : "var(--red)"}`,
+                      background: "var(--white)",
+                      color: p.gestore_interno ? "inherit" : "var(--red)",
+                      maxWidth: 210, cursor: "pointer",
+                    }}>
+                    <option value="">non assegnata</option>
+                    {attivi.map(c => (
+                      <option key={c.id} value={c.nome}>{c.nome}{c.ruolo ? " \u00b7 " + c.ruolo : ""}</option>
+                    ))}
+                    <option value="__nuovo">+ nuovo collaboratore\u2026</option>
+                  </select>
                 </div>
 
                 <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
