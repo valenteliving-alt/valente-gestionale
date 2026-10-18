@@ -859,7 +859,6 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit, onApriScheda }) 
   const [noteDraft, setNoteDraft] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteSalvate, setNoteSalvate] = useState(false);
-  const [fPersona, setFPersona] = useState(""); // filtro per assegnatario
   const [collaboratori, setCollaboratori] = useState([]);
   const [task, setTask] = useState([]);
   const [nuovoColl, setNuovoColl] = useState(null); // { nome, ruolo } quando si crea un collaboratore
@@ -915,9 +914,10 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit, onApriScheda }) 
     catch (e) { alert(e.message); }
   };
   const tutteInLancio = proprieta.filter(p => ["in lancio", "mandato firmato", "mandato + cin"].includes(p.stato));
-  const inLancio = fPersona
-    ? tutteInLancio.filter(p => fPersona === "__nessuno" ? !p.gestore_interno : p.gestore_interno === fPersona)
-    : tutteInLancio;
+  /* Il filtro per persona in cima e' stato tolto: con pochi immobili in lancio
+     era una fila di pulsanti quasi tutti a zero. Chi ci lavora si vede comunque
+     dentro ogni scheda, alla riga "Assegnata a". */
+  const inLancio = tutteInLancio;
 
   const apriNote = (p) => {
     if (noteAperte === p.id) { setNoteAperte(null); return; }
@@ -967,24 +967,11 @@ const KanbanView = ({ proprieta, owners, onDataChanged, onEdit, onApriScheda }) 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8, gap: 12 }}>
-        <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Workflow Lancio</h1><p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{inLancio.length} proprietà in onboarding{fPersona ? ` · filtro attivo` : ""}</p></div>
+        <div><h1 style={{ fontSize: 26, fontWeight: 700 }}>Workflow Lancio</h1><p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{inLancio.length} proprietà in onboarding</p></div>
         <button className="bp" onClick={() => onEdit && onEdit("new")}>+ Nuova proprietà</button>
       </div>
       <div className="gl" style={{ marginBottom: 16 }} />
 
-      {/* Filtro per persona assegnata */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 20 }}>
-        <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", marginRight: 2 }}>Chi ci lavora</span>
-        {[["", `Tutti (${tutteInLancio.length})`], ...attivi.map(c => [c.nome, `${c.nome} (${tutteInLancio.filter(p => p.gestore_interno === c.nome).length})`]), ["__nessuno", `Non assegnate (${tutteInLancio.filter(p => !p.gestore_interno).length})`]].map(([v, l]) => (
-          <button key={v || "tutti"} onClick={() => setFPersona(v)}
-            style={{
-              padding: "5px 12px", fontSize: 11.5, fontWeight: 600,
-              border: `1px solid ${fPersona === v ? "var(--black)" : "var(--gl)"}`,
-              background: fPersona === v ? "var(--black)" : "var(--white)",
-              color: fPersona === v ? "#fff" : "var(--gray)",
-            }}>{l}</button>
-        ))}
-      </div>
       {inLancio.length === 0 ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessuna proprietà in lancio.</div> : (
         <div style={{ display: "grid", gap: 14 }}>
           {inLancio.map(p => {
