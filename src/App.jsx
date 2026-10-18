@@ -3368,7 +3368,57 @@ function fmtData(d) {
   if (isNaN(dt)) return String(d);
   return dt.toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" });
 }
-function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
+/* "Da fare oggi" (18/10/2026): i compiti preparati ogni mattina dalla funzione
+   compiti-oggi (mail info@, WhatsApp di lavoro, lead) più quelli manuali.
+   Ognuno vede i suoi; chi vede tutto può guardare anche quelli dell'altro.
+   Un compito assegnato male si passa all'altro con un clic. */
+const PRI_ORD = { alta: 0, media: 1, bassa: 2 };
+const PRI_COL = { alta: "#c0392b", media: "#e0a039", bassa: "#94a3b8" };
+const ICONA_FONTE = { "ai-email": "✉️", "ai-whatsapp": "💬", "ai-lead": "🎯" };
+function DaFareOggi({ mioNome, vedoTutto }) {
+  const io = /francesco/i.test(mioNome || "") ? "Francesco" : (mioNome || "Tommaso");
+  const altro = io === "Francesco" ? "Tommaso" : "Francesco";
+  const [chi, setChi] = useState(io);
+  const [lista, setLista] = useState(null);
+  const [tutti, setTutti] = useState(false);
+  const carica = useCallback(async () => {
+    const r = await sb.get("task", `?select=id,titolo,dettaglio,assegnato_a,priorita,link,fonte,data_compito,created_at&stato=in.(%22da%20fare%22,%22in%20corso%22)&assegnato_a=ilike.${encodeURIComponent(chi)}&order=created_at.desc&limit=60`);
+    const d = (r.ok && Array.isArray(r.data)) ? r.data : [];
+    d.sort((a, b) => (PRI_ORD[a.priorita] ?? 1) - (PRI_ORD[b.priorita] ?? 1) || new Date(b.created_at) - new Date(a.created_at));
+    setLista(d);
+  }, [chi]);
+  useEffect(() => { carica(); }, [carica]);
+  const fatto = async (t) => { setLista(l => l.filter(x => x.id !== t.id)); await sb.patch("task", t.id, { stato: "fatto", completato_il: new Date().toISOString() }); };
+  const passa = async (t) => { const a = t.assegnato_a === "Francesco" ? "Tommaso" : "Francesco"; setLista(l => l.filter(x => x.id !== t.id)); await sb.patch("task", t.id, { assegnato_a: a }); };
+  const visibili = lista ? (tutti ? lista : lista.slice(0, 6)) : [];
+  return (
+    <div style={{ background: "var(--white)", border: "1px solid rgba(99,102,241,.25)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 16, marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 15, fontWeight: 700, flex: 1 }}>✅ Da fare oggi{chi !== io ? ` — ${chi}` : ""}</div>
+        {vedoTutto && <button className="bg" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => setChi(c => c === io ? altro : io)}>{chi === io ? `Vedi ${altro}` : "Torna ai miei"}</button>}
+      </div>
+      {lista === null ? <div style={{ fontSize: 13, color: "var(--gray)" }}>Caricamento…</div>
+        : !lista.length ? <div style={{ fontSize: 13, color: "var(--gray)" }}>Niente in sospeso. I compiti nuovi arrivano ogni mattina da mail, WhatsApp e lead.</div>
+        : visibili.map(t => (
+          <div key={t.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "9px 0", borderTop: "1px solid rgba(0,0,0,.06)" }}>
+            <span title={"priorità " + (t.priorita || "media")} style={{ width: 8, height: 8, borderRadius: "50%", background: PRI_COL[t.priorita] || PRI_COL.media, marginTop: 6, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 600 }}>{ICONA_FONTE[t.fonte] ? ICONA_FONTE[t.fonte] + " " : ""}{t.titolo}</div>
+              {t.dettaglio && <div style={{ fontSize: 12, color: "var(--gray)", marginTop: 2 }}>{t.dettaglio}</div>}
+              <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+                {t.link && <a href={t.link} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: "var(--gold)" }}>Apri ↗</a>}
+                <button onClick={() => passa(t)} style={{ fontSize: 11.5, background: "none", border: "none", padding: 0, color: "var(--gray)", cursor: "pointer" }}>⇄ Passa a {t.assegnato_a === "Francesco" ? "Tommaso" : "Francesco"}</button>
+              </div>
+            </div>
+            <button className="bp" style={{ fontSize: 11.5, padding: "5px 10px", flexShrink: 0 }} onClick={() => fatto(t)}>Fatto</button>
+          </div>
+        ))}
+      {lista && lista.length > 6 && <button className="bg" style={{ fontSize: 11.5, marginTop: 8 }} onClick={() => setTutti(v => !v)}>{tutti ? "Mostra solo i primi 6" : `Mostra tutti (${lista.length})`}</button>}
+    </div>
+  );
+}
+
+function HomeView({ proprieta, owners, stats, onVai, onApriProp, mioNome, vedoTutto }) {
   const totale = stats.totale;
   const pct = Math.min(100, Math.round((totale / OBIETTIVO_IMMOBILI) * 100));
   const mancanti = Math.max(0, OBIETTIVO_IMMOBILI - totale);
@@ -3392,6 +3442,7 @@ function HomeView({ proprieta, owners, stats, onVai, onApriProp }) {
 
   return (
     <>
+      <DaFareOggi mioNome={mioNome} vedoTutto={vedoTutto} />
       {novita.length > 0 && (
         <div style={{ background: "var(--white)", border: "1px solid rgba(22,101,52,.3)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 16, marginBottom: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#166534", marginBottom: 8 }}>
@@ -4105,7 +4156,7 @@ function App({ utente, onLogout }) {
               </button>
             </div>
           ) : loading ? <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Caricamento...</div> :
-            view === "home" ? <HomeView proprieta={proprieta} owners={owners} stats={stats} onVai={(v) => setView(v)} onApriProp={setDetP} /> :
+            view === "home" ? <HomeView proprieta={proprieta} owners={owners} stats={stats} onVai={(v) => setView(v)} onApriProp={setDetP} mioNome={mioNome} vedoTutto={vedoTutto} /> :
             view === "gestione" ? <ContabilitaView proprieta={proprieta} owners={owners} /> :
             view === "notifiche" ? <NotificheView onDataChanged={load} /> :
             view === "lancio" ? <KanbanView proprieta={proprieta} owners={owners} onDataChanged={load} onEdit={setModalP} onApriScheda={setDetP} /> :
