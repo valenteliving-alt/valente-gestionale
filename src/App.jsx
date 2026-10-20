@@ -15,6 +15,7 @@ import Valutazione from "./Valutazione";
 import Krossbooking from "./Krossbooking";
 import ReportAppartamenti from "./ReportAppartamenti";
 import Planner from "./Planner";
+import Trattative from "./Trattative";
 
 const SUPABASE_URL = "https://heabtbdmwbjlgujsisor.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
@@ -3977,6 +3978,9 @@ function App({ utente, onLogout }) {
     { id: "report", label: "Report appartamenti", icon: "📈", count: null, ...(sonoAgente ? {} : { group: "Operativo" }) },
     { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale, group: "Operativo" },
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length, group: "Operativo" },
+    /* Le trattative vengono PRIMA del lancio: un immobile e un lead finche
+       non c e il mandato, e il Workflow Lancio parte da li in poi. */
+    { id: "trattative", label: "Trattative", icon: "🤝", count: null, group: "Operativo" },
     { id: "lancio", label: "Workflow Lancio", icon: "🚀", count: stats.onboarding, group: "Operativo" },
     { id: "lead", label: "Lead", icon: "🎯", count: null, group: "Operativo" },
     { id: "utm", label: "Link tracciati", icon: "🔗", count: null, group: "Operativo" },
@@ -4188,6 +4192,7 @@ function App({ utente, onLogout }) {
             view === "report" ? <ReportAppartamenti sb={sb} vedoTutto={vedoTutto} sonoAgente={sonoAgente} /> :
             view === "portale" ? <PortaleAgente proprieta={proprieta} nomeAgente={mioNome} sb={sb} onDataChanged={load} /> :
             view === "valutazione" ? <Valutazione nomeAgente={mioNome} prefill={valutaPrefill} vedoTutto={vedoTutto} /> :
+            view === "trattative" ? <Trattative nomeAgente={mioNome} /> :
             view === "planner" ? <Planner /> :
             view === "utm" ? <Utm /> :
             view === "lead" ? (
