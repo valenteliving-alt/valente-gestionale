@@ -4347,39 +4347,6 @@ function App({ utente, onLogout }) {
                     </div>
                   );
                 })()}
-                {/* Il quadro di tutta la vista in una riga: quanti aspettano
-                    ancora la prima chiamata e' il numero che conta di piu'. */}
-                {leads.length > 0 && (() => {
-                  const vis = leads
-                    .filter(l => mostraArchiviati ? l.archiviato : !l.archiviato)
-                    .filter(l => leadTutti || (VISTE_LEAD.find(x => x.k === leadVista) || VISTE_LEAD[0]).filtro(l));
-                  const conta = (k) => vis.filter(l => (l.statoLavorazione || "nuovo") === k).length;
-                  const tot = vis.length || 1;
-                  const PEZZI = [
-                    ["nuovo", "da contattare", "#8A8A8A"],
-                    ["contattato", "contattati", "#C09456"],
-                    ["in_corso", "in corso", "#4A6FA5"],
-                    ["vinto", "vinti", "#5B8C5A"],
-                    ["perso", "persi", "#C5221F"],
-                  ];
-                  return (
-                    <div style={{ marginBottom: 16 }}>
-                      <div style={{ display: "flex", height: 9, borderRadius: 5, overflow: "hidden", background: "rgba(0,0,0,.06)" }}>
-                        {PEZZI.map(([k, , c]) => conta(k) > 0 && (
-                          <span key={k} title={`${conta(k)}`} style={{ width: `${(conta(k) / tot) * 100}%`, background: c }} />
-                        ))}
-                      </div>
-                      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6, fontSize: 12, color: "var(--gray)" }}>
-                        {PEZZI.map(([k, eti, c]) => (
-                          <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                            <i style={{ width: 8, height: 8, borderRadius: 2, background: c, display: "inline-block" }} />
-                            <strong style={{ color: k === "nuovo" && conta(k) ? "var(--black, #111)" : "inherit" }}>{conta(k)}</strong> {eti}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
                 {ultimoEliminato && (
                   <div style={{
                     position: "fixed", bottom: 22, left: "50%", transform: "translateX(-50%)", zIndex: 600,
@@ -4428,91 +4395,117 @@ function App({ utente, onLogout }) {
                           <Fragment key={l.id}>
                           <div onClick={() => apriLead(l)}
                             style={{
-                              display: "flex", alignItems: "center", gap: 12, padding: "11px 14px",
-                              borderBottom: aperto ? "none" : "1px solid rgba(0,0,0,.05)", cursor: "pointer",
-                              background: aperto ? "#fbfaf6" : gest ? "rgba(46,125,79,.045)" : "transparent",
+                              display: "flex", gap: 14, padding: "14px 16px",
+                              borderBottom: aperto ? "none" : "1px solid rgba(0,0,0,.06)", cursor: "pointer",
+                              background: aperto ? "#fbfaf6" : gest ? "rgba(46,125,79,.04)" : "transparent",
                               borderLeft: "3px solid " + (gest ? "#2e7d4f" : "transparent"),
                               opacity: l.archiviato ? .55 : 1,
                             }}>
-                            {/* La data per prima, ben visibile: e il primo criterio
-                                con cui si legge un elenco di richieste. */}
-                            <div style={{ flexShrink: 0, width: 46, textAlign: "center", lineHeight: 1.1 }}>
-                              <div style={{ fontSize: 18, fontWeight: 700 }}>{quando ? quando.getDate() : "—"}</div>
+                            {/* La data per prima */}
+                            <div style={{ flexShrink: 0, width: 46, textAlign: "center", lineHeight: 1.1, paddingTop: 2 }}>
+                              <div style={{ fontSize: 20, fontWeight: 700 }}>{quando ? quando.getDate() : "—"}</div>
                               <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--gray)" }}>
                                 {quando ? quando.toLocaleDateString("it-IT", { month: "short" }).replace(".", "") + " " + String(quando.getFullYear()).slice(2) : ""}
                               </div>
                             </div>
 
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}>
-                                <strong style={{ fontSize: 13.5, fontWeight: 600 }}>{l.nome}</strong>
+                            <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 9 }}>
+                              {/* nome e, a destra, chi lo segue */}
+                              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                <strong style={{ fontSize: 14.5, fontWeight: 600 }}>{l.nome}</strong>
                                 {gest && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#2e7d4f", letterSpacing: ".03em" }}>GESTIONE</span>}
                                 {l.urgente && <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--red)" }}>URGENTE</span>}
                                 {l.fonte === "sito" && <span style={{ fontSize: 10.5, color: "var(--gold)", fontWeight: 600 }}>SITO</span>}
+
+                                {/* Assegnato a: si vede e si cambia da qui */}
+                                <span onClick={(e) => e.stopPropagation()}
+                                  style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{
+                                    width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
+                                    background: l.assegnatoA ? (l.assegnatoColore || "#94A3B8") : "transparent",
+                                    border: l.assegnatoA ? "none" : "1px dashed var(--cd)",
+                                    color: "#fff", fontSize: 10, fontWeight: 700,
+                                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                  }}>{l.assegnatoA ? String(l.assegnatoA)[0].toUpperCase() : ""}</span>
+                                  <select value={l.assegnatoAId || ""} onChange={(e) => assegnaLead(l, e.target.value)}
+                                    title="A chi e assegnato"
+                                    style={{
+                                      fontSize: 12, padding: "4px 8px", borderRadius: 7, cursor: "pointer", maxWidth: 170,
+                                      border: "1px solid " + (l.assegnatoA ? "var(--cd)" : "rgba(197,34,31,.35)"),
+                                      background: "var(--white)", color: l.assegnatoA ? "inherit" : "#C5221F",
+                                      fontWeight: l.assegnatoA ? 500 : 600,
+                                    }}>
+                                    <option value="">da assegnare</option>
+                                    {collaboratori.filter(c => c.attivo !== false).map(c => (
+                                      <option key={c.id} value={c.id}>{c.nome}</option>
+                                    ))}
+                                  </select>
+                                </span>
                               </div>
+
                               {l.messaggio && !aperto && (
-                                <div style={{ fontSize: 12, color: "var(--gray)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                <div style={{ fontSize: 12.5, color: "var(--gray)", lineHeight: 1.45,
+                                  display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                                   {String(l.messaggio).replace(/\s+/g, " ")}
                                 </div>
                               )}
+
+                              {/* Il percorso del lead, con i nomi delle tappe. Si clicca
+                                  la tappa e il lead ci passa. Quando e vinto diventa un
+                                  immobile da prendere in gestione. */}
+                              {(() => {
+                                const PASSI = ["nuovo", "contattato", "in_corso", "vinto"];
+                                const perso = st === "perso";
+                                const idx = perso ? -1 : PASSI.indexOf(st);
+                                return (
+                                  <div onClick={(e) => e.stopPropagation()}
+                                    style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                    <div style={{ display: "flex", flex: "1 1 320px", maxWidth: 560 }}>
+                                      {PASSI.map((k, i) => {
+                                        const fatto = !perso && i <= idx;
+                                        const qui = !perso && i === idx;
+                                        return (
+                                          <button key={k} onClick={() => cambiaStatoLead(l, k)}
+                                            title={`Porta a: ${ETI[k]}`}
+                                            style={{
+                                              flex: 1, padding: "6px 4px", fontSize: 11.5, cursor: "pointer",
+                                              fontWeight: qui ? 700 : 500,
+                                              border: "none", borderTop: "4px solid " + (fatto ? COL[st] : "rgba(0,0,0,.1)"),
+                                              background: qui ? `${COL[st]}14` : "transparent",
+                                              color: fatto ? COL[st] : "var(--gray)",
+                                              marginRight: i < PASSI.length - 1 ? 3 : 0,
+                                            }}>{ETI[k]}</button>
+                                        );
+                                      })}
+                                    </div>
+                                    {perso ? (
+                                      <span style={{ display: "inline-flex", gap: 8, alignItems: "center", fontSize: 12 }}>
+                                        <strong style={{ color: COL.perso }}>Perso</strong>
+                                        <button onClick={() => cambiaStatoLead(l, "nuovo")}
+                                          style={{ background: "none", border: 0, padding: 0, fontSize: 11.5, color: "var(--gray)", textDecoration: "underline", cursor: "pointer" }}>riapri</button>
+                                      </span>
+                                    ) : st !== "vinto" ? (
+                                      <button onClick={() => cambiaStatoLead(l, "perso")}
+                                        style={{ background: "none", border: 0, padding: 0, fontSize: 11.5, color: "var(--gray)", textDecoration: "underline", cursor: "pointer" }}>segna perso</button>
+                                    ) : (
+                                      <span style={{ fontSize: 11.5, color: COL.vinto, fontWeight: 600 }}>da prendere in gestione</span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </div>
 
-                            {/* chi lo segue: pallino con l iniziale, o "da assegnare" */}
-                            {l.assegnatoA ? (
-                              <span title={`Assegnato a ${l.assegnatoA}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, flexShrink: 0, fontSize: 11.5 }}>
-                                <span style={{ width: 22, height: 22, borderRadius: "50%", background: l.assegnatoColore || "#94A3B8", color: "#fff", fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-                                  {String(l.assegnatoA)[0].toUpperCase()}
-                                </span>
-                                <span className="lead-stato">{String(l.assegnatoA).split(" ")[0]}</span>
-                              </span>
-                            ) : (
-                              <span className="lead-stato" style={{ flexShrink: 0, fontSize: 11, color: "var(--gray)", fontStyle: "italic" }}>da assegnare</span>
-                            )}
-
-                            {/* A che punto e, senza aprire niente. Quattro tacche:
-                                piene fino al passo raggiunto. Ogni tacca si clicca
-                                e sposta il lead li. "Perso" diventa tutta rossa. */}
-                            {(() => {
-                              const PASSI = ["nuovo", "contattato", "in_corso", "vinto"];
-                              const idx = st === "perso" ? 4 : PASSI.indexOf(st);
-                              const colore = st === "perso" ? COL.perso : COL[st];
-                              return (
-                                <div className="lead-barra" onClick={(e) => e.stopPropagation()}
-                                  style={{ flexShrink: 0, width: 132, display: "flex", flexDirection: "column", gap: 3 }}>
-                                  <div style={{ display: "flex", gap: 3 }}>
-                                    {PASSI.map((k, i) => (
-                                      <span key={k} title={ETI[k]} onClick={() => cambiaStatoLead(l, k)}
-                                        style={{
-                                          flex: 1, height: 7, borderRadius: 4, cursor: "pointer",
-                                          background: i <= idx ? colore : "rgba(0,0,0,.09)",
-                                          transition: "background .15s",
-                                        }} />
-                                    ))}
-                                  </div>
-                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                    <span style={{ fontSize: 10.5, fontWeight: 600, color: colore }}>{ETI[st]}</span>
-                                    {st !== "perso" && st !== "vinto" && (
-                                      <span title="Segna come perso" onClick={() => cambiaStatoLead(l, "perso")}
-                                        style={{ fontSize: 10, color: "var(--gray)", cursor: "pointer", textDecoration: "underline" }}>perso</span>
-                                    )}
-                                    {st === "perso" && (
-                                      <span onClick={() => cambiaStatoLead(l, "nuovo")}
-                                        style={{ fontSize: 10, color: "var(--gray)", cursor: "pointer", textDecoration: "underline" }}>riapri</span>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })()}
-                            {!l.archiviato && (
-                              <button title="Elimina dall'elenco"
-                                onClick={(e) => { e.stopPropagation(); archiviaLead(l, true); }}
-                                style={{ flexShrink: 0, background: "none", border: 0, padding: "2px 4px", cursor: "pointer", color: "var(--gray)", fontSize: 14, opacity: .55 }}
-                                onMouseEnter={(e) => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "var(--red)"; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.opacity = .55; e.currentTarget.style.color = "var(--gray)"; }}>
-                                🗑
-                              </button>
-                            )}
-                            <span style={{ flexShrink: 0, color: "var(--gray)", fontSize: 12, transform: aperto ? "rotate(90deg)" : "none", transition: "transform .15s" }}>›</span>
+                            {/* elimina e apri */}
+                            <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                              {!l.archiviato && (
+                                <button title="Elimina dall'elenco"
+                                  onClick={(e) => { e.stopPropagation(); archiviaLead(l, true); }}
+                                  style={{ background: "none", border: 0, padding: "2px 4px", cursor: "pointer", color: "var(--gray)", fontSize: 14, opacity: .5 }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.opacity = 1; }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.opacity = .5; }}>🗑</button>
+                              )}
+                              <span style={{ color: "var(--gray)", fontSize: 14, transform: aperto ? "rotate(90deg)" : "none", transition: "transform .15s" }}>›</span>
+                            </div>
                           </div>
                           {aperto && (
                       <LeadPannello inline
