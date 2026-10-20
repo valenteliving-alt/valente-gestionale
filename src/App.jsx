@@ -115,6 +115,17 @@ function leadPerMe(l) {
   return esigenzaLead(l) === "Gestione" || l.tipo === "gestione" || !!l.assegnatoA;
 }
 
+/* Le tre viste della sezione Lead.
+   - Gestione: quelli segnati come gestione su HubSpot. Il dato vostro.
+   - Lead da gestione: anche quelli che riconosco io leggendo il messaggio.
+     Piu largo, a volte include chi vuole comprare per poi affittare.
+   - Assegnati: quelli gia passati a qualcuno. */
+const VISTE_LEAD = [
+  { k: "gestione",    eti: "Gestione",          filtro: (l) => esigenzaLead(l) === "Gestione" },
+  { k: "dagestione",  eti: "Lead da gestione",  filtro: (l) => esigenzaLead(l) === "Gestione" || l.tipo === "gestione" },
+  { k: "assegnati",   eti: "Assegnati",         filtro: (l) => !!l.assegnatoA },
+];
+
 function esigenzaLead(l) {
   if (l.fonte === "sito") return "Gestione";
   const v = String(((l.campi || []).find(c => c.chiave === "tipo_di_esigenza") || {}).valore || "").toLowerCase();
@@ -3599,7 +3610,8 @@ function App({ utente, onLogout }) {
      pagina bianca. Ogni componente carica la sua. */
   const [collaboratori, setCollaboratori] = useState([]);
   const [soloMiei, setSoloMiei] = useState(false);
-  const [leadTutti, setLeadTutti] = useState(false);                 // Lead: mostra anche quelli nascosti                   // Lead: solo quelli assegnati a me su HubSpot
+  const [leadTutti, setLeadTutti] = useState(false);                 // Lead: mostra anche quelli nascosti
+  const [leadVista, setLeadVista] = useState("gestione");            // Lead: Gestione / Lead da gestione / Assegnati                   // Lead: solo quelli assegnati a me su HubSpot
   const [convProfonde, setConvProfonde] = useState({});              // Lead: conversazioni cercate a fondo, per id
   const [convInCorso, setConvInCorso] = useState(null);              // Lead: sto cercando le conversazioni di questo
   const classificazioneInCorso = useRef(false);                      // evita di rilanciare la classificazione su se stessa
@@ -4295,16 +4307,29 @@ function App({ utente, onLogout }) {
                     assegnati. Il resto e nascosto, non cancellato. */}
                 {leads.length > 0 && (() => {
                   const attivi = leads.filter(l => mostraArchiviati ? l.archiviato : !l.archiviato);
-                  const miei = attivi.filter(leadPerMe);
-                  const altri = attivi.length - miei.length;
-                  const daAssegnare = miei.filter(l => !l.assegnatoA).length;
+                  const altri = attivi.filter(l => !leadPerMe(l)).length;
                   return (
-                    <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginBottom: 16, fontSize: 12.5, color: "var(--gray)" }}>
-                      <span><strong style={{ color: "#2e7d4f", fontSize: 15 }}>{miei.length}</strong> lead di gestione</span>
-                      {daAssegnare > 0 && <span><strong style={{ color: "var(--black, #111)" }}>{daAssegnare}</strong> da assegnare</span>}
-                      <button onClick={() => setLeadTutti(v => !v)}
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+                      {VISTE_LEAD.map(v => {
+                        const n = attivi.filter(v.filtro).length;
+                        const on = !leadTutti && leadVista === v.k;
+                        const verde = v.k === "gestione";
+                        return (
+                          <button key={v.k} onClick={() => { setLeadVista(v.k); setLeadTutti(false); }}
+                            style={{
+                              padding: "6px 15px", borderRadius: 20, fontSize: 13, cursor: "pointer",
+                              fontWeight: on ? 600 : 500,
+                              border: "1px solid " + (on ? (verde ? "#2e7d4f" : "var(--navy, #1f2a44)") : (verde ? "#2e7d4f" : "var(--cd)")),
+                              background: on ? (verde ? "#2e7d4f" : "var(--navy, #1f2a44)") : "var(--white)",
+                              color: on ? "#fff" : (verde ? "#2e7d4f" : "var(--gray)"),
+                            }}>
+                            {v.eti} <span style={{ opacity: .75 }}>{n}</span>
+                          </button>
+                        );
+                      })}
+                      <button onClick={() => setLeadTutti(t => !t)}
                         style={{ marginLeft: "auto", background: "none", border: 0, padding: 0, fontSize: 12, color: "var(--gray)", textDecoration: "underline", cursor: "pointer" }}>
-                        {leadTutti ? "nascondi gli altri" : `vedi anche gli altri (${altri})`}
+                        {leadTutti ? "torna alle tue viste" : `vedi anche gli altri (${altri})`}
                       </button>
                     </div>
                   );
@@ -4327,7 +4352,7 @@ function App({ utente, onLogout }) {
                     {leads
                       .filter(l => mostraArchiviati ? l.archiviato : !l.archiviato)
                       .filter(l => !soloMiei || l.fonte === "sito" || l.mio)
-                      .filter(l => leadTutti || leadPerMe(l))
+                      .filter(l => leadTutti || (VISTE_LEAD.find(x => x.k === leadVista) || VISTE_LEAD[0]).filtro(l))
                       /* Ordine cronologico, dal più recente. Un lead di ieri vale
                          più di uno di marzo, e cercarlo per data è il gesto
                          naturale. I Gestione si riconoscono dal colore, non
