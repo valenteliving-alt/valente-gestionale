@@ -360,6 +360,7 @@ tbody tr:hover{background:rgba(99,102,241,.05)}
   /* Nell elenco dei lead, su schermo stretto, lo stato e la data rubano
      la larghezza al nome e al messaggio, che sono quello che leggi. */
   .lead-stato{display:none}
+  .lead-barra{width:78px!important}
   .lead-data{min-width:0!important;font-size:10px!important}
   .lead-eti{min-width:0;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;opacity:.75}
   .lead-val{font-size:13px}
@@ -4346,6 +4347,39 @@ function App({ utente, onLogout }) {
                     </div>
                   );
                 })()}
+                {/* Il quadro di tutta la vista in una riga: quanti aspettano
+                    ancora la prima chiamata e' il numero che conta di piu'. */}
+                {leads.length > 0 && (() => {
+                  const vis = leads
+                    .filter(l => mostraArchiviati ? l.archiviato : !l.archiviato)
+                    .filter(l => leadTutti || (VISTE_LEAD.find(x => x.k === leadVista) || VISTE_LEAD[0]).filtro(l));
+                  const conta = (k) => vis.filter(l => (l.statoLavorazione || "nuovo") === k).length;
+                  const tot = vis.length || 1;
+                  const PEZZI = [
+                    ["nuovo", "da contattare", "#8A8A8A"],
+                    ["contattato", "contattati", "#C09456"],
+                    ["in_corso", "in corso", "#4A6FA5"],
+                    ["vinto", "vinti", "#5B8C5A"],
+                    ["perso", "persi", "#C5221F"],
+                  ];
+                  return (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ display: "flex", height: 9, borderRadius: 5, overflow: "hidden", background: "rgba(0,0,0,.06)" }}>
+                        {PEZZI.map(([k, , c]) => conta(k) > 0 && (
+                          <span key={k} title={`${conta(k)}`} style={{ width: `${(conta(k) / tot) * 100}%`, background: c }} />
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6, fontSize: 12, color: "var(--gray)" }}>
+                        {PEZZI.map(([k, eti, c]) => (
+                          <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                            <i style={{ width: 8, height: 8, borderRadius: 2, background: c, display: "inline-block" }} />
+                            <strong style={{ color: k === "nuovo" && conta(k) ? "var(--black, #111)" : "inherit" }}>{conta(k)}</strong> {eti}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
                 {ultimoEliminato && (
                   <div style={{
                     position: "fixed", bottom: 22, left: "50%", transform: "translateX(-50%)", zIndex: 600,
@@ -4435,10 +4469,40 @@ function App({ utente, onLogout }) {
                               <span className="lead-stato" style={{ flexShrink: 0, fontSize: 11, color: "var(--gray)", fontStyle: "italic" }}>da assegnare</span>
                             )}
 
-                            <span className="lead-stato" style={{
-                              flexShrink: 0, fontSize: 10.5, fontWeight: 600, padding: "3px 9px",
-                              borderRadius: 20, color: COL[st], border: `1px solid ${COL[st]}33`, background: `${COL[st]}14`,
-                            }}>{ETI[st]}</span>
+                            {/* A che punto e, senza aprire niente. Quattro tacche:
+                                piene fino al passo raggiunto. Ogni tacca si clicca
+                                e sposta il lead li. "Perso" diventa tutta rossa. */}
+                            {(() => {
+                              const PASSI = ["nuovo", "contattato", "in_corso", "vinto"];
+                              const idx = st === "perso" ? 4 : PASSI.indexOf(st);
+                              const colore = st === "perso" ? COL.perso : COL[st];
+                              return (
+                                <div className="lead-barra" onClick={(e) => e.stopPropagation()}
+                                  style={{ flexShrink: 0, width: 132, display: "flex", flexDirection: "column", gap: 3 }}>
+                                  <div style={{ display: "flex", gap: 3 }}>
+                                    {PASSI.map((k, i) => (
+                                      <span key={k} title={ETI[k]} onClick={() => cambiaStatoLead(l, k)}
+                                        style={{
+                                          flex: 1, height: 7, borderRadius: 4, cursor: "pointer",
+                                          background: i <= idx ? colore : "rgba(0,0,0,.09)",
+                                          transition: "background .15s",
+                                        }} />
+                                    ))}
+                                  </div>
+                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                    <span style={{ fontSize: 10.5, fontWeight: 600, color: colore }}>{ETI[st]}</span>
+                                    {st !== "perso" && st !== "vinto" && (
+                                      <span title="Segna come perso" onClick={() => cambiaStatoLead(l, "perso")}
+                                        style={{ fontSize: 10, color: "var(--gray)", cursor: "pointer", textDecoration: "underline" }}>perso</span>
+                                    )}
+                                    {st === "perso" && (
+                                      <span onClick={() => cambiaStatoLead(l, "nuovo")}
+                                        style={{ fontSize: 10, color: "var(--gray)", cursor: "pointer", textDecoration: "underline" }}>riapri</span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                             {!l.archiviato && (
                               <button title="Elimina dall'elenco"
                                 onClick={(e) => { e.stopPropagation(); archiviaLead(l, true); }}
