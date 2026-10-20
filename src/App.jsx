@@ -3580,6 +3580,11 @@ function App({ utente, onLogout }) {
   const [leadTipo, setLeadTipo] = useState("gestione");              // Lead: quale famiglia sto guardando
   const [leadDiChi, setLeadDiChi] = useState("tutti");                // Lead: filtro per chi li segue
   const [leadEsigenza, setLeadEsigenza] = useState("tutte");          // Lead: gestione / vendita / acquisto (campo HubSpot "Tipo di esigenza")
+  /* La lista dei collaboratori serve anche qui, per assegnare i lead.
+     Prima la sezione Lead usava quella del Workflow Lancio, che pero vive
+     dentro un altro componente: qui non esisteva, e il CRM si fermava su una
+     pagina bianca. Ogni componente carica la sua. */
+  const [collaboratori, setCollaboratori] = useState([]);
   const [soloMiei, setSoloMiei] = useState(false);                   // Lead: solo quelli assegnati a me su HubSpot
   const [convProfonde, setConvProfonde] = useState({});              // Lead: conversazioni cercate a fondo, per id
   const [convInCorso, setConvInCorso] = useState(null);              // Lead: sto cercando le conversazioni di questo
@@ -3960,6 +3965,12 @@ function App({ utente, onLogout }) {
   }, []);
 
   useEffect(() => { if (view === "lead") loadLeads(); }, [view, loadLeads]);
+  useEffect(() => {
+    if (!utente) return;
+    sb.get("collaboratori", "?select=id,nome,ruolo,colore,attivo,email,telefono&order=nome.asc")
+      .then(({ data }) => { if (Array.isArray(data)) setCollaboratori(data); })
+      .catch(() => {});
+  }, [utente]);
 
   const saveP = async (f) => {
     setSaving(true);

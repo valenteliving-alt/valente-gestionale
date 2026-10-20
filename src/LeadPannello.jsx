@@ -194,6 +194,68 @@ export default function LeadPannello({
             </div>
           )}
 
+          {/* Inoltrare il lead a chi lo lavora.
+
+              Niente invio automatico: il messaggio si apre gia scritto e lo
+              mandi tu. E anche la cosa giusta — un lead passato di mano merita
+              una riga tua, non un messaggio uguale a tutti gli altri.
+
+              Serve soprattutto per chi sta FUORI da HubSpot, come Tommaso Ratti,
+              che e un agente esterno di Living: quei lead oggi si ricopiano a
+              mano ogni volta. */}
+          <Sezione titolo="Inoltra a chi lo lavora">
+            {(() => {
+              const dest = (collaboratori || []).find((c) => String(c.id) === String(l.assegnatoAId));
+              const testo = [
+                `Lead: ${l.nome || "(senza nome)"}`,
+                esigenza && esigenza !== "Non indicata" ? `Tipo: ${esigenza}` : null,
+                l.citta ? `Citta: ${l.citta}` : null,
+                l.telefono ? `Tel: ${l.telefono}` : null,
+                l.email ? `Mail: ${l.email}` : null,
+                l.creato ? `Arrivato il ${new Date(l.creato).toLocaleDateString("it-IT")}` : null,
+                "",
+                l.messaggio ? String(l.messaggio).slice(0, 900) : "(non ha lasciato un messaggio)",
+              ].filter((x) => x !== null).join("\n");
+
+              const tel = dest && dest.telefono ? String(dest.telefono).replace(/[^0-9+]/g, "") : "";
+              const wa = "https://wa.me/" + (tel ? tel.replace(/^\+/, "") : "") + "?text=" + encodeURIComponent(testo);
+              const mail = dest && dest.email
+                ? `mailto:${dest.email}?subject=${encodeURIComponent("Lead: " + (l.nome || ""))}&body=${encodeURIComponent(testo)}`
+                : null;
+
+              if (!dest) return (
+                <div style={{ fontSize: 11.5, color: "var(--gray)", lineHeight: 1.5 }}>
+                  Scegli prima chi se ne occupa, qui sopra: poi da qui glielo mandi con il testo gia pronto.
+                </div>
+              );
+              return (
+                <>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <a className="bg" href={wa} target="_blank" rel="noreferrer"
+                      style={{ textDecoration: "none", fontSize: 12, padding: "6px 13px" }}>
+                      WhatsApp a {dest.nome.split(" ")[0]}
+                    </a>
+                    {mail && (
+                      <a className="bg" href={mail}
+                        style={{ textDecoration: "none", fontSize: 12, padding: "6px 13px" }}>Email</a>
+                    )}
+                    <button className="bg" style={{ fontSize: 12, padding: "6px 13px" }}
+                      onClick={() => {
+                        try { navigator.clipboard.writeText(testo); } catch (_) {}
+                      }}>Copia il testo</button>
+                  </div>
+                  {!tel && (
+                    <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 7, lineHeight: 1.45 }}>
+                      {dest.nome} non ha un numero in rubrica: WhatsApp si apre con il messaggio
+                      pronto ma il contatto lo scegli tu. Mettendo il telefono in Team &amp; Accessi,
+                      va dritto a lui.
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </Sezione>
+
           <div style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid var(--cd)" }}>
             {l.archiviato
               ? <button className="bg" onClick={() => onRipristina(l)}>↩ Rimetti nell'elenco</button>
