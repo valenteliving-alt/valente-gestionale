@@ -108,6 +108,13 @@ const auth = {
    vuole affidare l'immobile in gestione da chi lo vuole vendere o cerca casa da
    comprare: l'AI che legge il messaggio vede "villa 140 mq" e pensa "gestione",
    ma su HubSpot c'e' scritto chiaramente "Vendita". Dal sito arriva solo gestione. */
+/* I lead che interessano davvero: quelli di gestione (secondo HubSpot o
+   secondo la lettura del messaggio) e quelli gia passati a qualcuno.
+   Tutto il resto — vendite, acquisti, ospiti, rumore — resta nascosto. */
+function leadPerMe(l) {
+  return esigenzaLead(l) === "Gestione" || l.tipo === "gestione" || !!l.assegnatoA;
+}
+
 function esigenzaLead(l) {
   if (l.fonte === "sito") return "Gestione";
   const v = String(((l.campi || []).find(c => c.chiave === "tipo_di_esigenza") || {}).valore || "").toLowerCase();
@@ -319,6 +326,8 @@ tbody tr:hover{background:rgba(99,102,241,.05)}
 .lead-riga{display:flex;gap:8px;padding:3px 0;border-bottom:1px solid rgba(0,0,0,.04)}
 .lead-eti{color:var(--gray);min-width:118px;flex-shrink:0}
 .lead-val{word-break:break-word;overflow-wrap:anywhere;min-width:0;flex:1}
+.lead-riga-pannello{padding:7px 0;gap:14px;line-height:1.5}
+.lead-riga-pannello .lead-eti{min-width:150px;max-width:150px;font-size:12px}
 @media (max-width:768px){
   .sidebar{transform:translateX(-100%);transition:transform .25s ease;width:min(82vw,300px);box-shadow:0 0 40px rgba(0,0,0,.45)}
   .sidebar.open{transform:translateX(0)}
@@ -3577,15 +3586,20 @@ function App({ utente, onLogout }) {
   const [mostraArchiviati, setMostraArchiviati] = useState(false);   // Lead: vedere anche quelli messi via
   const [leadAperto, setLeadAperto] = useState(null);                // Lead: scheda espansa
   const [leadTuttoIl, setLeadTuttoIl] = useState(null);              // Lead: mostra anche i campi di contorno
-  const [leadTipo, setLeadTipo] = useState("gestione");              // Lead: quale famiglia sto guardando
+  /* La sezione si apre sui lead con esigenza "Gestione" (il campo di HubSpot,
+     dato vero) e con la classificazione AI su "Tutti". Con entrambi i filtri
+     accesi se ne vedevano 14 su 53: l AI ne aveva messi 39 fra "senza
+     messaggio" o "cercano casa", e i due filtri insieme li nascondevano. */
+  const [leadTipo, setLeadTipo] = useState("tutti");                 // Lead: quale famiglia sto guardando
   const [leadDiChi, setLeadDiChi] = useState("tutti");                // Lead: filtro per chi li segue
-  const [leadEsigenza, setLeadEsigenza] = useState("tutte");          // Lead: gestione / vendita / acquisto (campo HubSpot "Tipo di esigenza")
+  const [leadEsigenza, setLeadEsigenza] = useState("Gestione");          // Lead: gestione / vendita / acquisto (campo HubSpot "Tipo di esigenza")
   /* La lista dei collaboratori serve anche qui, per assegnare i lead.
      Prima la sezione Lead usava quella del Workflow Lancio, che pero vive
      dentro un altro componente: qui non esisteva, e il CRM si fermava su una
      pagina bianca. Ogni componente carica la sua. */
   const [collaboratori, setCollaboratori] = useState([]);
-  const [soloMiei, setSoloMiei] = useState(false);                   // Lead: solo quelli assegnati a me su HubSpot
+  const [soloMiei, setSoloMiei] = useState(false);
+  const [leadTutti, setLeadTutti] = useState(false);                 // Lead: mostra anche quelli nascosti                   // Lead: solo quelli assegnati a me su HubSpot
   const [convProfonde, setConvProfonde] = useState({});              // Lead: conversazioni cercate a fondo, per id
   const [convInCorso, setConvInCorso] = useState(null);              // Lead: sto cercando le conversazioni di questo
   const classificazioneInCorso = useRef(false);                      // evita di rilanciare la classificazione su se stessa
@@ -4277,84 +4291,22 @@ function App({ utente, onLogout }) {
                 <div className="gl" style={{ marginBottom: 16 }} />
                 {/* Le famiglie di lead. Chi offre un immobile in gestione vale molto
                     di più di chi cerca casa: qui si apre su quello e basta. */}
+                {/* Niente filtri: si vedono solo i lead di gestione e quelli
+                    assegnati. Il resto e nascosto, non cancellato. */}
                 {leads.length > 0 && (() => {
-                  const visibiliTutti = leads
-                    .filter(l => mostraArchiviati ? l.archiviato : !l.archiviato)
-                    .filter(l => !soloMiei || l.fonte === "sito" || l.mio);
-                  const visibili = visibiliTutti
-                    .filter(l => leadEsigenza === "tutte" || esigenzaLead(l) === leadEsigenza);
-                  const conta = (t) => visibili.filter(l => (l.tipo || "da_leggere") === t).length;
-                  /* le esigenze contate sulla famiglia scelta (Da gestire, Tutti...) */
-                  const nellaFamiglia = visibiliTutti.filter(l => leadTipo === "tutti" || (l.tipo || "da_leggere") === leadTipo);
-                  const ESIGENZE = ["Gestione", "Vendita", "Acquisto", "Investimento", "Recruiting / HR", "Stand by", "Altro", "Non indicata"];
-                  const contaEs = (e) => nellaFamiglia.filter(l => esigenzaLead(l) === e).length;
-                  const chip = (attivo) => ({ padding: "4px 11px", borderRadius: 20, fontSize: 11.5, cursor: "pointer",
-                    border: "1px solid " + (attivo ? "var(--navy, #1f2a44)" : "var(--cd)"),
-                    background: attivo ? "var(--navy, #1f2a44)" : "var(--white)",
-                    color: attivo ? "#fff" : "var(--gray)", fontWeight: attivo ? 600 : 400 });
-                  const VOCI = [
-                    { k: "gestione",     eti: "Da gestire",   desc: "proprietari che offrono un immobile" },
-                    { k: "assistenza",   eti: "Assistenza",   desc: "chi ha gi\u00e0 prenotato e ha un problema" },
-                    { k: "ospite",       eti: "Cercano casa", desc: "ospiti in cerca di un alloggio" },
-                    { k: "partnership",  eti: "Partnership",  desc: "agenzie, agenti, fornitori" },
-                    { k: "altro",        eti: "Altro",        desc: "non classificabile o spam" },
-                    { k: "senza_richiesta", eti: "Senza messaggio", desc: "solo nome e contatto, non hanno scritto nulla" },
-                    { k: "tutti",        eti: "Tutti",        desc: "l'elenco intero" },
-                  ];
-                  const urgenti = visibili.filter(l => l.urgente).length;
+                  const attivi = leads.filter(l => mostraArchiviati ? l.archiviato : !l.archiviato);
+                  const miei = attivi.filter(leadPerMe);
+                  const altri = attivi.length - miei.length;
+                  const daAssegnare = miei.filter(l => !l.assegnatoA).length;
                   return (
-                    <>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
-                      <span style={{ fontSize: 11.5, color: "var(--gray)", marginRight: 2 }}>Esigenza:</span>
-                      <button onClick={() => setLeadEsigenza("tutte")} style={chip(leadEsigenza === "tutte")}>
-                        Tutte <span style={{ opacity: .75 }}>{nellaFamiglia.length}</span>
+                    <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginBottom: 16, fontSize: 12.5, color: "var(--gray)" }}>
+                      <span><strong style={{ color: "#2e7d4f", fontSize: 15 }}>{miei.length}</strong> lead di gestione</span>
+                      {daAssegnare > 0 && <span><strong style={{ color: "var(--black, #111)" }}>{daAssegnare}</strong> da assegnare</span>}
+                      <button onClick={() => setLeadTutti(v => !v)}
+                        style={{ marginLeft: "auto", background: "none", border: 0, padding: 0, fontSize: 12, color: "var(--gray)", textDecoration: "underline", cursor: "pointer" }}>
+                        {leadTutti ? "nascondi gli altri" : `vedi anche gli altri (${altri})`}
                       </button>
-                      {ESIGENZE.map(e => {
-                        const n = contaEs(e);
-                        if (!n && leadEsigenza !== e) return null;
-                        /* "Gestione" resta verde anche da spenta: fra sei
-                           linguette grigie uguali, quella che cerchi si deve
-                           vedere senza leggerle tutte. */
-                        const gest = e === "Gestione";
-                        return (
-                          <button key={e} onClick={() => setLeadEsigenza(e)}
-                            style={{
-                              ...chip(leadEsigenza === e),
-                              ...(gest && leadEsigenza !== e ? { borderColor: "#2e7d4f", color: "#2e7d4f", fontWeight: 600 } : {}),
-                              ...(gest && leadEsigenza === e ? { background: "#2e7d4f", borderColor: "#2e7d4f", color: "#fff" } : {}),
-                            }}>
-                            {e} <span style={{ opacity: .75 }}>{n}</span>
-                          </button>
-                        );
-                      })}
                     </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18, alignItems: "center" }}>
-                      {VOCI.map(v => {
-                        const n = v.k === "tutti" ? visibili.length : conta(v.k);
-                        if (!n && v.k !== "gestione" && v.k !== "tutti") return null;
-                        const attivo = leadTipo === v.k;
-                        return (
-                          <button key={v.k} onClick={() => setLeadTipo(v.k)} title={v.desc}
-                            style={{ padding: "6px 13px", borderRadius: 20, fontSize: 12.5, cursor: "pointer",
-                              border: "1px solid " + (attivo ? "var(--gold)" : "var(--cd)"),
-                              background: attivo ? "var(--gold)" : "var(--white)",
-                              color: attivo ? "#fff" : "var(--gray)", fontWeight: attivo ? 600 : 400 }}>
-                            {v.eti} <span style={{ opacity: .75 }}>{n}</span>
-                          </button>
-                        );
-                      })}
-                      {conta("da_leggere") > 0 && (
-                        <span style={{ fontSize: 11.5, color: "var(--gray)" }}>
-                          {conta("da_leggere")} ancora da leggere \u2014 premi Aggiorna tra poco
-                        </span>
-                      )}
-                      {urgenti > 0 && (
-                        <span style={{ fontSize: 11.5, color: "var(--red)", fontWeight: 600 }}>
-                          ⚠ {urgenti} da rispondere in fretta
-                        </span>
-                      )}
-                    </div>
-                    </>
                   );
                 })()}
                 {leadsError ? (
@@ -4375,8 +4327,7 @@ function App({ utente, onLogout }) {
                     {leads
                       .filter(l => mostraArchiviati ? l.archiviato : !l.archiviato)
                       .filter(l => !soloMiei || l.fonte === "sito" || l.mio)
-                      .filter(l => leadTipo === "tutti" || (l.tipo || "da_leggere") === leadTipo)
-                      .filter(l => leadEsigenza === "tutte" || esigenzaLead(l) === leadEsigenza)
+                      .filter(l => leadTutti || leadPerMe(l))
                       /* Ordine cronologico, dal più recente. Un lead di ieri vale
                          più di uno di marzo, e cercarlo per data è il gesto
                          naturale. I Gestione si riconoscono dal colore, non
@@ -4388,24 +4339,25 @@ function App({ utente, onLogout }) {
                         const st = (l.statoLavorazione || "nuovo");
                         const COL = { nuovo: "#8A8A8A", contattato: "#C09456", in_corso: "#4A6FA5", vinto: "#5B8C5A", perso: "#C5221F" };
                         const ETI = { nuovo: "Nuovo", contattato: "Contattato", in_corso: "In corso", vinto: "Vinto", perso: "Perso" };
+                        const quando = l.creato ? new Date(l.creato) : null;
                         return (
-                          <div key={l.id} onClick={() => apriLead(l)}
+                          <Fragment key={l.id}>
+                          <div onClick={() => apriLead(l)}
                             style={{
-                              display: "flex", alignItems: "center", gap: 10, padding: "10px 13px",
-                              borderBottom: "1px solid rgba(0,0,0,.05)", cursor: "pointer",
-                              background: aperto ? "rgba(192,148,86,.1)" : gest ? "rgba(46,125,79,.045)" : "transparent",
+                              display: "flex", alignItems: "center", gap: 12, padding: "11px 14px",
+                              borderBottom: aperto ? "none" : "1px solid rgba(0,0,0,.05)", cursor: "pointer",
+                              background: aperto ? "#fbfaf6" : gest ? "rgba(46,125,79,.045)" : "transparent",
                               borderLeft: "3px solid " + (gest ? "#2e7d4f" : "transparent"),
                               opacity: l.archiviato ? .55 : 1,
                             }}>
-                            {/* chi lo segue */}
-                            <span title={l.assegnatoA ? `Passato a ${l.assegnatoA}` : "non assegnato"}
-                              style={{
-                                width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
-                                background: l.assegnatoA ? (l.assegnatoColore || "#94A3B8") : "transparent",
-                                border: l.assegnatoA ? "none" : "1px dashed var(--cd)",
-                                color: "#fff", fontSize: 11, fontWeight: 700,
-                                display: "inline-flex", alignItems: "center", justifyContent: "center",
-                              }}>{l.assegnatoA ? String(l.assegnatoA)[0].toUpperCase() : ""}</span>
+                            {/* La data per prima, ben visibile: e il primo criterio
+                                con cui si legge un elenco di richieste. */}
+                            <div style={{ flexShrink: 0, width: 46, textAlign: "center", lineHeight: 1.1 }}>
+                              <div style={{ fontSize: 18, fontWeight: 700 }}>{quando ? quando.getDate() : "—"}</div>
+                              <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--gray)" }}>
+                                {quando ? quando.toLocaleDateString("it-IT", { month: "short" }).replace(".", "") + " " + String(quando.getFullYear()).slice(2) : ""}
+                              </div>
+                            </div>
 
                             <div style={{ minWidth: 0, flex: 1 }}>
                               <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}>
@@ -4414,53 +4366,61 @@ function App({ utente, onLogout }) {
                                 {l.urgente && <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--red)" }}>URGENTE</span>}
                                 {l.fonte === "sito" && <span style={{ fontSize: 10.5, color: "var(--gold)", fontWeight: 600 }}>SITO</span>}
                               </div>
-                              {l.messaggio && (
-                                <div style={{
-                                  fontSize: 12, color: "var(--gray)", marginTop: 2,
-                                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                                }}>{String(l.messaggio).replace(/\s+/g, " ")}</div>
+                              {l.messaggio && !aperto && (
+                                <div style={{ fontSize: 12, color: "var(--gray)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {String(l.messaggio).replace(/\s+/g, " ")}
+                                </div>
                               )}
                             </div>
+
+                            {/* chi lo segue: pallino con l iniziale, o "da assegnare" */}
+                            {l.assegnatoA ? (
+                              <span title={`Assegnato a ${l.assegnatoA}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, flexShrink: 0, fontSize: 11.5 }}>
+                                <span style={{ width: 22, height: 22, borderRadius: "50%", background: l.assegnatoColore || "#94A3B8", color: "#fff", fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                                  {String(l.assegnatoA)[0].toUpperCase()}
+                                </span>
+                                <span className="lead-stato">{String(l.assegnatoA).split(" ")[0]}</span>
+                              </span>
+                            ) : (
+                              <span className="lead-stato" style={{ flexShrink: 0, fontSize: 11, color: "var(--gray)", fontStyle: "italic" }}>da assegnare</span>
+                            )}
 
                             <span className="lead-stato" style={{
                               flexShrink: 0, fontSize: 10.5, fontWeight: 600, padding: "3px 9px",
                               borderRadius: 20, color: COL[st], border: `1px solid ${COL[st]}33`, background: `${COL[st]}14`,
                             }}>{ETI[st]}</span>
-
-                            <span className="lead-data" style={{ flexShrink: 0, fontSize: 11, color: "var(--gray)", minWidth: 74, textAlign: "right" }}>
-                              {l.creato ? new Date(l.creato).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }) : "—"}
-                            </span>
+                            <span style={{ flexShrink: 0, color: "var(--gray)", fontSize: 12, transform: aperto ? "rotate(90deg)" : "none", transition: "transform .15s" }}>›</span>
                           </div>
+                          {aperto && (
+                      <LeadPannello inline
+                        lead={l}
+                        collaboratori={collaboratori}
+                        conversazione={(() => {
+                          const prof = convProfonde[String(l.id)];
+                          const m = new Map();
+                          [...(l.conversazione || []), ...((prof && prof.attivita) || [])]
+                            .forEach(x => { if (!m.has(String(x.id))) m.set(String(x.id), x); });
+                          return [...m.values()].sort((a, b) => String(a.quando).localeCompare(String(b.quando)));
+                        })()}
+                        cercando={convInCorso === String(leadAperto)}
+                        problemi={(convProfonde[String(leadAperto)] || {}).problemi}
+                        campiUtili={(l.campi || []).filter(utileDavvero)}
+                        campiRumore={(l.campi || []).filter(c => !utileDavvero(c))}
+                        mostraRumore={leadTuttoIl === leadAperto}
+                        onMostraRumore={() => setLeadTuttoIl(leadTuttoIl === leadAperto ? null : leadAperto)}
+                        esigenza={esigenzaLead(l)}
+                        leggibile={leggibile}
+                        onChiudi={() => setLeadAperto(null)}
+                        onStato={cambiaStatoLead}
+                        onAssegna={assegnaLead}
+                        onArchivia={(l) => { archiviaLead(l); setLeadAperto(null); }}
+                        onRipristina={(l) => { ripristinaLead(l); setLeadAperto(null); }}
+                      />
+                          )}
+                          </Fragment>
                         );
                       })}
                   </div>
-
-                  <LeadPannello
-                    lead={leads.find(x => x.id === leadAperto) || null}
-                    collaboratori={collaboratori}
-                    conversazione={(() => {
-                      const l = leads.find(x => x.id === leadAperto);
-                      if (!l) return null;
-                      const prof = convProfonde[String(l.id)];
-                      const m = new Map();
-                      [...(l.conversazione || []), ...((prof && prof.attivita) || [])]
-                        .forEach(x => { if (!m.has(String(x.id))) m.set(String(x.id), x); });
-                      return [...m.values()].sort((a, b) => String(a.quando).localeCompare(String(b.quando)));
-                    })()}
-                    cercando={convInCorso === String(leadAperto)}
-                    problemi={(convProfonde[String(leadAperto)] || {}).problemi}
-                    campiUtili={((leads.find(x => x.id === leadAperto) || {}).campi || []).filter(utileDavvero)}
-                    campiRumore={((leads.find(x => x.id === leadAperto) || {}).campi || []).filter(c => !utileDavvero(c))}
-                    mostraRumore={leadTuttoIl === leadAperto}
-                    onMostraRumore={() => setLeadTuttoIl(leadTuttoIl === leadAperto ? null : leadAperto)}
-                    esigenza={leadAperto ? esigenzaLead(leads.find(x => x.id === leadAperto) || {}) : null}
-                    leggibile={leggibile}
-                    onChiudi={() => setLeadAperto(null)}
-                    onStato={cambiaStatoLead}
-                    onAssegna={assegnaLead}
-                    onArchivia={(l) => { archiviaLead(l); setLeadAperto(null); }}
-                    onRipristina={(l) => { ripristinaLead(l); setLeadAperto(null); }}
-                  />
                   </>
                 )}
               </>

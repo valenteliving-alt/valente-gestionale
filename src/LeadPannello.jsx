@@ -16,6 +16,8 @@ const AVANZAMENTO = [
   { k: "perso",      eti: "Perso",      col: "#C5221F" },
 ];
 
+const DOPPIONI = /^(descrizione|message|messaggio|richiesta|email|firstname|lastname|phone|mobilephone|hubspot_owner_id|createdate|lastmodifieddate|city|company)$/i;
+
 const dataOra = (d) => {
   if (!d) return "";
   const x = new Date(d);
@@ -27,7 +29,7 @@ const dataOra = (d) => {
 export default function LeadPannello({
   lead, collaboratori, conversazione, cercando, problemi,
   campiUtili, campiRumore, mostraRumore, onMostraRumore,
-  onChiudi, onStato, onAssegna, onArchivia, onRipristina, leggibile, esigenza,
+  onChiudi, onStato, onAssegna, onArchivia, onRipristina, leggibile, esigenza, inline,
 }) {
   if (!lead) return null;
   const l = lead;
@@ -40,36 +42,8 @@ export default function LeadPannello({
     ["Azienda", l.azienda, null],
   ].filter(([, v]) => v);
 
-  return (
-    <>
-      <div onClick={onChiudi} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.35)", zIndex: 500 }} />
-      <div style={{
-        position: "fixed", top: 0, right: 0, bottom: 0, width: "min(480px, 100%)", zIndex: 501,
-        background: "var(--white)", boxShadow: "-8px 0 30px rgba(0,0,0,.18)", overflowY: "auto",
-      }}>
-        {/* Intestazione fissa: il nome resta visibile mentre scorri */}
-        <div style={{
-          position: "sticky", top: 0, zIndex: 2, background: "var(--white)",
-          borderBottom: "1px solid var(--cd)", padding: "16px 20px 12px",
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-            <div style={{ minWidth: 0 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.25 }}>{l.nome || "(senza nome)"}</h2>
-              <div style={{ fontSize: 11.5, color: "var(--gray)", marginTop: 3, display: "flex", gap: 7, flexWrap: "wrap" }}>
-                {l.creato && <span>{dataOra(l.creato)}</span>}
-                {esigenza && esigenza !== "Non indicata" && (
-                  <span style={{ color: esigenza === "Gestione" ? "#2e7d4f" : "inherit", fontWeight: esigenza === "Gestione" ? 600 : 400 }}>
-                    {esigenza}
-                  </span>
-                )}
-                {l.fonte === "sito" ? <span>dal sito</span> : l.proprietario && <span>su HubSpot: {l.proprietario}</span>}
-              </div>
-            </div>
-            <button onClick={onChiudi} style={{ background: "none", border: 0, fontSize: 24, cursor: "pointer", color: "var(--gray)", lineHeight: 1, padding: 0 }}>×</button>
-          </div>
-        </div>
-
-        <div style={{ padding: 20 }}>
+  const corpo = (
+        <div style={{ padding: inline ? "16px 22px 20px 54px" : "22px 28px 32px" }}>
           {/* A che punto sei. In cima perché è la cosa che cambi più spesso. */}
           <Sezione titolo="A che punto">
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
@@ -86,7 +60,7 @@ export default function LeadPannello({
             </div>
           </Sezione>
 
-          <Sezione titolo="Chi se ne occupa">
+          <Sezione titolo="Assegna a">
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {l.assegnatoA && (
                 <span style={{
@@ -101,7 +75,7 @@ export default function LeadPannello({
                   border: "1px solid var(--cd)", background: "var(--white)", cursor: "pointer",
                   color: l.assegnatoA ? "inherit" : "var(--gray)",
                 }}>
-                <option value="">non assegnato</option>
+                <option value="">scegli a chi passarlo…</option>
                 {(collaboratori || []).filter((c) => c.attivo !== false).map((c) => (
                   <option key={c.id} value={c.id}>{c.nome}{c.ruolo ? " · " + c.ruolo : ""}</option>
                 ))}
@@ -115,14 +89,14 @@ export default function LeadPannello({
           {/* Cosa ha scritto: è la ragione per cui hai aperto la scheda */}
           {l.messaggio && (
             <Sezione titolo="Cosa chiede" oro>
-              <div style={{ fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{l.messaggio}</div>
+              <div style={{ fontSize: 14.5, lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word", maxWidth: "62ch" }}>{l.messaggio}</div>
             </Sezione>
           )}
 
           {contatti.length > 0 && (
             <Sezione titolo="Come lo raggiungi">
               {contatti.map(([k, v, href]) => (
-                <div key={k} className="lead-riga" style={{ fontSize: 12.5 }}>
+                <div key={k} className="lead-riga lead-riga-pannello" style={{ fontSize: 13.5 }}>
                   <span className="lead-eti">{k}</span>
                   <span className="lead-val">
                     {href ? <a href={href} style={{ color: "var(--gold)", textDecoration: "none" }}>{v}</a> : v}
@@ -170,8 +144,11 @@ export default function LeadPannello({
 
           {campiUtili && campiUtili.length > 0 && (
             <Sezione titolo="Altri dati">
-              {campiUtili.map((c) => (
-                <div key={c.chiave} className="lead-riga" style={{ fontSize: 12 }}>
+              {/* Si tolgono i campi che sono gia scritti piu in alto: il
+                  messaggio compariva due volte, l email anche, e "Contact
+                  owner" mostrava solo un numero che non dice niente a nessuno. */}
+              {campiUtili.filter((c) => !DOPPIONI.test(c.chiave)).map((c) => (
+                <div key={c.chiave} className="lead-riga lead-riga-pannello" style={{ fontSize: 13 }}>
                   <span className="lead-eti">{c.etichetta}</span>
                   <span className="lead-val">{leggibile ? leggibile(c.valore) : c.valore}</span>
                 </div>
@@ -262,6 +239,47 @@ export default function LeadPannello({
               : <button className="bg" onClick={() => onArchivia(l)} title="Sparisce dall'elenco ma non viene cancellato">Metti via</button>}
           </div>
         </div>
+  );
+
+  /* Aperto dentro l elenco, sotto la riga del lead: niente pannello che copre
+     la pagina. Si clicca la riga, si allarga, si legge tutto, si richiude. */
+  if (inline) return (
+    <div style={{ background: "#fbfaf6", borderBottom: "1px solid var(--cd)", cursor: "default" }}
+      onClick={(e) => e.stopPropagation()}>
+      {corpo}
+    </div>
+  );
+
+  return (
+    <>
+      <div onClick={onChiudi} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.35)", zIndex: 500 }} />
+      <div style={{
+        position: "fixed", top: 0, right: 0, bottom: 0, width: "min(660px, 100%)", zIndex: 501,
+        background: "var(--white)", boxShadow: "-8px 0 30px rgba(0,0,0,.18)", overflowY: "auto",
+      }}>
+        {/* Intestazione fissa: il nome resta visibile mentre scorri */}
+        <div style={{
+          position: "sticky", top: 0, zIndex: 2, background: "var(--white)",
+          borderBottom: "1px solid var(--cd)", padding: "18px 28px 14px",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+            <div style={{ minWidth: 0 }}>
+              <h2 style={{ fontSize: 21, fontWeight: 700, lineHeight: 1.25 }}>{l.nome || "(senza nome)"}</h2>
+              <div style={{ fontSize: 11.5, color: "var(--gray)", marginTop: 3, display: "flex", gap: 7, flexWrap: "wrap" }}>
+                {l.creato && <span>{dataOra(l.creato)}</span>}
+                {esigenza && esigenza !== "Non indicata" && (
+                  <span style={{ color: esigenza === "Gestione" ? "#2e7d4f" : "inherit", fontWeight: esigenza === "Gestione" ? 600 : 400 }}>
+                    {esigenza}
+                  </span>
+                )}
+                {l.fonte === "sito" ? <span>dal sito</span> : l.proprietario && <span>su HubSpot: {l.proprietario}</span>}
+              </div>
+            </div>
+            <button onClick={onChiudi} style={{ background: "none", border: 0, fontSize: 24, cursor: "pointer", color: "var(--gray)", lineHeight: 1, padding: 0 }}>×</button>
+          </div>
+        </div>
+
+        {corpo}
       </div>
     </>
   );
@@ -269,12 +287,12 @@ export default function LeadPannello({
 
 function Sezione({ titolo, oro, children }) {
   return (
-    <div style={{ marginBottom: 18 }}>
+    <div style={{ marginBottom: 24 }}>
       <div style={{
-        fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em",
+        fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em",
         color: oro ? "var(--gold)" : "var(--gray)", marginBottom: 7,
       }}>{titolo}</div>
-      <div style={oro ? { padding: "11px 13px", background: "rgba(192,148,86,.08)", borderLeft: "3px solid var(--gold)", borderRadius: 7 } : {}}>
+      <div style={oro ? { padding: "15px 18px", background: "rgba(192,148,86,.08)", borderLeft: "3px solid var(--gold)", borderRadius: 8 } : {}}>
         {children}
       </div>
     </div>
