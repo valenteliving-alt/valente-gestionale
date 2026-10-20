@@ -144,18 +144,18 @@ const leggibile = (v) => {
 };
 
 const sb = {
-  async req(method, table, body, query = "", riprova = true) {
+  async req(method, table, body, query = "", riprova = true, prefer = "return=representation") {
     const s = auth.leggi();
     // Se il token è scaduto (o quasi) lo rinnovo prima di chiamare
     if (s && s.scade && s.scade - Date.now() < 60000) await auth.rinnova();
     const token = auth.token() || SUPABASE_KEY;
     const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}${query}`, {
       method, body: body ? JSON.stringify(body) : undefined,
-      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=representation" }
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: prefer }
     });
     if (r.status === 401 && riprova && auth.leggi()) {
       const nuovo = await auth.rinnova();
-      if (nuovo) return sb.req(method, table, body, query, false);
+      if (nuovo) return sb.req(method, table, body, query, false, prefer);
     }
     const data = await r.json().catch(() => null);
     return { data, ok: r.ok };
@@ -3573,6 +3573,7 @@ function App({ utente, onLogout }) {
   const [leadAperto, setLeadAperto] = useState(null);                // Lead: scheda espansa
   const [leadTuttoIl, setLeadTuttoIl] = useState(null);              // Lead: mostra anche i campi di contorno
   const [leadTipo, setLeadTipo] = useState("gestione");              // Lead: quale famiglia sto guardando
+  const [leadDiChi, setLeadDiChi] = useState("tutti");                // Lead: filtro per chi li segue
   const [leadEsigenza, setLeadEsigenza] = useState("tutte");          // Lead: gestione / vendita / acquisto (campo HubSpot "Tipo di esigenza")
   const [soloMiei, setSoloMiei] = useState(false);                   // Lead: solo quelli assegnati a me su HubSpot
   const [convProfonde, setConvProfonde] = useState({});              // Lead: conversazioni cercate a fondo, per id
@@ -3824,6 +3825,20 @@ function App({ utente, onLogout }) {
       });
     } catch { /* senza classificazione si vede tutto insieme: nessun blocco */ }
 
+    /* A chi e stato passato ogni lead. Sta in una tabella sua: la
+       classificazione la scrive l AI, l assegnazione la scrive una persona,
+       e due cose che cambiano per motivi diversi stanno meglio separate. */
+    try {
+      const { data, ok } = await sb.get("v_lead_assegnazione", "?select=*");
+      if (ok && Array.isArray(data)) {
+        const ass = new Map(data.map(a => [String(a.lead_id), a]));
+        tutti.forEach(l => {
+          const a = ass.get(String(l.id));
+          if (a) { l.assegnatoA = a.nome; l.assegnatoAId = a.collaboratore_id; l.assegnatoColore = a.colore; l.assegnatoIl = a.assegnato_il; }
+        });
+      }
+    } catch { /* senza assegnazioni i lead si vedono lo stesso */ }
+
     setLeadsError(erroreHubspot);
     setLeads(erroreHubspot && !daSito.length ? [] : tutti);
     setLeadsLoading(false);
@@ -3883,6 +3898,24 @@ function App({ utente, onLogout }) {
       return nuovo;
     });
   }, [cercaConversazione]);
+
+  /* Passare un lead a qualcuno. Resta scritto chi e quando: senza, fra due
+     settimane nessuno ricorda se quel contatto l ha preso in carico qualcuno
+     o e rimasto lì. */
+  const assegnaLead = useCallback(async (l, collaboratoreId) => {
+    const c = collaboratori.find(x => String(x.id) === String(collaboratoreId));
+    setLeads(prev => prev.map(x => x.id === l.id
+      ? { ...x, assegnatoAId: collaboratoreId || null, assegnatoA: c ? c.nome : null,
+          assegnatoColore: c ? c.colore : null, assegnatoIl: new Date().toISOString() }
+      : x));                                   // risposta immediata, poi si salva
+    const corpo = collaboratoreId
+      ? [{ lead_id: String(l.id), collaboratore_id: collaboratoreId, assegnato_da: mioNome || null, assegnato_il: new Date().toISOString() }]
+      : null;
+    const { ok } = corpo
+      ? await sb.req("POST", "lead_assegnazione", corpo, "?on_conflict=lead_id", true, "resolution=merge-duplicates,return=minimal")
+      : await sb.req("DELETE", "lead_assegnazione", null, `?lead_id=eq.${encodeURIComponent(String(l.id))}`);
+    if (!ok) { alert("Non sono riuscito a salvare l'assegnazione."); loadLeads(); }
+  }, [collaboratori, mioNome, loadLeads]);
 
   /* Archiviare, non cancellare. Un lead è un contatto: se lo si elimina davvero
      si perde la storia e non si torna indietro. Qui sparisce dall'elenco e si può
@@ -4253,8 +4286,17 @@ function App({ utente, onLogout }) {
                       {ESIGENZE.map(e => {
                         const n = contaEs(e);
                         if (!n && leadEsigenza !== e) return null;
+                        /* "Gestione" resta verde anche da spenta: fra sei
+                           linguette grigie uguali, quella che cerchi si deve
+                           vedere senza leggerle tutte. */
+                        const gest = e === "Gestione";
                         return (
-                          <button key={e} onClick={() => setLeadEsigenza(e)} style={chip(leadEsigenza === e)}>
+                          <button key={e} onClick={() => setLeadEsigenza(e)}
+                            style={{
+                              ...chip(leadEsigenza === e),
+                              ...(gest && leadEsigenza !== e ? { borderColor: "#2e7d4f", color: "#2e7d4f", fontWeight: 600 } : {}),
+                              ...(gest && leadEsigenza === e ? { background: "#2e7d4f", borderColor: "#2e7d4f", color: "#fff" } : {}),
+                            }}>
                             {e} <span style={{ opacity: .75 }}>{n}</span>
                           </button>
                         );
@@ -4282,7 +4324,7 @@ function App({ utente, onLogout }) {
                       )}
                       {urgenti > 0 && (
                         <span style={{ fontSize: 11.5, color: "var(--red)", fontWeight: 600 }}>
-                          \u26a0 {urgenti} da rispondere in fretta
+                          ⚠ {urgenti} da rispondere in fretta
                         </span>
                       )}
                     </div>
@@ -4305,10 +4347,25 @@ function App({ utente, onLogout }) {
                       .filter(l => !soloMiei || l.fonte === "sito" || l.mio)
                       .filter(l => leadTipo === "tutti" || (l.tipo || "da_leggere") === leadTipo)
                       .filter(l => leadEsigenza === "tutte" || esigenzaLead(l) === leadEsigenza)
-                      /* gli urgenti in cima: una cancellazione che aspetta \u00e8 un danno */
-                      .sort((a, b) => (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0))
+                      /* L ordine dice cosa conta. Prima i proprietari che vogliono
+                         affidare un immobile (esigenza "Gestione"): sono pochi e
+                         sono gli unici che fanno crescere l azienda. Poi gli
+                         urgenti, perche una cancellazione che aspetta e un danno. */
+                      .sort((a, b) => {
+                        const g = (x) => (esigenzaLead(x) === "Gestione" ? 1 : 0);
+                        if (g(b) !== g(a)) return g(b) - g(a);
+                        return (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0);
+                      })
                       .map(l => (
-                      <div key={l.id} className="card fi" style={{ cursor: "default", opacity: l.archiviato ? .6 : 1 }}>
+                      <div key={l.id} className="card fi" style={{
+                        cursor: "default", opacity: l.archiviato ? .6 : 1,
+                        /* I lead "Gestione" si devono riconoscere senza leggere:
+                           bordo verde e sfondo appena tinto. */
+                        ...(esigenzaLead(l) === "Gestione" && !l.archiviato ? {
+                          borderLeft: "4px solid #2e7d4f",
+                          background: "linear-gradient(90deg, rgba(46,125,79,.06), transparent 55%)",
+                        } : {}),
+                      }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
                           <h3 style={{ fontSize: 15, fontWeight: 600 }}>{l.nome}</h3>
                           <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -4383,6 +4440,31 @@ function App({ utente, onLogout }) {
                               {leadAperto === l.id ? "Chiudi dettaglio" : `Tutti i dati (${l.campi.length}) →`}
                             </button>
                           )}
+                          {/* A chi passarlo. Serve soprattutto per i lead che
+                              non segui tu: senza, fra due settimane nessuno
+                              ricorda se qualcuno l ha preso in carico. */}
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                            {l.assegnatoA && (
+                              <span title={`Passato a ${l.assegnatoA}`} style={{
+                                width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
+                                background: l.assegnatoColore || "#94A3B8", color: "#fff",
+                                fontSize: 9, fontWeight: 700, display: "inline-flex",
+                                alignItems: "center", justifyContent: "center",
+                              }}>{String(l.assegnatoA)[0].toUpperCase()}</span>
+                            )}
+                            <select value={l.assegnatoAId || ""} onChange={(e) => assegnaLead(l, e.target.value)}
+                              title="A chi lo passi"
+                              style={{
+                                fontSize: 11, padding: "3px 6px", borderRadius: 6, cursor: "pointer",
+                                border: "1px solid var(--cd)", background: "var(--white)",
+                                color: l.assegnatoA ? "inherit" : "var(--gray)", maxWidth: 150,
+                              }}>
+                              <option value="">da passare…</option>
+                              {collaboratori.filter(c => c.attivo !== false).map(c => (
+                                <option key={c.id} value={c.id}>{c.nome}</option>
+                              ))}
+                            </select>
+                          </span>
                           {l.archiviato ? (
                             <button onClick={() => ripristinaLead(l)} style={{ marginLeft: "auto", fontSize: 11, color: "var(--gray)", background: "none", border: "1px solid var(--cd)", borderRadius: 6, padding: "3px 9px", cursor: "pointer" }}>↩ Rimetti</button>
                           ) : (
