@@ -58,6 +58,30 @@ async function etichetteProprieta(token) {
   } catch { return {}; }
 }
 
+/* Chi e il proprietario di un lead su HubSpot.
+
+   Finora il CRM portava dentro solo hubspot_owner_id, cioe un numero: si
+   vedeva se un lead era tuo o no, ma non A CHI fosse assegnato. Con 21
+   proprietari diversi sui 543 lead, quella informazione serve. */
+let cacheOwner = { quando: 0, mappa: null };
+async function proprietari(token) {
+  if (cacheOwner.mappa && Date.now() - cacheOwner.quando < 600000) return cacheOwner.mappa;
+  try {
+    const r = await fetch(HUBSPOT_BASE + "/crm/v3/owners?limit=200", {
+      headers: { Authorization: "Bearer " + token },
+    });
+    if (!r.ok) return {};
+    const d = await r.json();
+    const mappa = {};
+    (d.results || []).forEach((o) => {
+      const nome = [o.firstName, o.lastName].filter(Boolean).join(" ").trim();
+      mappa[String(o.id)] = { nome: nome || o.email || ("ID " + o.id), email: o.email || "" };
+    });
+    cacheOwner = { quando: Date.now(), mappa };
+    return mappa;
+  } catch { return {}; }
+}
+
 exports.handler = async (event) => {
   const token = process.env.HUBSPOT_TOKEN;
   if (!token) {
@@ -94,14 +118,19 @@ exports.handler = async (event) => {
 
     const props = await tutteLeProprieta(token);
     const etichette = await etichetteProprieta(token);
+    const owner = await proprietari(token);
     let raw;
     if (action === "search" || query) {
       raw = await searchContacts(token, query, props);
     } else {
       raw = await leadsAssignedToMe(token, props);
     }
-    const list = raw.map(c => simplify(c, etichette));
-    return resp(200, { ok: true, count: list.length, results: list, leads: list, contacts: list, etichette });
+    const list = raw.map(c => simplify(c, etichette, owner));
+    /* L elenco dei proprietari viene restituito a parte: serve al CRM per
+       costruire il filtro "di chi sono" senza doverli dedurre dai lead. */
+    const usati = {};
+    list.forEach((l) => { if (l.proprietario_id) usati[l.proprietario_id] = l.proprietario || l.proprietario_id; });
+    return resp(200, { ok: true, count: list.length, results: list, leads: list, contacts: list, etichette, proprietari: usati });
   } catch (err) {
     return resp(502, { ok: false, error: String(err.message || err) });
   }
@@ -291,11 +320,15 @@ async function searchContacts(token, query, props) {
   return data.results || [];
 }
 
-function simplify(c, etichette = {}) {
+function simplify(c, etichette = {}, owner = {}) {
   const p = c.properties || {};
+  const oid = String(p.hubspot_owner_id || "");
   return {
     id: c.id,
-    mio: String(p.hubspot_owner_id || "") === OWNER_ID,   // assegnato a te, o pescato dal bacino largo
+    mio: oid === OWNER_ID,   // assegnato a te, o pescato dal bacino largo
+    proprietario_id: oid || null,
+    proprietario: (owner[oid] || {}).nome || null,        // chi lo segue su HubSpot
+    proprietario_email: (owner[oid] || {}).email || null,
     firstname: p.firstname || "",
     lastname: p.lastname || "",
     nome: [p.firstname, p.lastname].filter(Boolean).join(" "),

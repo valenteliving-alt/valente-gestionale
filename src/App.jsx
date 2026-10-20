@@ -16,6 +16,7 @@ import Krossbooking from "./Krossbooking";
 import ReportAppartamenti from "./ReportAppartamenti";
 import Planner from "./Planner";
 import Trattative from "./Trattative";
+import LeadPannello from "./LeadPannello";
 
 const SUPABASE_URL = "https://heabtbdmwbjlgujsisor.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
@@ -336,6 +337,10 @@ tbody tr:hover{background:rgba(99,102,241,.05)}
   /* Sul telefono due colonne non ci stanno: l'etichetta va sopra e il valore
      prende tutta la larghezza, altrimenti si legge una lettera per riga. */
   .lead-riga{flex-direction:column;gap:1px;padding:6px 0}
+  /* Nell elenco dei lead, su schermo stretto, lo stato e la data rubano
+     la larghezza al nome e al messaggio, che sono quello che leggi. */
+  .lead-stato{display:none}
+  .lead-data{min-width:0!important;font-size:10px!important}
   .lead-eti{min-width:0;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;opacity:.75}
   .lead-val{font-size:13px}
   /* Il pulsante flottante copriva le schede: sul telefono resta solo l'icona. */
@@ -3730,7 +3735,7 @@ function App({ utente, onLogout }) {
         const testo = [p.descrizione, p.message, p.messaggio, p.richiesta]
           .map(x => String(x || "").trim())
           .find(x => x.length > 2 && !/^\d{4}-\d{2}-\d{2}T/.test(x)) || "";
-        return { ...l, fonte: "hubspot", messaggio: testo };
+        return { ...l, fonte: "hubspot", messaggio: testo, creato: l.createdate || p.createdate || null };
       });
     } catch { erroreHubspot = "Impossibile contattare HubSpot."; }
 
@@ -3834,7 +3839,7 @@ function App({ utente, onLogout }) {
         const ass = new Map(data.map(a => [String(a.lead_id), a]));
         tutti.forEach(l => {
           const a = ass.get(String(l.id));
-          if (a) { l.assegnatoA = a.nome; l.assegnatoAId = a.collaboratore_id; l.assegnatoColore = a.colore; l.assegnatoIl = a.assegnato_il; }
+          if (a) { l.assegnatoA = a.nome; l.assegnatoAId = a.collaboratore_id; l.assegnatoColore = a.colore; l.assegnatoIl = a.assegnato_il; l.statoLavorazione = a.stato || "nuovo"; }
         });
       }
     } catch { /* senza assegnazioni i lead si vedono lo stesso */ }
@@ -3916,6 +3921,16 @@ function App({ utente, onLogout }) {
       : await sb.req("DELETE", "lead_assegnazione", null, `?lead_id=eq.${encodeURIComponent(String(l.id))}`);
     if (!ok) { alert("Non sono riuscito a salvare l'assegnazione."); loadLeads(); }
   }, [collaboratori, mioNome, loadLeads]);
+
+  /* A che punto siamo con questo lead. Vive nella stessa riga dell assegnazione:
+     se non c e ancora, si crea con lo stato e nessun assegnatario. */
+  const cambiaStatoLead = useCallback(async (l, stato) => {
+    setLeads(prev => prev.map(x => x.id === l.id ? { ...x, statoLavorazione: stato } : x));
+    const { ok } = await sb.req("POST", "lead_assegnazione",
+      [{ lead_id: String(l.id), collaboratore_id: l.assegnatoAId || null, stato, aggiornato_il: new Date().toISOString() }],
+      "?on_conflict=lead_id", true, "resolution=merge-duplicates,return=minimal");
+    if (!ok) { alert("Non sono riuscito a salvare lo stato."); loadLeads(); }
+  }, [loadLeads]);
 
   /* Archiviare, non cancellare. Un lead è un contatto: se lo si elimina davvero
      si perde la storia e non si torna indietro. Qui sparisce dall'elenco e si può
@@ -4341,241 +4356,101 @@ function App({ utente, onLogout }) {
                 ) : leads.length === 0 ? (
                   <div style={{ textAlign: "center", padding: 60, color: "var(--gray)" }}>Nessun lead: n\u00e9 dal sito n\u00e9 assegnato a te su HubSpot.</div>
                 ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+                  <>
+                  {/* L'elenco dice l'essenziale e basta: chi, cosa vuole, quando.
+                      Tutto il resto sta nel pannello che si apre a destra. Cento
+                      righe uguali si scorrono in fretta, cento schede piene no. */}
+                  <div style={{ border: "1px solid var(--cd)", borderRadius: 10, overflow: "hidden", background: "var(--white)" }}>
                     {leads
                       .filter(l => mostraArchiviati ? l.archiviato : !l.archiviato)
                       .filter(l => !soloMiei || l.fonte === "sito" || l.mio)
                       .filter(l => leadTipo === "tutti" || (l.tipo || "da_leggere") === leadTipo)
                       .filter(l => leadEsigenza === "tutte" || esigenzaLead(l) === leadEsigenza)
-                      /* L ordine dice cosa conta. Prima i proprietari che vogliono
-                         affidare un immobile (esigenza "Gestione"): sono pochi e
-                         sono gli unici che fanno crescere l azienda. Poi gli
-                         urgenti, perche una cancellazione che aspetta e un danno. */
-                      .sort((a, b) => {
-                        const g = (x) => (esigenzaLead(x) === "Gestione" ? 1 : 0);
-                        if (g(b) !== g(a)) return g(b) - g(a);
-                        return (b.urgente ? 1 : 0) - (a.urgente ? 1 : 0);
-                      })
-                      .map(l => (
-                      <div key={l.id} className="card fi" style={{
-                        cursor: "default", opacity: l.archiviato ? .6 : 1,
-                        /* I lead "Gestione" si devono riconoscere senza leggere:
-                           bordo verde e sfondo appena tinto. */
-                        ...(esigenzaLead(l) === "Gestione" && !l.archiviato ? {
-                          borderLeft: "4px solid #2e7d4f",
-                          background: "linear-gradient(90deg, rgba(46,125,79,.06), transparent 55%)",
-                        } : {}),
-                      }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
-                          <h3 style={{ fontSize: 15, fontWeight: 600 }}>{l.nome}</h3>
-                          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                            {l.urgente && <span className="tag" style={{ background: "var(--red)", color: "#fff" }}>urgente</span>}
-                            {l.fonte === "sito" && <span className="tag" style={{ background: "var(--gold)", color: "#fff" }}>Sito</span>}
-                            {l.fonte !== "sito" && esigenzaLead(l) !== "Non indicata" && <span className="tag" style={esigenzaLead(l) === "Gestione" ? { background: "#2e7d4f", color: "#fff" } : esigenzaLead(l) === "Vendita" ? { background: "#b5651d", color: "#fff" } : {}}>{esigenzaLead(l)}</span>}
-                            {l.stato && <span className="tag">{l.stato}</span>}
-                          </div>
-                        </div>
-                        {l.motivoTipo && <p style={{ fontSize: 11.5, color: "var(--gray)", fontStyle: "italic", marginBottom: 8, lineHeight: 1.4 }}>{l.motivoTipo}</p>}
-                        {l.email && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 4, wordBreak: "break-all" }}>✉ {l.email}</p>}
-                        {l.telefono && <p style={{ fontSize: 12, color: "var(--gray)", marginBottom: 4 }}>📞 {l.telefono}</p>}
-                        {l.fonte === "sito" && l.indirizzo ? (
-                          <p style={{ fontSize: 12, marginTop: 2 }}>📍 <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(l.indirizzo)}`} target="_blank" rel="noreferrer" style={{ color: "var(--gold)", textDecoration: "none" }}>{l.indirizzo}</a></p>
-                        ) : ((l.citta || l.azienda) && <p style={{ fontSize: 12, color: "var(--gray)" }}>{[l.azienda, l.citta].filter(Boolean).join(" · ")}</p>)}
-                        {l.dettaglio && <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>{l.dettaglio}</p>}
-                        {l.fonte !== "sito" && l.lifecyclestage && <p style={{ fontSize: 11.5, color: "var(--gray)", marginTop: 4 }}>fase: {l.lifecyclestage}</p>}
-                        {l.caratteristiche && <p style={{ fontSize: 11.5, color: "var(--gray)", marginTop: 3, display: "flex", flexWrap: "wrap", gap: 5 }}>
-                          {l.caratteristiche.split(", ").filter(Boolean).map((c, i) => (
-                            <span key={i} style={{ background: "rgba(192,148,86,.14)", color: "#8a6a2f", borderRadius: 20, padding: "2px 9px", fontSize: 11 }}>{c}</span>
-                          ))}
-                        </p>}
-                        {l.messaggio && (
-                          <div style={{ marginTop: 9, padding: "9px 11px", background: "rgba(192,148,86,.09)", borderLeft: "3px solid var(--gold)", borderRadius: 6 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--gold)", marginBottom: 4 }}>Cosa chiede</div>
-                            <div style={{ fontSize: 12.5, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                              {leadAperto === l.id || l.messaggio.length <= 420 ? l.messaggio : l.messaggio.slice(0, 420).trimEnd() + "\u2026"}
-                            </div>
-                            {leadAperto !== l.id && l.messaggio.length > 420 && (
-                              <button onClick={() => apriLead(l)}
-                                style={{ marginTop: 6, fontSize: 11, color: "var(--gold)", background: "none", border: 0, padding: 0, cursor: "pointer", textDecoration: "underline" }}>
-                                leggi tutto
-                              </button>
-                            )}
-                          </div>
-                        )}
-                        {l.foto && l.foto.length > 0 && (
-                          <div style={{ marginTop: 10 }}>
-                            <p style={{ fontSize: 11, color: "var(--gray)", marginBottom: 6 }}>📷 {l.foto.length} foto allegate</p>
-                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                              {l.foto.map((u, i) => (
-                                <a key={i} href={u} target="_blank" rel="noreferrer" title="Apri a schermo intero">
-                                  <img src={u} alt={`Foto ${i + 1}`} loading="lazy"
-                                       style={{ width: 62, height: 62, objectFit: "cover", borderRadius: 6, border: "1px solid var(--cd)", display: "block" }} />
-                                </a>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {(!l.foto || !l.foto.length) && l.fotoN > 0 && <p style={{ fontSize: 11, color: "var(--gray)", marginTop: 6 }}>📷 {l.fotoN} foto allegate</p>}
-                        {l.campagna && <p style={{ fontSize: 11, color: "var(--gold)", marginTop: 6 }}>campagna: {l.campagna}</p>}
-                        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--cd)", display: "flex", gap: 14, flexWrap: "wrap" }}>
-                          {l.fonte === "sito" ? (
-                            <>
-                              {l.creato && <span style={{ fontSize: 11, color: "var(--gray)" }}>{new Date(l.creato).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>}
-                              <button onClick={() => valutaLead(l)} style={{ fontSize: 11, color: "#fff", background: "var(--gold)", fontWeight: 700, border: 0, borderRadius: 6, padding: "4px 11px", cursor: "pointer" }}>Valuta con BNBCalc →</button>
-                              {l.telefono && <a href={`https://wa.me/39${String(l.telefono).replace(/\D/g, "").replace(/^39/, "")}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>WhatsApp →</a>}
-                              {l.email && <a href={`mailto:${l.email}`} style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Email →</a>}
-                            </>
-                          ) : (
-                            <>
-                              {l.createdate && <span style={{ fontSize: 11, color: "var(--gray)" }}>{new Date(l.createdate).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "2-digit" })}</span>}
-                              {l.telefono && <a href={`https://wa.me/${String(l.telefono).replace(/\D/g, "")}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>WhatsApp →</a>}
-                              {l.email && <a href={`mailto:${l.email}`} style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>Email →</a>}
-                              <a href={`https://app.hubspot.com/contacts/25704633/record/0-1/${l.id}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, textDecoration: "none" }}>HubSpot →</a>
-                            </>
-                          )}
-                          {/* Mettere via / rimettere: vale per entrambe le fonti */}
-                          {l.fonte !== "sito" && l.campi && l.campi.length > 0 && (
-                            <button onClick={() => apriLead(l)}
-                              style={{ fontSize: 11, color: "var(--gold)", fontWeight: 600, background: "none", border: 0, padding: 0, cursor: "pointer" }}>
-                              {leadAperto === l.id ? "Chiudi dettaglio" : `Tutti i dati (${l.campi.length}) →`}
-                            </button>
-                          )}
-                          {/* A chi passarlo. Serve soprattutto per i lead che
-                              non segui tu: senza, fra due settimane nessuno
-                              ricorda se qualcuno l ha preso in carico. */}
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                            {l.assegnatoA && (
-                              <span title={`Passato a ${l.assegnatoA}`} style={{
-                                width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
-                                background: l.assegnatoColore || "#94A3B8", color: "#fff",
-                                fontSize: 9, fontWeight: 700, display: "inline-flex",
-                                alignItems: "center", justifyContent: "center",
-                              }}>{String(l.assegnatoA)[0].toUpperCase()}</span>
-                            )}
-                            <select value={l.assegnatoAId || ""} onChange={(e) => assegnaLead(l, e.target.value)}
-                              title="A chi lo passi"
+                      /* Ordine cronologico, dal più recente. Un lead di ieri vale
+                         più di uno di marzo, e cercarlo per data è il gesto
+                         naturale. I Gestione si riconoscono dal colore, non
+                         scavalcando l'ordine: due criteri insieme confondono. */
+                      .sort((a, b) => String(b.creato || "").localeCompare(String(a.creato || "")))
+                      .map(l => {
+                        const gest = esigenzaLead(l) === "Gestione";
+                        const aperto = leadAperto === l.id;
+                        const st = (l.statoLavorazione || "nuovo");
+                        const COL = { nuovo: "#8A8A8A", contattato: "#C09456", in_corso: "#4A6FA5", vinto: "#5B8C5A", perso: "#C5221F" };
+                        const ETI = { nuovo: "Nuovo", contattato: "Contattato", in_corso: "In corso", vinto: "Vinto", perso: "Perso" };
+                        return (
+                          <div key={l.id} onClick={() => apriLead(l)}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 10, padding: "10px 13px",
+                              borderBottom: "1px solid rgba(0,0,0,.05)", cursor: "pointer",
+                              background: aperto ? "rgba(192,148,86,.1)" : gest ? "rgba(46,125,79,.045)" : "transparent",
+                              borderLeft: "3px solid " + (gest ? "#2e7d4f" : "transparent"),
+                              opacity: l.archiviato ? .55 : 1,
+                            }}>
+                            {/* chi lo segue */}
+                            <span title={l.assegnatoA ? `Passato a ${l.assegnatoA}` : "non assegnato"}
                               style={{
-                                fontSize: 11, padding: "3px 6px", borderRadius: 6, cursor: "pointer",
-                                border: "1px solid var(--cd)", background: "var(--white)",
-                                color: l.assegnatoA ? "inherit" : "var(--gray)", maxWidth: 150,
-                              }}>
-                              <option value="">da passare…</option>
-                              {collaboratori.filter(c => c.attivo !== false).map(c => (
-                                <option key={c.id} value={c.id}>{c.nome}</option>
-                              ))}
-                            </select>
-                          </span>
-                          {l.archiviato ? (
-                            <button onClick={() => ripristinaLead(l)} style={{ marginLeft: "auto", fontSize: 11, color: "var(--gray)", background: "none", border: "1px solid var(--cd)", borderRadius: 6, padding: "3px 9px", cursor: "pointer" }}>↩ Rimetti</button>
-                          ) : (
-                            <button onClick={() => archiviaLead(l)} title="Sparisce dall'elenco ma non viene cancellato" style={{ marginLeft: "auto", fontSize: 11, color: "var(--gray)", background: "none", border: "1px solid var(--cd)", borderRadius: 6, padding: "3px 9px", cursor: "pointer" }}>Metti via</button>
-                          )}
-                        </div>
+                                width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
+                                background: l.assegnatoA ? (l.assegnatoColore || "#94A3B8") : "transparent",
+                                border: l.assegnatoA ? "none" : "1px dashed var(--cd)",
+                                color: "#fff", fontSize: 11, fontWeight: 700,
+                                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                              }}>{l.assegnatoA ? String(l.assegnatoA)[0].toUpperCase() : ""}</span>
 
-                        {/* Tutti i campi valorizzati su HubSpot, raggruppati come li ha
-                            organizzati HubSpot stesso. Serve a non dover uscire dal CRM. */}
-                        {leadAperto === l.id && l.campi && (() => {
-                          const utili = l.campi.filter(utileDavvero);
-                          const resto = l.campi.filter(c => !utileDavvero(c));
-                          /* Il messaggio del lead va per primo e per intero: è
-                             la ragione per cui apri la scheda. */
-                          /* Attenzione: campi come "notes_last_contacted" contengono
-                             una DATA, non un messaggio. Prima il nome del campo deve
-                             essere davvero quello di un testo, poi il valore non deve
-                             somigliare a una data o a un numero. */
-                          const paginaMessaggio = (c) =>
-                            /^(message|descrizione|description|richiesta|messaggio|comments?|inquiry|note)$/i.test(c.chiave) ||
-                            /(^|_)(message|messaggio|descrizione|richiesta|comment|inquiry)(_|$)/i.test(c.chiave);
-                          const sembraTesto = (v) =>
-                            !/^\d{4}-\d{2}-\d{2}T/.test(v) && !/^-?\d+([.,]\d+)?$/.test(v) && v.trim().length > 2;
-                          const messaggio = utili.filter(c => paginaMessaggio(c) && sembraTesto(c.valore));
-                          const altri = utili.filter(c => !messaggio.includes(c));
-                          const mostraResto = leadTuttoIl === l.id;
-                          const profonda = convProfonde[String(l.id)];
-                          /* Si uniscono le due fonti senza doppioni: quella del
-                             caricamento in blocco e quella cercata all'apertura. */
-                          const conv = (() => {
-                            const m = new Map();
-                            [...(l.conversazione || []), ...((profonda && profonda.attivita) || [])]
-                              .forEach(x => { if (!m.has(String(x.id))) m.set(String(x.id), x); });
-                            return [...m.values()].sort((a, b) => String(a.quando).localeCompare(String(b.quando)));
-                          })();
-                          const cercando = convInCorso === String(l.id);
-                          const guai = (profonda && profonda.problemi) || [];
-                          return (
-                          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--cd)" }}>
-                            {/* Le email scambiate con il lead. Su HubSpot il contenuto
-                                sta qui, non nei campi del contatto. */}
-                            {cercando && (
-                              <div style={{ fontSize: 11.5, color: "var(--gray)", marginBottom: 10 }}>Cerco le email di questo contatto\u2026</div>
-                            )}
-                            {!cercando && profonda && conv.length === 0 && (
-                              <div style={{ fontSize: 11.5, color: "var(--gray)", marginBottom: 10, padding: "8px 10px", background: "rgba(0,0,0,.03)", borderRadius: 6 }}>
-                                {guai.some(g => g.permessoMancante)
-                                  ? "Le email ci sono su HubSpot ma il token non ha il permesso di leggerle: va aggiunto lo scope sales-email-read all'app privata."
-                                  : "Nessuna email o nota registrata su questo contatto."}
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ display: "flex", alignItems: "baseline", gap: 7, flexWrap: "wrap" }}>
+                                <strong style={{ fontSize: 13.5, fontWeight: 600 }}>{l.nome}</strong>
+                                {gest && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#2e7d4f", letterSpacing: ".03em" }}>GESTIONE</span>}
+                                {l.urgente && <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--red)" }}>URGENTE</span>}
+                                {l.fonte === "sito" && <span style={{ fontSize: 10.5, color: "var(--gold)", fontWeight: 600 }}>SITO</span>}
                               </div>
-                            )}
-                            {conv.length > 0 && (
-                              <div style={{ marginBottom: 14 }}>
-                                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--gold)", marginBottom: 6 }}>
-                                  Conversazione ({conv.length})
-                                </div>
-                                {conv.map(m => (
-                                  <div key={m.id} style={{
-                                    marginBottom: 8, padding: "9px 11px", borderRadius: 8,
-                                    background: m.inArrivo ? "rgba(192,148,86,.09)" : "rgba(0,0,0,.03)",
-                                    borderLeft: "3px solid " + (m.inArrivo ? "var(--gold)" : "var(--cd)"),
-                                  }}>
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline", fontSize: 10.5, color: "var(--gray)", marginBottom: 4 }}>
-                                      <strong style={{ color: m.inArrivo ? "var(--gold)" : "var(--gray)" }}>
-                                        {m.inArrivo ? "\u2190 da lui" : "\u2192 da noi"}
-                                      </strong>
-                                      <span>{m.genere}</span>
-                                      {m.quando && <span>{leggibile(m.quando)}</span>}
-                                      {m.allegati && m.allegati.length > 0 && <span>📎 {m.allegati.length}</span>}
-                                    </div>
-                                    {m.oggetto && <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 3 }}>{m.oggetto}</div>}
-                                    {m.oscurata ? (
-                                      <div style={{ fontSize: 12, lineHeight: 1.5, color: "var(--red)" }}>
-                                        HubSpot non lascia leggere il testo di questa email: all'app privata manca il permesso <strong>sales-email-read</strong>.
-                                      </div>
-                                    ) : (
-                                      <div style={{ fontSize: 12.5, lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.testo}</div>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {messaggio.map(c => (
-                              <div key={c.chiave} style={{ marginBottom: 12, padding: "10px 12px", background: "rgba(192,148,86,.08)", borderLeft: "3px solid var(--gold)", borderRadius: 6 }}>
-                                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--gold)", marginBottom: 4 }}>Cosa chiede</div>
-                                <div style={{ fontSize: 12.5, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{c.valore}</div>
-                              </div>
-                            ))}
-                            {altri.map(c => (
-                              <div key={c.chiave} className="lead-riga" style={{ fontSize: 11.5 }}>
-                                <span className="lead-eti">{c.etichetta}</span>
-                                <span className="lead-val">{leggibile(c.valore)}</span>
-                              </div>
-                            ))}
-                            {resto.length > 0 && (
-                              <button onClick={() => setLeadTuttoIl(mostraResto ? null : l.id)}
-                                style={{ marginTop: 10, fontSize: 11, color: "var(--gray)", background: "none", border: 0, padding: 0, cursor: "pointer", textDecoration: "underline" }}>
-                                {mostraResto ? "Nascondi i dati tecnici" : `Mostra anche i dati tecnici (${resto.length})`}
-                              </button>
-                            )}
-                            {mostraResto && resto.map(c => (
-                              <div key={c.chiave} className="lead-riga" style={{ fontSize: 11, color: "var(--gray)" }}>
-                                <span className="lead-eti">{c.etichetta}</span>
-                                <span className="lead-val">{leggibile(c.valore).slice(0, 160)}{c.valore.length > 160 ? "\u2026" : ""}</span>
-                              </div>
-                            ))}
-                          </div>);
-                        })()}
-                      </div>
-                    ))}
+                              {l.messaggio && (
+                                <div style={{
+                                  fontSize: 12, color: "var(--gray)", marginTop: 2,
+                                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                }}>{String(l.messaggio).replace(/\s+/g, " ")}</div>
+                              )}
+                            </div>
+
+                            <span className="lead-stato" style={{
+                              flexShrink: 0, fontSize: 10.5, fontWeight: 600, padding: "3px 9px",
+                              borderRadius: 20, color: COL[st], border: `1px solid ${COL[st]}33`, background: `${COL[st]}14`,
+                            }}>{ETI[st]}</span>
+
+                            <span className="lead-data" style={{ flexShrink: 0, fontSize: 11, color: "var(--gray)", minWidth: 74, textAlign: "right" }}>
+                              {l.creato ? new Date(l.creato).toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "2-digit" }) : "—"}
+                            </span>
+                          </div>
+                        );
+                      })}
                   </div>
+
+                  <LeadPannello
+                    lead={leads.find(x => x.id === leadAperto) || null}
+                    collaboratori={collaboratori}
+                    conversazione={(() => {
+                      const l = leads.find(x => x.id === leadAperto);
+                      if (!l) return null;
+                      const prof = convProfonde[String(l.id)];
+                      const m = new Map();
+                      [...(l.conversazione || []), ...((prof && prof.attivita) || [])]
+                        .forEach(x => { if (!m.has(String(x.id))) m.set(String(x.id), x); });
+                      return [...m.values()].sort((a, b) => String(a.quando).localeCompare(String(b.quando)));
+                    })()}
+                    cercando={convInCorso === String(leadAperto)}
+                    problemi={(convProfonde[String(leadAperto)] || {}).problemi}
+                    campiUtili={((leads.find(x => x.id === leadAperto) || {}).campi || []).filter(utileDavvero)}
+                    campiRumore={((leads.find(x => x.id === leadAperto) || {}).campi || []).filter(c => !utileDavvero(c))}
+                    mostraRumore={leadTuttoIl === leadAperto}
+                    onMostraRumore={() => setLeadTuttoIl(leadTuttoIl === leadAperto ? null : leadAperto)}
+                    esigenza={leadAperto ? esigenzaLead(leads.find(x => x.id === leadAperto) || {}) : null}
+                    leggibile={leggibile}
+                    onChiudi={() => setLeadAperto(null)}
+                    onStato={cambiaStatoLead}
+                    onAssegna={assegnaLead}
+                    onArchivia={(l) => { archiviaLead(l); setLeadAperto(null); }}
+                    onRipristina={(l) => { ripristinaLead(l); setLeadAperto(null); }}
+                  />
+                  </>
                 )}
               </>
             ) :
