@@ -3611,7 +3611,8 @@ function App({ utente, onLogout }) {
   const [collaboratori, setCollaboratori] = useState([]);
   const [soloMiei, setSoloMiei] = useState(false);
   const [leadTutti, setLeadTutti] = useState(false);                 // Lead: mostra anche quelli nascosti
-  const [leadVista, setLeadVista] = useState("gestione");            // Lead: Gestione / Lead da gestione / Assegnati                   // Lead: solo quelli assegnati a me su HubSpot
+  const [leadVista, setLeadVista] = useState("gestione");
+  const [ultimoEliminato, setUltimoEliminato] = useState(null);     // Lead: per "Annulla"            // Lead: Gestione / Lead da gestione / Assegnati                   // Lead: solo quelli assegnati a me su HubSpot
   const [convProfonde, setConvProfonde] = useState({});              // Lead: conversazioni cercate a fondo, per id
   const [convInCorso, setConvInCorso] = useState(null);              // Lead: sto cercando le conversazioni di questo
   const classificazioneInCorso = useRef(false);                      // evita di rilanciare la classificazione su se stessa
@@ -3967,8 +3968,13 @@ function App({ utente, onLogout }) {
      si perde la storia e non si torna indietro. Qui sparisce dall'elenco e si può
      rimettere quando serve. I contatti HubSpot restano intatti su HubSpot: nel CRM
      ne teniamo solo una lista di quelli da non mostrare più. */
-  const archiviaLead = useCallback(async (l) => {
-    if (!window.confirm(`Mettere via "${l.nome}"?\n\nSparisce dall'elenco ma non viene cancellato: lo ritrovi con "Mostra archiviati".`)) return;
+  /* Eliminare un lead inutile. Sparisce dall elenco ma non viene distrutto:
+     i contatti HubSpot appartengono anche all agenzia e ad altri colleghi, e
+     cancellarli davvero toglierebbe dati a loro. Al posto della finestra
+     "sei sicuro?" c e un Annulla per qualche secondo: per un gesto ripetuto
+     cento volte e piu rapido, e l errore si rimedia lo stesso. */
+  const archiviaLead = useCallback(async (l, veloce = false) => {
+    if (!veloce && !window.confirm(`Eliminare "${l.nome}" dall'elenco?\n\nLo ritrovi in "Mostra archiviati" se serve.`)) return;
     try {
       if (l.fonte === "sito") {
         await sb.patch("lead_sito", l.idRiga, { stato: "archiviato" });
@@ -3976,7 +3982,8 @@ function App({ utente, onLogout }) {
         await sb.post("lead_nascosti", [{ id: String(l.id), nascosto_da: "CRM", motivo: "archiviato dall'elenco Lead" }]);
       }
       setLeads(prev => prev.map(x => x.id === l.id ? { ...x, archiviato: true, stato: "archiviato" } : x));
-    } catch { alert("Non sono riuscito ad archiviarlo. Riprova."); }
+      setUltimoEliminato(l);
+    } catch { alert("Non sono riuscito ad eliminarlo. Riprova."); }
   }, []);
 
   const ripristinaLead = useCallback(async (l) => {
@@ -3991,6 +3998,11 @@ function App({ utente, onLogout }) {
   }, []);
 
   useEffect(() => { if (view === "lead") loadLeads(); }, [view, loadLeads]);
+  useEffect(() => {
+    if (!ultimoEliminato) return;
+    const t = setTimeout(() => setUltimoEliminato(null), 7000);
+    return () => clearTimeout(t);
+  }, [ultimoEliminato]);
   useEffect(() => {
     if (!utente) return;
     sb.get("collaboratori", "?select=id,nome,ruolo,colore,attivo,email,telefono&order=nome.asc")
@@ -4334,6 +4346,19 @@ function App({ utente, onLogout }) {
                     </div>
                   );
                 })()}
+                {ultimoEliminato && (
+                  <div style={{
+                    position: "fixed", bottom: 22, left: "50%", transform: "translateX(-50%)", zIndex: 600,
+                    background: "rgba(15,18,38,.94)", color: "#fff", borderRadius: 999, padding: "9px 10px 9px 18px",
+                    display: "flex", alignItems: "center", gap: 14, fontSize: 13, boxShadow: "0 6px 22px rgba(0,0,0,.3)",
+                  }}>
+                    <span>Eliminato <strong>{ultimoEliminato.nome}</strong></span>
+                    <button onClick={() => { ripristinaLead(ultimoEliminato); setUltimoEliminato(null); }}
+                      style={{ background: "#fff", color: "#111", border: 0, borderRadius: 999, padding: "5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+                      Annulla
+                    </button>
+                  </div>
+                )}
                 {leadsError ? (
                   <div style={{ padding: 20, background: "var(--white)", border: "1px solid var(--gl)", borderRadius: 12, boxShadow: "var(--shadow)", fontSize: 13 }}>
                     <div style={{ color: "var(--red)", fontWeight: 600, marginBottom: 6 }}>{leadsError}</div>
@@ -4414,6 +4439,15 @@ function App({ utente, onLogout }) {
                               flexShrink: 0, fontSize: 10.5, fontWeight: 600, padding: "3px 9px",
                               borderRadius: 20, color: COL[st], border: `1px solid ${COL[st]}33`, background: `${COL[st]}14`,
                             }}>{ETI[st]}</span>
+                            {!l.archiviato && (
+                              <button title="Elimina dall'elenco"
+                                onClick={(e) => { e.stopPropagation(); archiviaLead(l, true); }}
+                                style={{ flexShrink: 0, background: "none", border: 0, padding: "2px 4px", cursor: "pointer", color: "var(--gray)", fontSize: 14, opacity: .55 }}
+                                onMouseEnter={(e) => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "var(--red)"; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.opacity = .55; e.currentTarget.style.color = "var(--gray)"; }}>
+                                🗑
+                              </button>
+                            )}
                             <span style={{ flexShrink: 0, color: "var(--gray)", fontSize: 12, transform: aperto ? "rotate(90deg)" : "none", transition: "transform .15s" }}>›</span>
                           </div>
                           {aperto && (

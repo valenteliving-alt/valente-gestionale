@@ -236,7 +236,7 @@ export default function LeadPannello({
           <div style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid var(--cd)" }}>
             {l.archiviato
               ? <button className="bg" onClick={() => onRipristina(l)}>↩ Rimetti nell'elenco</button>
-              : <button className="bg" onClick={() => onArchivia(l)} title="Sparisce dall'elenco ma non viene cancellato">Metti via</button>}
+              : <button className="bg" onClick={() => onArchivia(l)} title="Sparisce dall'elenco, lo ritrovi negli archiviati">🗑 Elimina</button>}
           </div>
         </div>
   );
