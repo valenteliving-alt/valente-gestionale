@@ -112,7 +112,7 @@ const auth = {
    secondo la lettura del messaggio) e quelli gia passati a qualcuno.
    Tutto il resto — vendite, acquisti, ospiti, rumore — resta nascosto. */
 function leadPerMe(l) {
-  return esigenzaLead(l) === "Gestione" || l.tipo === "gestione" || !!l.assegnatoA;
+  return esigenzaLead(l) === "Gestione" || l.tipo === "gestione" || !!l.assegnatoA || !!l.mio;
 }
 
 /* Le tre viste della sezione Lead.
@@ -123,7 +123,10 @@ function leadPerMe(l) {
 const VISTE_LEAD = [
   { k: "gestione",    eti: "Gestione",          filtro: (l) => esigenzaLead(l) === "Gestione" },
   { k: "dagestione",  eti: "Lead da gestione",  filtro: (l) => esigenzaLead(l) === "Gestione" || l.tipo === "gestione" },
-  { k: "assegnati",   eti: "Assegnati",         filtro: (l) => !!l.assegnatoA },
+  /* "Assegnati" comprende anche quelli assegnati a Tommaso SU HUBSPOT: sono 149,
+     e su 101 di loro il campo esigenza e vuoto o diverso da Gestione. Contando
+     solo le assegnazioni fatte nel CRM sparivano tutti. */
+  { k: "assegnati",   eti: "Assegnati a me",    filtro: (l) => !!l.assegnatoA || !!l.mio },
 ];
 
 function esigenzaLead(l) {
