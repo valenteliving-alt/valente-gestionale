@@ -139,6 +139,26 @@ export default function Autofatture({ sb }) {
     await aggiorna(r, { pdf_path: path, ...(r.stato === "manca_pdf" ? { stato: "da_girare" } : {}) });
   };
 
+  // Più PDF insieme: ogni file si aggancia alla fattura il cui numero compare nel nome del file
+  const caricaMolti = async (e) => {
+    const files = [...(e.target.files || [])]; e.target.value = "";
+    if (!files.length) return;
+    const elenco = (righe || []).filter((r) => r.numero && slug(r.numero).length >= 4);
+    let fatti = 0; const scartati = [];
+    for (const file of files) {
+      const nome = slug(file.name.replace(/\.pdf$/i, ""));
+      const r = elenco.filter((x) => nome.includes(slug(x.numero))).sort((a, b) => slug(b.numero).length - slug(a.numero).length)[0];
+      if (!r) { scartati.push(file.name); continue; }
+      const path = `${(r.data_fattura || oggi).slice(0, 4)}/${slug(r.fornitore)}/${slug(r.numero)}.pdf`;
+      const ok = await sb.caricaFile("autofatture", path, file);
+      if (!ok) { scartati.push(file.name); continue; }
+      await sb.patch("autofatture", r.id, { pdf_path: path, ...(r.stato === "manca_pdf" ? { stato: "da_girare" } : {}) });
+      fatti++;
+    }
+    setErrore(scartati.length ? `Caricati ${fatti} PDF. Non abbinati (nessun numero fattura nel nome): ${scartati.join(", ")}` : "");
+    carica();
+  };
+
   const salvaNuova = async (rec) => {
     const { ok } = await sb.post("autofatture", rec);
     if (!ok) { setErrore("Non salvata: forse esiste già una fattura con lo stesso fornitore e numero."); return; }
@@ -156,7 +176,13 @@ export default function Autofatture({ sb }) {
             Fatture di fornitori esteri da integrare (TD17) e girare allo studio Pachino. Le aggiorna l'agente contabile ogni lunedì e il 3 del mese; qui si consultano i PDF e lo stato. Niente parte allo SdI da qui.
           </div>
         </div>
-        <button className="bp" onClick={() => setNuova(true)}>+ Aggiungi fattura</button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <label className="bg" style={{ cursor: "pointer", borderRadius: 8 }} title="Il numero della fattura deve comparire nel nome del file">
+            ⬆ Carica PDF (anche più file)
+            <input type="file" accept="application/pdf" multiple onChange={caricaMolti} style={{ display: "none" }} aria-label="Carica PDF autofatture" />
+          </label>
+          <button className="bp" onClick={() => setNuova(true)}>+ Aggiungi fattura</button>
+        </div>
       </div>
 
       {errore && <div style={{ padding: 12, borderRadius: 10, background: "#FFE4E6", color: "var(--red)", fontSize: 13, marginBottom: 12 }}>{errore}</div>}
