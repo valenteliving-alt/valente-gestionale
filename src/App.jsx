@@ -3445,6 +3445,22 @@ function DaFareOggi({ mioNome, vedoTutto }) {
   useEffect(() => { carica(); }, [carica]);
   const fatto = async (t) => { setLista(l => l.filter(x => x.id !== t.id)); await sb.patch("task", t.id, { stato: "fatto", completato_il: new Date().toISOString() }); };
   const passa = async (t) => { const a = t.assegnato_a === "Francesco" ? "Tommaso" : "Francesco"; setLista(l => l.filter(x => x.id !== t.id)); await sb.patch("task", t.id, { assegnato_a: a }); };
+  /* Un compito che non va fatto o che non serve piu. Non si cancella: si segna
+     "annullato", cosi resta la traccia e la funzione del mattino non lo
+     ripropone come nuovo. Per qualche secondo c e Annulla, se il clic era sbagliato. */
+  const [tolto, setTolto] = useState(null);
+  useEffect(() => { if (!tolto) return; const k = setTimeout(() => setTolto(null), 7000); return () => clearTimeout(k); }, [tolto]);
+  const annulla = async (t) => {
+    setLista(l => l.filter(x => x.id !== t.id));
+    setTolto(t);
+    const { ok } = await sb.patch("task", t.id, { stato: "annullato", completato_il: new Date().toISOString() });
+    if (!ok) { alert("Non sono riuscito a toglierlo."); carica(); }
+  };
+  const ripristina = async (t) => {
+    setTolto(null);
+    await sb.patch("task", t.id, { stato: "da fare", completato_il: null });
+    carica();
+  };
   const visibili = lista ? (tutti ? lista : lista.slice(0, 6)) : [];
   return (
     <div style={{ background: "var(--white)", border: "1px solid rgba(99,102,241,.25)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 16, marginBottom: 16 }}>
@@ -3465,10 +3481,22 @@ function DaFareOggi({ mioNome, vedoTutto }) {
                 <button onClick={() => passa(t)} style={{ fontSize: 11.5, background: "none", border: "none", padding: 0, color: "var(--gray)", cursor: "pointer" }}>⇄ Passa a {t.assegnato_a === "Francesco" ? "Tommaso" : "Francesco"}</button>
               </div>
             </div>
-            <button className="bp" style={{ fontSize: 11.5, padding: "5px 10px", flexShrink: 0 }} onClick={() => fatto(t)}>Fatto</button>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
+              <button className="bp" style={{ fontSize: 11.5, padding: "5px 10px" }} onClick={() => fatto(t)}>Fatto</button>
+              <button onClick={() => annulla(t)} title="Non va fatto o non serve piu"
+                style={{ fontSize: 11, background: "none", border: "none", padding: 0, color: "var(--gray)", cursor: "pointer", textDecoration: "underline" }}>
+                Elimina
+              </button>
+            </div>
           </div>
         ))}
       {lista && lista.length > 6 && <button className="bg" style={{ fontSize: 11.5, marginTop: 8 }} onClick={() => setTutti(v => !v)}>{tutti ? "Mostra solo i primi 6" : `Mostra tutti (${lista.length})`}</button>}
+      {tolto && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, padding: "8px 12px", background: "rgba(15,18,38,.06)", borderRadius: 8, fontSize: 12.5 }}>
+          <span style={{ flex: 1 }}>Eliminato: <strong>{tolto.titolo}</strong></span>
+          <button className="bg" style={{ fontSize: 11.5, padding: "4px 10px" }} onClick={() => ripristina(tolto)}>Annulla</button>
+        </div>
+      )}
     </div>
   );
 }
