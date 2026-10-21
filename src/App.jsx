@@ -121,12 +121,15 @@ function leadPerMe(l) {
      Piu largo, a volte include chi vuole comprare per poi affittare.
    - Assegnati: quelli gia passati a qualcuno. */
 const VISTE_LEAD = [
+  /* Prima di tutto: quelli che HubSpot assegna a noi. Arrivano diretti e sono
+     di sicuro persone che vogliono dare un immobile in gestione: sono la
+     priorita, e la sezione si apre qui. */
+  { k: "miei",        eti: "Assegnati a noi",   filtro: (l) => !!l.mio },
   { k: "gestione",    eti: "Gestione",          filtro: (l) => esigenzaLead(l) === "Gestione" },
   { k: "dagestione",  eti: "Lead da gestione",  filtro: (l) => esigenzaLead(l) === "Gestione" || l.tipo === "gestione" },
-  /* "Assegnati" comprende anche quelli assegnati a Tommaso SU HUBSPOT: sono 149,
-     e su 101 di loro il campo esigenza e vuoto o diverso da Gestione. Contando
-     solo le assegnazioni fatte nel CRM sparivano tutti. */
-  { k: "assegnati",   eti: "Assegnati a me",    filtro: (l) => !!l.assegnatoA || !!l.mio },
+  /* Quelli che hai girato a qualcuno dal CRM, per esempio a Tommaso Ratti:
+     servono per vedere a che punto e chi li sta lavorando. */
+  { k: "passati",     eti: "Passati ad altri",  filtro: (l) => !!l.assegnatoA },
 ];
 
 function esigenzaLead(l) {
@@ -3615,7 +3618,7 @@ function App({ utente, onLogout }) {
   const [collaboratori, setCollaboratori] = useState([]);
   const [soloMiei, setSoloMiei] = useState(false);
   const [leadTutti, setLeadTutti] = useState(false);                 // Lead: mostra anche quelli nascosti
-  const [leadVista, setLeadVista] = useState("gestione");
+  const [leadVista, setLeadVista] = useState("miei");                // Lead: si apre su quelli che HubSpot assegna a noi
   const chiSonoRef = useRef({ vedoTutto: false, nome: "" });          // per loadLeads, che non si ricrea
   const [ultimoEliminato, setUltimoEliminato] = useState(null);     // Lead: per "Annulla"            // Lead: Gestione / Lead da gestione / Assegnati                   // Lead: solo quelli assegnati a me su HubSpot
   const [convProfonde, setConvProfonde] = useState({});              // Lead: conversazioni cercate a fondo, per id
@@ -4336,7 +4339,7 @@ function App({ utente, onLogout }) {
                       {VISTE_LEAD.map(v => {
                         const n = attivi.filter(v.filtro).length;
                         const on = !leadTutti && leadVista === v.k;
-                        const verde = v.k === "gestione";
+                        const verde = v.k === "miei";
                         return (
                           <button key={v.k} onClick={() => { setLeadVista(v.k); setLeadTutti(false); }}
                             style={{
