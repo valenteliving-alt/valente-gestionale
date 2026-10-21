@@ -5,6 +5,7 @@ import Schede from "./Schede";
 import MessaggiAI from "./MessaggiAI";
 import Ecosistema from "./Ecosistema";
 import AgentiAI from "./AgentiAI";
+import Autofatture from "./Autofatture";
 import Manuale from "./Manuale";
 import Guida from "./Guida";
 import Compliance from "./Compliance";
@@ -189,6 +190,30 @@ const sb = {
   post: (t, b) => sb.req("POST", t, b),
   patch: (t, id, b) => sb.req("PATCH", t, b, `?id=eq.${id}`),
   del: (t, id) => sb.req("DELETE", t, null, `?id=eq.${id}`),
+  // File nei bucket privati (usati dalla sezione Autofatture)
+  async tokenFresco() {
+    const s = auth.leggi();
+    if (s && s.scade && s.scade - Date.now() < 60000) await auth.rinnova();
+    return auth.token() || SUPABASE_KEY;
+  },
+  async firmaFile(bucket, path, secondi = 600) {
+    if (!path) return null;
+    const token = await sb.tokenFresco();
+    const r = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${path.split("/").map(encodeURIComponent).join("/")}`, {
+      method: "POST", body: JSON.stringify({ expiresIn: secondi }),
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
+    });
+    const d = await r.json().catch(() => null);
+    return r.ok && d && d.signedURL ? `${SUPABASE_URL}/storage/v1${d.signedURL}` : null;
+  },
+  async caricaFile(bucket, path, file) {
+    const token = await sb.tokenFresco();
+    const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${path.split("/").map(encodeURIComponent).join("/")}`, {
+      method: "POST", body: file,
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/pdf", "x-upsert": "true" }
+    });
+    return r.ok;
+  },
 };
 
 const MONDAY_DATA = [
@@ -4087,6 +4112,8 @@ function App({ utente, onLogout }) {
     { id: "planner", label: "Planner", icon: "🗓️", count: null, group: "Operativo" },
     // Quanto fa ogni appartamento (dati Kross). Ognuno vede solo gli immobili che gli competono
     { id: "report", label: "Report appartamenti", icon: "📈", count: null, ...(sonoAgente ? {} : { group: "Operativo" }) },
+    // Archivio fatture estere da autofatturare (TD17) e girare a Pachino. Solo master/soci (RLS)
+    ...(vedoTutto ? [{ id: "autofatture", label: "Autofatture", icon: "🧾", count: null, group: "Operativo" }] : []),
     { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale, group: "Operativo" },
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length, group: "Operativo" },
     /* Le trattative vengono PRIMA del lancio: un immobile e un lead finche
@@ -4116,14 +4143,14 @@ function App({ utente, onLogout }) {
        per chi vede tutto. Property manager e agenti restano come prima. */
     .map(i => {
       if (!vedoTutto) return i;
-      const ATTIVE = ["home", "notifiche", "team", "lead", "proprietari", "proprieta", "lancio", "report"];
+      const ATTIVE = ["home", "notifiche", "team", "lead", "proprietari", "proprieta", "lancio", "report", "autofatture"];
       if (!ATTIVE.includes(i.id)) return { ...i, group: "In pausa" };
       const { group, ...resto } = i; // le voci attive stanno sempre in vista, fuori dalle tendine
       return resto;
     })
     .sort((a, b) => {
       if (!vedoTutto) return 0;
-      const ORDINE = ["home", "notifiche", "team", "lead", "proprietari", "proprieta", "lancio", "report"];
+      const ORDINE = ["home", "notifiche", "team", "lead", "proprietari", "proprieta", "lancio", "report", "autofatture"];
       const pa = ORDINE.indexOf(a.id), pb = ORDINE.indexOf(b.id);
       return (pa < 0 ? 99 : pa) - (pb < 0 ? 99 : pb);
     })
@@ -4301,6 +4328,7 @@ function App({ utente, onLogout }) {
             view === "ricorrenti" ? <Ricorrenti proprieta={proprieta} owners={owners} /> :
             view === "team" ? <Team proprieta={proprieta} sonoMaster={sonoMaster} onDataChanged={load} /> :
             view === "report" ? <ReportAppartamenti sb={sb} vedoTutto={vedoTutto} sonoAgente={sonoAgente} /> :
+            view === "autofatture" && vedoTutto ? <Autofatture sb={sb} /> :
             view === "portale" ? <PortaleAgente proprieta={proprieta} nomeAgente={mioNome} sb={sb} onDataChanged={load} /> :
             view === "valutazione" ? <Valutazione nomeAgente={mioNome} prefill={valutaPrefill} vedoTutto={vedoTutto} /> :
             view === "trattative" ? <Trattative nomeAgente={mioNome} /> :
