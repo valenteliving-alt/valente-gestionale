@@ -251,6 +251,9 @@ export default function Autofatture({ sb }) {
                       {r.pdf_path
                         ? <button className="bg" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => apriPdf(r)}>📄 Apri</button>
                         : <button className="bg" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => scegliPdf(r)}>⬆ Carica</button>}
+                      {r.rif_gmail && /^https:\/\/mail\.google\.com\//.test(r.rif_gmail) && (
+                        <a href={r.rif_gmail} target="_blank" rel="noopener noreferrer" style={{ display: "block", fontSize: 11, marginTop: 4 }}>✉ Mail originale</a>
+                      )}
                     </td>
                     <td style={{ padding: "9px 10px", fontSize: 11, color: "var(--gray)", maxWidth: 320 }}>{[r.descrizione, r.note].filter(Boolean).join(" — ")}</td>
                   </tr>
