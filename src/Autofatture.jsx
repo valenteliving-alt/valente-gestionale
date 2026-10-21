@@ -23,6 +23,9 @@ const REGIMI = {
   da_verificare: "Da verificare",
 };
 const APERTI = ["manca_pdf", "da_girare", "girata", "da_riemettere"];
+// OTA = i portali che ci fatturano le commissioni: Airbnb (IE) e Booking (NL).
+const RE_OTA = /airbnb|booking\.com/i;
+const isOta = (r) => RE_OTA.test(r.fornitore || "");
 
 const oggi = new Date().toISOString().slice(0, 10);
 const dataIt = (d) => (d ? d.split("-").reverse().join("/") : "—");
@@ -74,6 +77,7 @@ export default function Autofatture({ sb }) {
   const [errore, setErrore] = useState("");
   const [filtro, setFiltro] = useState("aperte");
   const [fornitore, setFornitore] = useState("");
+  const [canale, setCanale] = useState("");
   const [cerca, setCerca] = useState("");
   const [nuova, setNuova] = useState(false);
   const [lavoro, setLavoro] = useState(null);
@@ -90,7 +94,7 @@ export default function Autofatture({ sb }) {
   const scaduta = (r) => r.scadenza_td17 && r.scadenza_td17 < oggi && ["manca_pdf", "da_girare", "girata"].includes(r.stato) && ["reverse_charge", "esente"].includes(r.regime);
 
   const conteggi = useMemo(() => {
-    const t = { aperte: 0, manca_pdf: 0, da_girare: 0, da_riemettere: 0, scadute: 0, tutte: 0 };
+    const t = { aperte: 0, manca_pdf: 0, da_girare: 0, da_riemettere: 0, scadute: 0, tutte: 0, ota: 0, ota_aperte: 0 };
     (righe || []).forEach((r) => {
       t.tutte++;
       if (APERTI.includes(r.stato)) t.aperte++;
@@ -98,17 +102,21 @@ export default function Autofatture({ sb }) {
       if (r.stato === "da_girare") t.da_girare++;
       if (r.stato === "da_riemettere") t.da_riemettere++;
       if (scaduta(r)) t.scadute++;
+      if (isOta(r)) { t.ota++; if (APERTI.includes(r.stato)) t.ota_aperte++; }
     });
     return t;
   }, [righe]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const fornitori = useMemo(() => [...new Set((righe || []).map((r) => r.fornitore))].sort(), [righe]);
+  const fornitori = useMemo(() => [...new Set((righe || [])
+    .filter((r) => !canale || (canale === "ota" ? isOta(r) : !isOta(r)))
+    .map((r) => r.fornitore))].sort(), [righe, canale]);
 
   const vista = useMemo(() => (righe || [])
     .filter((r) => filtro === "tutte" ? true : filtro === "aperte" ? APERTI.includes(r.stato) : filtro === "scadute" ? scaduta(r) : r.stato === filtro)
+    .filter((r) => !canale || (canale === "ota" ? isOta(r) : !isOta(r)))
     .filter((r) => !fornitore || r.fornitore === fornitore)
     .filter((r) => { const q = cerca.trim().toLowerCase(); return !q || [r.fornitore, r.numero, r.descrizione, r.note].some((x) => (x || "").toLowerCase().includes(q)); }),
-  [righe, filtro, fornitore, cerca]); // eslint-disable-line react-hooks/exhaustive-deps
+  [righe, filtro, canale, fornitore, cerca]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totEur = vista.reduce((s, r) => s + (r.valuta === "EUR" ? Number(r.importo) || 0 : Number(r.importo_eur) || 0), 0);
   const senzaEur = vista.filter((r) => r.valuta !== "EUR" && r.importo_eur == null).length;
@@ -193,10 +201,16 @@ export default function Autofatture({ sb }) {
         <Kpi l="Manca il PDF" v={conteggi.manca_pdf} sub="da scaricare dal portale" onClick={() => setFiltro("manca_pdf")} attivo={filtro === "manca_pdf"} />
         <Kpi l="Da far riemettere" v={conteggi.da_riemettere} sub="intestate al soggetto sbagliato" onClick={() => setFiltro("da_riemettere")} attivo={filtro === "da_riemettere"} />
         <Kpi l="Fuori termine" v={conteggi.scadute} rosso={conteggi.scadute > 0} sub="TD17 oltre la scadenza" onClick={() => setFiltro("scadute")} attivo={filtro === "scadute"} />
-        <Kpi l="Tutte" v={conteggi.tutte} onClick={() => setFiltro("tutte")} attivo={filtro === "tutte"} />
+        <Kpi l="OTA · Airbnb e Booking" v={conteggi.ota} sub={conteggi.ota_aperte + " ancora aperte"} onClick={() => { setCanale("ota"); setFiltro("tutte"); }} attivo={canale === "ota"} />
+        <Kpi l="Tutte" v={conteggi.tutte} onClick={() => { setFiltro("tutte"); setCanale(""); }} attivo={filtro === "tutte" && !canale} />
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+        <select value={canale} onChange={(e) => { setCanale(e.target.value); setFornitore(""); }} style={{ fontSize: 12, fontWeight: canale ? 600 : 400 }}>
+          <option value="">Tutti i canali</option>
+          <option value="ota">Solo OTA (Airbnb + Booking)</option>
+          <option value="altri">Solo altri fornitori</option>
+        </select>
         <select value={fornitore} onChange={(e) => setFornitore(e.target.value)} style={{ fontSize: 12 }}>
           <option value="">Tutti i fornitori</option>
           {fornitori.map((f) => <option key={f} value={f}>{f}</option>)}
