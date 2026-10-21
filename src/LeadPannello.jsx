@@ -29,7 +29,7 @@ const dataOra = (d) => {
 export default function LeadPannello({
   lead, collaboratori, conversazione, cercando, problemi,
   campiUtili, campiRumore, mostraRumore, onMostraRumore,
-  onChiudi, onStato, onAssegna, onArchivia, onRipristina, leggibile, esigenza, inline,
+  onChiudi, onStato, onAssegna, onArchivia, onRipristina, leggibile, esigenza, inline, puoGestire = true,
 }) {
   if (!lead) return null;
   const l = lead;
@@ -60,7 +60,7 @@ export default function LeadPannello({
             </div>
           </Sezione>
 
-          <Sezione titolo="Assegna a">
+          {puoGestire && <Sezione titolo="Assegna a">
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {l.assegnatoA && (
                 <span style={{
@@ -84,7 +84,7 @@ export default function LeadPannello({
             {l.assegnatoIl && (
               <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 5 }}>passato il {dataOra(l.assegnatoIl)}</div>
             )}
-          </Sezione>
+          </Sezione>}
 
           {/* Cosa ha scritto: è la ragione per cui hai aperto la scheda */}
           {l.messaggio && (
@@ -233,11 +233,11 @@ export default function LeadPannello({
             })()}
           </Sezione>
 
-          <div style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid var(--cd)" }}>
+          {puoGestire && <div style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid var(--cd)" }}>
             {l.archiviato
               ? <button className="bg" onClick={() => onRipristina(l)}>↩ Rimetti nell'elenco</button>
               : <button className="bg" onClick={() => onArchivia(l)} title="Sparisce dall'elenco, lo ritrovi negli archiviati">🗑 Elimina</button>}
-          </div>
+          </div>}
         </div>
   );
 

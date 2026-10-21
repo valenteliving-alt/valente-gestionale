@@ -3616,6 +3616,7 @@ function App({ utente, onLogout }) {
   const [soloMiei, setSoloMiei] = useState(false);
   const [leadTutti, setLeadTutti] = useState(false);                 // Lead: mostra anche quelli nascosti
   const [leadVista, setLeadVista] = useState("gestione");
+  const chiSonoRef = useRef({ vedoTutto: false, nome: "" });          // per loadLeads, che non si ricrea
   const [ultimoEliminato, setUltimoEliminato] = useState(null);     // Lead: per "Annulla"            // Lead: Gestione / Lead da gestione / Assegnati                   // Lead: solo quelli assegnati a me su HubSpot
   const [convProfonde, setConvProfonde] = useState({});              // Lead: conversazioni cercate a fondo, per id
   const [convInCorso, setConvInCorso] = useState(null);              // Lead: sto cercando le conversazioni di questo
@@ -3698,7 +3699,7 @@ function App({ utente, onLogout }) {
     if (!ruoloLetto) return;
     // L'agente ha due sole sezioni: i suoi immobili e il valutatore
     if (sonoAgente) { if (view !== "portale" && view !== "valutazione" && view !== "report") setView("portale"); return; }
-    if (!vedoTutto && ["home", "notifiche", "gestione", "lead", "lancio", "smistamento", "ricorrenti", "archivio", "team", "portale"].includes(view)) {
+    if (!vedoTutto && ["home", "notifiche", "gestione", "lancio", "smistamento", "ricorrenti", "archivio", "team", "portale"].includes(view)) {
       setView("proprieta");
     }
   }, [vedoTutto, sonoAgente, ruoloLetto, view]);
@@ -3881,7 +3882,12 @@ function App({ utente, onLogout }) {
     } catch { /* senza assegnazioni i lead si vedono lo stesso */ }
 
     setLeadsError(erroreHubspot);
-    setLeads(erroreHubspot && !daSito.length ? [] : tutti);
+    /* Un collaboratore esterno (come Tommaso Ratti) vede SOLO i lead che gli
+       sono stati passati. Gli altri sono dell agenzia e non sono suoi. */
+    const io = chiSonoRef.current;
+    const perLui = io.vedoTutto ? tutti
+      : tutti.filter(l => l.assegnatoA && io.nome && String(l.assegnatoA).toLowerCase() === String(io.nome).toLowerCase());
+    setLeads(erroreHubspot && !daSito.length ? [] : perLui);
     setLeadsLoading(false);
 
     /* I lead nuovi con un messaggio non ancora letto: li mando a classificare in
@@ -4001,6 +4007,7 @@ function App({ utente, onLogout }) {
     } catch { alert("Non sono riuscito a ripristinarlo. Riprova."); }
   }, []);
 
+  chiSonoRef.current = { vedoTutto, nome: mioNome };
   useEffect(() => { if (view === "lead") loadLeads(); }, [view, loadLeads]);
   useEffect(() => {
     if (!ultimoEliminato) return;
@@ -4123,7 +4130,7 @@ function App({ utente, onLogout }) {
       ? (i.id === "portale" || i.id === "report" || i.id === "valutazione")
       : (ruoloLetto && !mioNome)
         ? false // account senza scheda in Team: nessuna voce, c'è il messaggio a schermo
-        : ["proprieta", "proprietari", "report", "planner", "compliance", "guida", "valutazione"].includes(i.id)); // property manager
+        : ["lead", "proprieta", "proprietari", "report", "planner", "compliance", "guida", "valutazione"].includes(i.id)); // property manager e collaboratori: Lead mostra solo i loro
 
   return (
     <>
@@ -4321,7 +4328,7 @@ function App({ utente, onLogout }) {
                     di più di chi cerca casa: qui si apre su quello e basta. */}
                 {/* Niente filtri: si vedono solo i lead di gestione e quelli
                     assegnati. Il resto e nascosto, non cancellato. */}
-                {leads.length > 0 && (() => {
+                {vedoTutto && leads.length > 0 && (() => {
                   const attivi = leads.filter(l => mostraArchiviati ? l.archiviato : !l.archiviato);
                   const altri = attivi.filter(l => !leadPerMe(l)).length;
                   return (
@@ -4381,7 +4388,7 @@ function App({ utente, onLogout }) {
                     {leads
                       .filter(l => mostraArchiviati ? l.archiviato : !l.archiviato)
                       .filter(l => !soloMiei || l.fonte === "sito" || l.mio)
-                      .filter(l => leadTutti || (VISTE_LEAD.find(x => x.k === leadVista) || VISTE_LEAD[0]).filtro(l))
+                      .filter(l => !vedoTutto || leadTutti || (VISTE_LEAD.find(x => x.k === leadVista) || VISTE_LEAD[0]).filtro(l))
                       /* Ordine cronologico, dal più recente. Un lead di ieri vale
                          più di uno di marzo, e cercarlo per data è il gesto
                          naturale. I Gestione si riconoscono dal colore, non
@@ -4431,6 +4438,7 @@ function App({ utente, onLogout }) {
                                     display: "inline-flex", alignItems: "center", justifyContent: "center",
                                   }}>{l.assegnatoA ? String(l.assegnatoA)[0].toUpperCase() : ""}</span>
                                   <select value={l.assegnatoAId || ""} onChange={(e) => assegnaLead(l, e.target.value)}
+                                    disabled={!vedoTutto}
                                     title="A chi e assegnato"
                                     style={{
                                       fontSize: 12, padding: "4px 8px", borderRadius: 7, cursor: "pointer", maxWidth: 170,
@@ -4500,7 +4508,7 @@ function App({ utente, onLogout }) {
 
                             {/* elimina e apri */}
                             <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                              {!l.archiviato && (
+                              {!l.archiviato && vedoTutto && (
                                 <button title="Elimina dall'elenco"
                                   onClick={(e) => { e.stopPropagation(); archiviaLead(l, true); }}
                                   style={{ background: "none", border: 0, padding: "2px 4px", cursor: "pointer", color: "var(--gray)", fontSize: 14, opacity: .5 }}
@@ -4511,7 +4519,7 @@ function App({ utente, onLogout }) {
                             </div>
                           </div>
                           {aperto && (
-                      <LeadPannello inline
+                      <LeadPannello inline puoGestire={vedoTutto}
                         lead={l}
                         collaboratori={collaboratori}
                         conversazione={(() => {
