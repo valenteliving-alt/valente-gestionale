@@ -1357,6 +1357,103 @@ function categoriaDoc(nome) {
   return DOC_CATEGORIE[DOC_CATEGORIE.length - 1];
 }
 
+/* Burocrazia dell'appartamento: credenziali dei portali (Alloggiati, ISTAT,
+   imposta di soggiorno, BDSR) e una nota breve su cosa fare. Tabella
+   proprieta_credenziali: la leggono solo soci/master e il gestore dell'appartamento. */
+const BURO_BLOCCHI = [
+  { k: "alloggiati", titolo: "Alloggiati Web (Questura)", portale: () => "https://alloggiatiweb.poliziadistato.it" },
+  { k: "istat", titolo: "ISTAT / flussi turistici", portale: (p, c) => c.istat_portale || p.sito_istat },
+  { k: "tassa", titolo: "Imposta di soggiorno", portale: (p, c) => c.tassa_portale || p.sito_tassa, extra: (p) => p.tassa_cadenza },
+  { k: "bdsr", titolo: "CIN (BDSR Ministero)", portale: () => "https://bdsr.ministeroturismo.gov.it" },
+];
+function linkPortale(v) {
+  if (!v) return null;
+  const m = String(v).match(/(https?:\/\/[^\s)]+)|([a-z0-9.-]+\.(?:it|org|com|gov\.it)(?:\/[^\s)]*)?)/i);
+  if (!m) return <span>{v}</span>;
+  const url = m[1] || "https://" + m[2];
+  return <a href={url} target="_blank" rel="noreferrer" style={{ color: "var(--black)" }}>{v}</a>;
+}
+function Burocrazia({ p }) {
+  const [c, setC] = useState(undefined);
+  const [vedi, setVedi] = useState({});
+  const [mod, setMod] = useState(false);
+  const [form, setForm] = useState({});
+  const [msg, setMsg] = useState("");
+  useEffect(() => {
+    let vivo = true; setC(undefined); setMod(false); setVedi({});
+    sb.get("proprieta_credenziali", `?proprieta_id=eq.${p.id}`).then(r => {
+      if (!vivo) return;
+      setC(r.ok && Array.isArray(r.data) ? (r.data[0] || {}) : null);
+    });
+    return () => { vivo = false; };
+  }, [p.id]);
+  if (c === undefined) return <div style={{ fontSize: 12, color: "var(--gray)", padding: "14px 0" }}>Carico le credenziali…</div>;
+  if (c === null) return null; // nessun permesso
+  const copia = (t) => { try { navigator.clipboard.writeText(t); setMsg("Copiato"); setTimeout(() => setMsg(""), 1200); } catch { /* niente */ } };
+  const salva = async () => {
+    const corpo = { ...form, proprieta_id: p.id, aggiornato_il: new Date().toISOString() };
+    const r = await sb.req("POST", "proprieta_credenziali", corpo, "?on_conflict=proprieta_id", true, "return=representation,resolution=merge-duplicates");
+    if (r.ok && Array.isArray(r.data)) { setC(r.data[0]); setMod(false); setMsg("Salvato"); setTimeout(() => setMsg(""), 1500); }
+    else setMsg("Errore nel salvataggio");
+  };
+  const campi = ["cosa_fare", "alloggiati_username", "alloggiati_password", "alloggiati_note", "istat_portale", "istat_username", "istat_password", "istat_note", "tassa_portale", "tassa_username", "tassa_password", "tassa_note", "bdsr_username", "bdsr_password"];
+  const etichetta = { cosa_fare: "Cosa fare", alloggiati_username: "Alloggiati – utente", alloggiati_password: "Alloggiati – password", alloggiati_note: "Alloggiati – note", istat_portale: "ISTAT – portale", istat_username: "ISTAT – utente", istat_password: "ISTAT – password", istat_note: "ISTAT – note", tassa_portale: "Imposta – portale", tassa_username: "Imposta – utente", tassa_password: "Imposta – password", tassa_note: "Imposta – note", bdsr_username: "BDSR – utente", bdsr_password: "BDSR – password" };
+  const riga = (lab, val, segreto, chiave) => val ? (
+    <div style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12.5, padding: "2px 0" }}>
+      <span style={{ color: "var(--gray)", minWidth: 70, fontSize: 11 }}>{lab}</span>
+      <span style={{ flex: 1, wordBreak: "break-all", fontFamily: segreto ? "monospace" : undefined }}>{segreto && !vedi[chiave] ? "••••••••" : val}</span>
+      {segreto && <button onClick={() => setVedi(v => ({ ...v, [chiave]: !v[chiave] }))} style={{ background: "none", border: "none", fontSize: 11, color: "var(--gray)", cursor: "pointer" }}>{vedi[chiave] ? "nascondi" : "mostra"}</button>}
+      <button onClick={() => copia(val)} style={{ background: "none", border: "none", fontSize: 11, color: "var(--gray)", cursor: "pointer" }}>copia</button>
+    </div>
+  ) : null;
+  return (
+    <div style={{ marginTop: 20, marginBottom: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, flex: 1 }}>🏛️ Burocrazia e credenziali</div>
+        {msg && <span style={{ fontSize: 11, color: "var(--gray)", marginRight: 8 }}>{msg}</span>}
+        {!mod && <button onClick={() => { setForm(Object.fromEntries(campi.map(k => [k, c[k] || ""]))); setMod(true); }} style={{ background: "none", border: "1px solid var(--gl)", fontSize: 11, padding: "3px 10px", cursor: "pointer" }}>Modifica</button>}
+      </div>
+      {mod ? (
+        <div style={{ background: "var(--white)", border: "1px solid var(--gl)", padding: 12 }}>
+          {campi.map(k => (
+            <div key={k} style={{ marginBottom: 8 }}>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gray)", marginBottom: 3 }}>{etichetta[k]}</label>
+              {k.endsWith("note") || k === "cosa_fare"
+                ? <textarea rows={k === "cosa_fare" ? 4 : 2} value={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} style={{ width: "100%" }} />
+                : <input value={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} style={{ width: "100%" }} />}
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="bp" onClick={salva}>Salva</button>
+            <button onClick={() => setMod(false)} style={{ background: "none", border: "1px solid var(--gl)", padding: "6px 14px", cursor: "pointer" }}>Annulla</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {c.cosa_fare && <div style={{ background: "#FFF8E6", border: "1px solid #F1D9A0", padding: "10px 12px", fontSize: 12.5, lineHeight: 1.5, marginBottom: 10, whiteSpace: "pre-wrap" }}><b>Cosa fare: </b>{c.cosa_fare}</div>}
+          {BURO_BLOCCHI.map(b => {
+            const u = c[b.k + "_username"], pw = c[b.k + "_password"], nota = c[b.k + "_note"], portale = b.portale(p, c), extra = b.extra && b.extra(p);
+            const vuoto = !u && !pw && !nota;
+            return (
+              <div key={b.k} style={{ background: "var(--white)", border: "1px solid var(--gl)", padding: "8px 12px", marginBottom: 6 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, flex: 1 }}>{b.titolo}</span>
+                  {vuoto && <span style={{ fontSize: 11, color: "#B45309" }}>mancano le credenziali</span>}
+                </div>
+                {portale && <div style={{ fontSize: 11.5, color: "var(--gray)", margin: "2px 0 4px", wordBreak: "break-all" }}>{linkPortale(portale)}</div>}
+                {riga("Utente", u, false, b.k + "u")}
+                {riga("Password", pw, true, b.k + "p")}
+                {extra && <div style={{ fontSize: 11.5, color: "var(--gray)" }}>Scadenza: {extra}</div>}
+                {nota && <div style={{ fontSize: 11.5, color: "var(--gray)", marginTop: 2, whiteSpace: "pre-wrap" }}>{nota}</div>}
+              </div>
+            );
+          })}
+        </>
+      )}
+    </div>
+  );
+}
+
 function Allegati({ proprietaId, proprietarioId, linkProprietarioId, proprietaIds, etichette }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -4471,6 +4568,7 @@ function App({ utente, onLogout }) {
             {detP.piattaforme?.length > 0 && <div style={{ padding: "8px 0", borderBottom: "1px solid var(--cd)" }}><span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--gray)", display: "block", marginBottom: 6 }}>Piattaforme</span><div style={{ display: "flex", gap: 6 }}>{detP.piattaforme.map(pp => <span key={pp} className="tag">{pp}</span>)}</div></div>}
             <DR label="Pulizie" val={[detP.personale_pulizie, detP.telefono_pulizie].filter(Boolean).join(" · ") || null} />
             {detP.note && <DR label="Note" val={detP.note} />}
+            <Burocrazia p={detP} />
             <Allegati proprietaId={detP.id} linkProprietarioId={detP.proprietario_id}
               etichette={{
                 prop: Object.fromEntries(proprieta.map(p => [String(p.id), p.nome])),
