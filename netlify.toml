@@ -34,11 +34,6 @@
 [functions."kross-sync-cron"]
   schedule = "20 */4 * * *"
 
-[[redirects]]
-  from = "/api/ai-agent"
-  to = "/.netlify/functions/ai-agent"
-  status = 200
-
 # Valutatore immobili: pagina a sé, servita dallo stesso dominio del CRM
 [[redirects]]
   from = "/valutazione"

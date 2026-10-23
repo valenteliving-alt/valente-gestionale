@@ -112,15 +112,6 @@ export const AGENTI = [
 
   // ── Assistenti a domanda ───────────────────────────────────────────────────
   {
-    id: "assistente", nodo: "crm", gruppo: "assistenti", nome: "Assistente AI del CRM", icona: "✦",
-    cosaFa: "La chat laterale. Risponde sulle tue proprietà e sui tuoi proprietari, e cerca dentro i documenti indicizzati citando da quale documento ha preso l'informazione.",
-    trigger: "Bottone «✦ Assistente AI» in barra laterale", modello: "Claude Haiku 4.5 (2 passaggi: prima estrae le parole chiave, poi risponde)",
-    legge: "proprieta, proprietari (dal browser) + documenti_pdf, knowledge_base (ricerca sul server)", scrive: "niente",
-    file: "netlify/functions/ai-agent.js + src/App.jsx (AiPanel)",
-    statoKey: "kb",
-    note: "Le tabelle documenti_pdf e knowledge_base oggi vengono solo lette: nessuna parte del gestionale le riempie. Finché restano vuote, l'assistente risponde solo su proprietà e proprietari.",
-  },
-  {
     id: "guida", nodo: "crm", gruppo: "assistenti", nome: "Assistente Guida comuni", icona: "📘",
     cosaFa: "Risponde su imposta di soggiorno, scadenze e regole comunali.",
     regola: "Risponde SOLO usando le righe della tabella guida_comuni. Se il dato non c'è lo dice, invece di inventare una tariffa o una scadenza.",
