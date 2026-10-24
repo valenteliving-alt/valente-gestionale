@@ -139,6 +139,28 @@ function fase({ stato, arrivo, partenza, oggi }) {
 
 const tag = (j) => (j && typeof j === "object" ? j : {});
 
+const STRUMENTO = {
+  name: "decisione",
+  description: "Restituisce la decisione e la risposta per l'ospite.",
+  input_schema: {
+    type: "object",
+    properties: {
+      azione: { type: "string", enum: ["invia", "approvazione", "nessuna_risposta"] },
+      intento: { type: "string", enum: ["checkin", "accesso", "wifi", "parcheggio", "dotazioni", "guasto", "pulizia", "reclamo", "rimborso", "prezzo", "date", "orari_extra", "bagagli", "animali", "pagamento", "consigli", "ringraziamento", "altro"] },
+      urgenza: { type: "string", enum: ["bassa", "media", "alta"] },
+      sentiment: { type: "string", enum: ["positivo", "neutro", "negativo"] },
+      lingua: { type: "string", description: "codice lingua dell'ospite: it, en, fr, es, de..." },
+      confidenza: { type: "integer", minimum: 0, maximum: 100 },
+      avvisa: { type: "boolean", description: "true se Tommaso deve saperlo anche se rispondi tu (guasti, problemi)" },
+      lacuna: { type: ["string", "null"], description: "cosa manca nelle fonti per rispondere; null se non manca niente" },
+      motivo: { type: "string", description: "breve, in italiano" },
+      risposta: { type: "string", description: "testo per l'ospite; vuoto se nessuna_risposta" },
+    },
+    required: ["azione", "intento", "urgenza", "sentiment", "lingua", "confidenza", "avvisa", "lacuna", "motivo", "risposta"],
+  },
+};
+const vuoto = (x) => x == null || /^\s*(null|none|nessun[ao]?|niente|n\/a|-)?\s*$/i.test(String(x));
+
 exports.handler = async (event) => {
   if (event && event.httpMethod === "OPTIONS") return { statusCode: 204, headers: CORS, body: "" };
   const AKEY = process.env.ANTHROPIC_API_KEY;
@@ -196,8 +218,7 @@ DECISIONE:
 - "nessuna_risposta" = l'ultimo messaggio dell'ospite è solo un ok/grazie/perfetto/emoji/saluto finale e non chiede niente.
 ${notte ? "- È NOTTE (23-8): invia da solo solo le cose semplicissime e certe. Nel dubbio approvazione: Tommaso guarda la mattina." : ""}
 
-Rispondi SOLO con JSON valido:
-{"azione":"invia"|"approvazione"|"nessuna_risposta","intento":"checkin|accesso|wifi|parcheggio|dotazioni|guasto|pulizia|reclamo|rimborso|prezzo|date|orari_extra|bagagli|animali|pagamento|consigli|ringraziamento|altro","urgenza":"bassa|media|alta","sentiment":"positivo|neutro|negativo","lingua":"it|en|fr|es|de|altro","confidenza":0-100,"avvisa":true|false,"lacuna":"cosa manca nelle fonti, oppure null","motivo":"breve, in italiano","risposta":"testo per l'ospite (vuoto se nessuna_risposta)"}`;
+Rispondi usando lo strumento "decisione".`;
 
   const usr = `OGGI: ${oggi}
 APPARTAMENTO: ${appartamento || "?"}
@@ -218,17 +239,23 @@ ${conversazione}`;
     if (out || Date.now() - t0 > 7500) break;
     try {
       const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), Math.max(2500, 8800 - (Date.now() - t0)));
+      // risposta obbligata nello schema (tool forzato): niente JSON rotti
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST", signal: ctrl.signal,
         headers: { "x-api-key": AKEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-        body: JSON.stringify({ model: m, max_tokens: 800, system: sys, messages: [{ role: "user", content: usr }] }),
+        body: JSON.stringify({ model: m, max_tokens: 900, system: sys, messages: [{ role: "user", content: usr }],
+          tools: [STRUMENTO], tool_choice: { type: "tool", name: "decisione" } }),
       });
       clearTimeout(timer);
       const j = await r.json().catch(() => null);
       if (!j || j.error) { errore = j && j.error ? String(j.error.message || j.error.type) : "risposta non leggibile"; continue; }
-      const testo = (j.content || []).map((p) => p.text || "").join("");
-      try { const mm = testo.match(/\{[\s\S]*\}/); out = JSON.parse(mm ? mm[0] : testo); modello = m; }
-      catch { out = { azione: "approvazione", motivo: "formato inatteso", risposta: testo.slice(0, 1200), confidenza: 0 }; modello = m; }
+      const uso = (j.content || []).find((p) => p.type === "tool_use");
+      if (uso && uso.input && typeof uso.input === "object") { out = uso.input; modello = m; }
+      else {
+        const testo = (j.content || []).map((p) => p.text || "").join("");
+        try { const mm = testo.match(/\{[\s\S]*\}/); out = JSON.parse(mm ? mm[0] : testo); modello = m; }
+        catch { errore = "formato inatteso"; }
+      }
     } catch (e) { errore = String(e.name === "AbortError" ? "tempo scaduto" : (e.message || e)); }
   }
   if (!out) {
@@ -252,7 +279,7 @@ ${conversazione}`;
   ok(out.azione === "invia" && out.confidenza < soglia, `confidenza ${out.confidenza} sotto ${soglia}`);
   ok(out.azione === "invia" && out.sentiment === "negativo", "ospite scontento");
   ok(out.azione === "invia" && out.urgenza === "alta", "urgenza alta");
-  ok(out.azione === "invia" && !!out.lacuna && String(out.lacuna) !== "null", "manca un'informazione");
+  ok(out.azione === "invia" && !vuoto(out.lacuna), "manca un'informazione");
   ok(out.azione === "invia" && fasePren.startsWith("richiesta") && /\d{4}/.test(risposta), "dati a chi non ha prenotato");
 
   // numeri, link e telefoni: devono esistere nella scheda o in QUESTA conversazione
@@ -283,7 +310,7 @@ ${conversazione}`;
   // ── 7. Registro (facoltativo: se le tabelle non ci sono, non succede niente) ──
   await Promise.all([
     sbInsert("ai_decisioni", [{ id_thread: b.id_thread ? String(b.id_thread) : null, appartamento, fase: fasePren, intento: out.intento || null, urgenza: out.urgenza || null, sentiment: out.sentiment || null, lingua: out.lingua || null, confidenza: out.confidenza, azione_ai: out.azione, motivo: out.motivo, bozza: risposta.slice(0, 2000), esempi_usati: esempi.length, modello, ms: out.ms }]),
-    out.lacuna && String(out.lacuna) !== "null"
+    !vuoto(out.lacuna)
       ? sbInsert("ai_lacune", [{ appartamento, domanda: domanda.slice(0, 500), cosa_manca: String(out.lacuna).slice(0, 300), id_thread: b.id_thread ? String(b.id_thread) : null }])
       : Promise.resolve(),
   ]);
