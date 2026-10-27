@@ -150,7 +150,11 @@ export default function LeadPannello({
               {campiUtili.filter((c) => !DOPPIONI.test(c.chiave)).map((c) => (
                 <div key={c.chiave} className="lead-riga lead-riga-pannello" style={{ fontSize: 13 }}>
                   <span className="lead-eti">{c.etichetta}</span>
-                  <span className="lead-val">{leggibile ? leggibile(c.valore) : c.valore}</span>
+                  <span className="lead-val">
+                    {/^https?:\/\//.test(String(c.valore))
+                      ? <a href={c.valore} target="_blank" rel="noreferrer" style={{ color: "var(--gold)" }}>apri ↗</a>
+                      : (leggibile ? leggibile(c.valore) : c.valore)}
+                  </span>
                 </div>
               ))}
             </Sezione>
@@ -273,6 +277,7 @@ export default function LeadPannello({
                   </span>
                 )}
                 {l.fonte === "sito" ? <span>dal sito</span> : l.proprietario && <span>su HubSpot: {l.proprietario}</span>}
+                {l.form && <span>form: {l.form}</span>}
               </div>
             </div>
             <button onClick={onChiudi} style={{ background: "none", border: 0, fontSize: 24, cursor: "pointer", color: "var(--gray)", lineHeight: 1, padding: 0 }}>×</button>

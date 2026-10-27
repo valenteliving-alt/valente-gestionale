@@ -112,8 +112,15 @@ const auth = {
 /* I lead che interessano davvero: quelli di gestione (secondo HubSpot o
    secondo la lettura del messaggio) e quelli gia passati a qualcuno.
    Tutto il resto — vendite, acquisti, ospiti, rumore — resta nascosto. */
+/* Un lead e "per noi" se arriva da un form di Valente Living (la landing
+   LANDING LIVING e le sue pagine) anche quando su HubSpot nessuno l ha
+   ancora assegnato. Quei form li compila solo chi ha un immobile da affidare. */
+function daFormLiving(l) {
+  return /living/i.test(String(l.form || ""));
+}
+
 function leadPerMe(l) {
-  return esigenzaLead(l) === "Gestione" || l.tipo === "gestione" || !!l.assegnatoA || !!l.mio;
+  return esigenzaLead(l) === "Gestione" || l.tipo === "gestione" || !!l.assegnatoA || !!l.mio || daFormLiving(l);
 }
 
 /* Le tre viste della sezione Lead.
@@ -125,7 +132,7 @@ const VISTE_LEAD = [
   /* Prima di tutto: quelli che HubSpot assegna a noi. Arrivano diretti e sono
      di sicuro persone che vogliono dare un immobile in gestione: sono la
      priorita, e la sezione si apre qui. */
-  { k: "miei",        eti: "Assegnati a noi",   filtro: (l) => !!l.mio },
+  { k: "miei",        eti: "Per noi",           filtro: (l) => !!l.mio || daFormLiving(l) },
   { k: "gestione",    eti: "Gestione",          filtro: (l) => esigenzaLead(l) === "Gestione" },
   { k: "dagestione",  eti: "Lead da gestione",  filtro: (l) => esigenzaLead(l) === "Gestione" || l.tipo === "gestione" },
   /* Quelli che hai girato a qualcuno dal CRM, per esempio a Tommaso Ratti:
@@ -4314,6 +4321,7 @@ function App({ utente, onLogout }) {
                               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                                 <strong style={{ fontSize: 14.5, fontWeight: 600 }}>{l.nome}</strong>
                                 {gest && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#2e7d4f", letterSpacing: ".03em" }}>GESTIONE</span>}
+                                {daFormLiving(l) && <span title={l.form} style={{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: "#C09456", borderRadius: 4, padding: "1px 6px", letterSpacing: ".03em" }}>LIVING</span>}
                                 {l.urgente && <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--red)" }}>URGENTE</span>}
                                 {l.fonte === "sito" && <span style={{ fontSize: 10.5, color: "var(--gold)", fontWeight: 600 }}>SITO</span>}
 

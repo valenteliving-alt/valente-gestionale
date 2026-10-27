@@ -10,7 +10,10 @@ const LEAD_PROPS = [
   "lifecyclestage","hs_lead_status","createdate","lastmodifieddate",
   "hs_analytics_source","hs_analytics_source_data_1","hs_analytics_source_data_2",
   "notes_last_contacted","notes_last_updated","num_notes","hubspot_owner_id",
-  "hs_object_id","message","industry","numemployees"
+  "hs_object_id","message","industry","numemployees",
+  // da quale form e da quale pagina e arrivato: dice se il lead e per Living
+  "recent_conversion_event_name","first_conversion_event_name","recent_conversion_date",
+  "fonte","address","superficie","locali","foto_dellimmobile","planimetria"
 ];
 
 /* Le proprietà VERE dell'account, chieste a HubSpot e tenute in cache per 10 minuti.
@@ -256,7 +259,17 @@ async function hsPost(path, token, payload) {
    basta un motivo solo perché il contatto entri.
 
    Il rumore non è un problema: la classificazione lo mette da parte da sola. */
+/* Il tetto di 500 contatti tagliava fuori proprio i lead piu nuovi: prima si
+   riempiva con i vecchi e quando arrivava il turno degli ultimi arrivati senza
+   proprietario si era gia fermi. Il 27/10/2026 un proprietario arrivato dalla
+   landing Living non compariva nel CRM per questo. Quindi i primi gruppi sono
+   quelli che non devono mai mancare: chi ha compilato un form Living e chi e
+   arrivato negli ultimi 60 giorni. */
+const GIORNI_RECENTI = 60;
 const GRUPPI = [
+  [{ propertyName: "recent_conversion_event_name", operator: "CONTAINS_TOKEN", value: "LIVING" }],
+  [{ propertyName: "first_conversion_event_name", operator: "CONTAINS_TOKEN", value: "LIVING" }],
+  [{ propertyName: "createdate", operator: "GTE", value: String(Date.now() - GIORNI_RECENTI * 86400000) }],
   // 1. assegnati a te: restano la priorità
   [{ propertyName: "hubspot_owner_id", operator: "EQ", value: OWNER_ID }],
   // 2. chi ha scritto qualcosa: se ha lasciato un messaggio, ha una richiesta
@@ -329,6 +342,7 @@ function simplify(c, etichette = {}, owner = {}) {
     proprietario_id: oid || null,
     proprietario: (owner[oid] || {}).nome || null,        // chi lo segue su HubSpot
     proprietario_email: (owner[oid] || {}).email || null,
+    form: p.recent_conversion_event_name || p.first_conversion_event_name || null,
     firstname: p.firstname || "",
     lastname: p.lastname || "",
     nome: [p.firstname, p.lastname].filter(Boolean).join(" "),
