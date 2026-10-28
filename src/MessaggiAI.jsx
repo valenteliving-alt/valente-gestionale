@@ -39,6 +39,13 @@ async function kross(azione, extra = {}) {
   return j;
 }
 
+/* ---------- memoria locale: la schermata si apre subito con l'ultimo dato visto ---------- */
+const mem = {
+  leggi(k) { try { return JSON.parse(localStorage.getItem("mai_" + k) || "null"); } catch { return null; } },
+  scrivi(k, v) { try { localStorage.setItem("mai_" + k, JSON.stringify(v)); } catch { /* pieno o bloccato: pazienza */ } },
+};
+const visibile = () => typeof document === "undefined" || document.visibilityState === "visible";
+
 /* ---------- date ---------- */
 // Kross manda "2026-10-28 10:55:30+01": va reso ISO perché Safari lo legga
 function d(ts) {
@@ -116,7 +123,7 @@ const chip = (bg, fg) => ({ background: bg, color: fg, borderRadius: 999, paddin
 
 export default function MessaggiAI() {
   const [tab, setTab] = useState("chat");
-  const [chats, setChats] = useState([]);
+  const [chats, setChats] = useState(() => mem.leggi("lista") || []);
   const [suggerite, setSuggerite] = useState({});   // id_thread -> risposta_ai
   const [sel, setSel] = useState(null);
   const [msgs, setMsgs] = useState([]);
@@ -128,6 +135,7 @@ export default function MessaggiAI() {
   const [err, setErr] = useState("");
   const [trad, setTrad] = useState({});
   const fondo = useRef(null);
+  const selRef = useRef(null);
 
   const caricaLista = useCallback(async () => {
     try {
@@ -135,7 +143,7 @@ export default function MessaggiAI() {
         kross("lista", { giorni: 14 }),
         api("GET", "chat_recenti", "?select=id_thread,risposta_ai,ultimo_ruolo&ultimo_ruolo=eq.ospite&risposta_ai=not.is.null&order=ultimo_ts.desc&limit=60"),
       ]);
-      setChats(j.chat || []);
+      setChats(j.chat || []); mem.scrivi("lista", j.chat || []);
       const m = {}; (s.data || []).forEach((r) => { if (r.risposta_ai) m[String(r.id_thread)] = r.risposta_ai; });
       setSuggerite(m);
       setErr("");
@@ -146,16 +154,31 @@ export default function MessaggiAI() {
     if (!id) return;
     try {
       const j = await kross("thread", { id_thread: id, forza: !!forza });
-      setMsgs(j.messaggi || []);
+      const m = j.messaggi || [];
+      mem.scrivi("t_" + id, m.slice(-80));
+      setMsgs((attuali) => (selRef.current === id ? m.concat(attuali.filter((x) => x.inAttesa && !m.some((y) => y.testo === x.testo))) : attuali));
     } catch (e) { setErr(e.message); }
   }, []);
 
-  useEffect(() => { caricaLista(); const t = setInterval(caricaLista, 45000); return () => clearInterval(t); }, [caricaLista]);
+  // aggiornamento: lista ogni 25 s, chat aperta ogni 10 s, solo con la pagina in primo piano;
+  // e subito quando si torna sulla pagina
   useEffect(() => {
+    caricaLista();
+    const t = setInterval(() => visibile() && caricaLista(), 25000);
+    const f = () => { if (visibile()) { caricaLista(); selRef.current && caricaThread(selRef.current); } };
+    document.addEventListener("visibilitychange", f); window.addEventListener("focus", f);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", f); window.removeEventListener("focus", f); };
+  }, [caricaLista, caricaThread]);
+  useEffect(() => {
+    selRef.current = sel;
     if (!sel) return;
-    setCaricaMsg(true); setMsgs([]); setTesto("");
+    setTesto("");
+    // si mostra subito quello che c'era, poi si aggiorna
+    const vecchi = mem.leggi("t_" + sel);
+    setMsgs(vecchi || []);
+    setCaricaMsg(!vecchi);
     caricaThread(sel).finally(() => setCaricaMsg(false));
-    const t = setInterval(() => caricaThread(sel), 20000);
+    const t = setInterval(() => visibile() && caricaThread(sel), 10000);
     return () => clearInterval(t);
   }, [sel, caricaThread]);
   useEffect(() => { fondo.current && fondo.current.scrollIntoView({ block: "end" }); }, [msgs]);
@@ -173,13 +196,16 @@ export default function MessaggiAI() {
     const t = testo.trim();
     if (!t || !sel) return;
     if (!window.confirm(`Inviare questo messaggio a ${chat?.ospite || "l'ospite"}?\n\n${t}`)) return;
-    setInvio(true);
+    const id = sel; const prov = { id: "tmp" + Date.now(), ts: new Date().toISOString(), testo: t, nome: "Tommaso", ruolo: "owner", inAttesa: true };
+    setMsgs((m) => m.concat(prov)); setTesto(""); setInvio(true);
+    setChats((cs) => cs.map((c) => c.id_thread === id ? { ...c, ultimo_da: "Tommaso", ultimo_testo: t, ultimo_ts: prov.ts } : c));
     try {
-      await kross("invia", { id_thread: sel, testo: t });
-      setTesto("");
-      await caricaThread(sel, true);
-      caricaLista();
-    } catch (e) { alert("Non inviato: " + e.message); }
+      await kross("invia", { id_thread: id, testo: t });
+      caricaThread(id, true); caricaLista();
+    } catch (e) {
+      setMsgs((m) => m.filter((x) => x.id !== prov.id)); setTesto(t);
+      alert("Non inviato: " + e.message);
+    }
     setInvio(false);
   }
 
@@ -281,7 +307,7 @@ export default function MessaggiAI() {
                               {trad[m.id] && <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px dashed #d1d5db", color: "#374151", fontSize: 13.5 }}>{m.traduzione}</div>}
                             </div>
                           )}
-                          <div style={{ textAlign: "right", fontSize: 11, color: "#6b7280", marginTop: 2 }}>{ora(x)}</div>
+                          <div style={{ textAlign: "right", fontSize: 11, color: "#6b7280", marginTop: 2 }}>{m.inAttesa ? "⏳ invio…" : <>{ora(x)}{noi && " ✓"}</>}</div>
                         </div>
                       </div>
                     </div>

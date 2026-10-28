@@ -21,8 +21,17 @@ const risp = (statusCode, body) => ({
   body: JSON.stringify(body),
 });
 
+// Chi è l'utente: 2 chiamate a Supabase. Si ricorda per 10 minuti finché la funzione resta calda.
+const CHI = new Map();
 async function chiSono(token) {
   if (!token) return null;
+  const c = CHI.get(token);
+  if (c && c.scade > Date.now()) return c.io;
+  const io = await chiSonoDavvero(token);
+  if (io) CHI.set(token, { io, scade: Date.now() + 600e3 });
+  return io;
+}
+async function chiSonoDavvero(token) {
   const ru = await fetch(`${URL_SB}/auth/v1/user`, { headers: { apikey: ANON, Authorization: "Bearer " + token } });
   if (!ru.ok) return null;
   const u = await ru.json().catch(() => null);
@@ -34,10 +43,15 @@ async function chiSono(token) {
   return { nome: c.nome, ruolo: c.ruolo_accesso };
 }
 
-async function cache(chiave, secondi, produci) {
+async function leggiCache(chiave) {
   const r = await fetch(K.sbUrl("kross_cache", `?chiave=eq.${encodeURIComponent(chiave)}&select=risposta,scade`), { headers: K.sbHead() });
   const d = await r.json().catch(() => []);
-  const c = Array.isArray(d) && d[0];
+  return Array.isArray(d) && d[0] ? d[0] : null;
+}
+
+// Prima legge la cache (in parallelo con il controllo utente), poi solo se serve chiama Kross.
+async function cache(chiave, secondi, produci, giaLetta) {
+  const c = giaLetta !== undefined ? giaLetta : await leggiCache(chiave);
   if (c && new Date(c.scade) > new Date()) return c.risposta;
   if (!(await K.prenotaChiamata())) {
     if (c) return c.risposta; // meglio un dato di un minuto fa che un errore
@@ -62,15 +76,23 @@ export const handler = async (event) => {
   let body = {};
   try { body = JSON.parse(event.body || "{}"); } catch { return risp(400, { ok: false, errore: "Corpo non valido" }); }
 
-  const io = await chiSono(body.token);
+  // controllo utente, token Kross e cache partono insieme: sono tutte letture
+  const idT = parseInt(body.id_thread);
+  const giorni = Math.min(Math.max(parseInt(body.giorni) || 10, 1), 60);
+  const chiave = body.azione === "lista" ? `chat|lista|${giorni}` : body.azione === "thread" && idT ? `chat|thread|${idT}` : null;
+  const [io, tokenOErr, cacheRiga] = await Promise.all([
+    chiSono(body.token),
+    K.prendiToken().catch((e) => e),
+    chiave && !body.forza ? leggiCache(chiave).catch(() => null) : Promise.resolve(null),
+  ]);
   if (!io || !["master", "socio"].includes(io.ruolo)) return risp(403, { ok: false, errore: "Accesso riservato ai titolari." });
 
   try {
-    const token = await K.prendiToken();
+    if (tokenOErr instanceof Error) throw tokenOErr;
+    const token = tokenOErr;
 
     if (body.azione === "lista") {
-      const giorni = Math.min(Math.max(parseInt(body.giorni) || 10, 1), 60);
-      const dati = await cache(`chat|lista|${giorni}`, 40, async () => {
+      const dati = await cache(chiave, 25, async () => {
         const j = await K.chiamaKross("/messaging/get-threads", { last_update: giorniFa(giorni) }, token);
         return (j.data || []).map((t) => ({
           id_thread: String(t.id_thread),
@@ -89,14 +111,14 @@ export const handler = async (event) => {
           tipo: t.type,
           provenienza: t.from_location || "",
         }));
-      });
+      }, cacheRiga);
       return risp(200, { ok: true, chat: dati });
     }
 
     if (body.azione === "thread") {
       const id = parseInt(body.id_thread);
       if (!id) return risp(400, { ok: false, errore: "id_thread mancante" });
-      const dati = await cache(`chat|thread|${id}`, body.forza ? 1 : 20, async () => {
+      const dati = await cache(chiave, body.forza ? 1 : 10, async () => {
         const j = await K.chiamaKross("/messaging/get-thread", { id_thread: id }, token);
         return (j.data || [])
           .filter((m) => m.message || (m.attachment_images && m.attachment_images.length))
@@ -111,7 +133,7 @@ export const handler = async (event) => {
             ai: !!m.ai_generated,
           }))
           .reverse(); // l'API li dà dal più nuovo
-      });
+      }, cacheRiga);
       return risp(200, { ok: true, messaggi: dati });
     }
 
