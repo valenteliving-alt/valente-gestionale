@@ -1,3 +1,5 @@
+import { SezioneValutazione } from "./LeadValutazione";
+
 /* Il pannello che si apre a destra quando clicchi un lead.
 
    L'elenco dice solo l'essenziale — chi, cosa vuole, quando — e tutto il resto
@@ -105,6 +107,9 @@ export default function LeadPannello({
               ))}
             </Sezione>
           )}
+
+          {/* Valutazione PDF (apri, carica, invia) e chat WhatsApp col lead */}
+          <SezioneValutazione lead={l} puoGestire={puoGestire} />
 
           {/* Lo scambio di messaggi */}
           {cercando && <div style={{ fontSize: 12, color: "var(--gray)", marginBottom: 14 }}>Cerco le email di questo contatto…</div>}

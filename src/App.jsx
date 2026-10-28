@@ -18,6 +18,7 @@ import ReportAppartamenti from "./ReportAppartamenti";
 import Planner from "./Planner";
 import Trattative from "./Trattative";
 import LeadPannello from "./LeadPannello";
+import { CartellaValutazione } from "./LeadValutazione";
 
 const SUPABASE_URL = "https://heabtbdmwbjlgujsisor.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
@@ -4406,6 +4407,7 @@ function App({ utente, onLogout }) {
 
                             {/* elimina e apri */}
                             <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                              <CartellaValutazione lead={l} />
                               {!l.archiviato && vedoTutto && (
                                 <button title="Elimina dall'elenco"
                                   onClick={(e) => { e.stopPropagation(); archiviaLead(l, true); }}
