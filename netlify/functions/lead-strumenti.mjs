@@ -72,7 +72,7 @@ export const handler = async (event) => {
       const r = await fetch(K.sbUrl("whatsapp_uscita"), {
         method: "POST",
         headers: K.sbHead({ Prefer: "return=representation" }),
-        body: JSON.stringify({ destinatario: num + "@c.us", testo, tipo: "lead_valutazione" }),
+        body: JSON.stringify({ destinatario: num + "@c.us", testo, tipo: body.tipo === "lead_risposta" ? "lead_risposta" : "lead_valutazione" }),
       });
       const d = await r.json().catch(() => null);
       if (!r.ok) return risp(502, { ok: false, errore: "Non sono riuscito a mettere in coda il messaggio" });

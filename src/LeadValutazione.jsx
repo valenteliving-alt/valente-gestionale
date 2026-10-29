@@ -166,10 +166,18 @@ export function SezioneValutazione({ lead, puoGestire }) {
     setInvio({ testo, link });
   };
 
+  /* Risposta libera al lead, con o senza valutazione: stesso riquadro, testo
+     da scrivere. Il lead lascia mail o telefono: si manda da li. */
+  const preparaRisposta = () => {
+    setEsito("");
+    const nome = String(l.nome || "").trim().split(/\s+/)[0];
+    setInvio({ testo: [`Ciao${nome ? " " + nome : ""}, sono Tommaso di Valente Living.`, ``, ``, ``, `Saluti, Tommaso`].join("\n"), link: null });
+  };
+
   const mandaWa = async () => {
     setEsito("Metto in coda…");
     try {
-      const j = await strumenti("invia_wa", { telefono: l.telefono, testo: invio.testo });
+      const j = await strumenti("invia_wa", { telefono: l.telefono, testo: invio.testo, tipo: invio.link ? "lead_valutazione" : "lead_risposta" });
       setEsito("In invio dal WhatsApp di lavoro…");
       // OpenWA preleva la coda in pochi secondi: ricontrollo l'esito
       let fatto = false;
@@ -188,13 +196,13 @@ export function SezioneValutazione({ lead, puoGestire }) {
   const mail = invio && l.email
     ? "https://mail.google.com/mail/?authuser=info@valenteliving.it&view=cm&fs=1" +
       "&to=" + encodeURIComponent(l.email) +
-      "&su=" + encodeURIComponent("Valutazione del tuo appartamento - Valente Living") +
+      "&su=" + encodeURIComponent(invio.link ? "Valutazione del tuo appartamento - Valente Living" : "La tua richiesta a Valente Living") +
       "&body=" + encodeURIComponent(invio.testo)
     : null;
 
   return (
     <>
-      <Box titolo="Valutazione">
+      <Box titolo="Rispondi e valutazione">
         {doc === undefined && <div style={{ fontSize: 12, color: "var(--gray)" }}>Guardo se c'è…</div>}
         {doc === null && (
           <div style={{ fontSize: 12.5, color: "var(--gray)", marginBottom: 8 }}>Non c'è ancora una valutazione per questo lead.</div>
@@ -210,8 +218,11 @@ export function SezioneValutazione({ lead, puoGestire }) {
           </div>
         )}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {puoGestire && (haTel || l.email) && (
+            <button className={doc ? "bg" : "bp"} style={{ fontSize: 12, padding: "6px 14px" }} onClick={preparaRisposta}>✉ Rispondi</button>
+          )}
           {doc && puoGestire && (
-            <button className="bp" style={{ fontSize: 12, padding: "6px 14px" }} onClick={preparaInvio}>Invia al proprietario</button>
+            <button className="bp" style={{ fontSize: 12, padding: "6px 14px" }} onClick={preparaInvio}>Invia la valutazione</button>
           )}
           <button className="bg" style={{ fontSize: 12, padding: "6px 13px" }} disabled={busy}
             onClick={() => input.current && input.current.click()}>
@@ -227,8 +238,8 @@ export function SezioneValutazione({ lead, puoGestire }) {
             <textarea value={invio.testo} onChange={(e) => setInvio({ ...invio, testo: e.target.value })}
               rows={8} style={{ width: "100%", fontSize: 13, lineHeight: 1.5, padding: 9, borderRadius: 7, border: "1px solid var(--cd)", fontFamily: "inherit", boxSizing: "border-box" }} />
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-              {haTel && <button className="bp" style={{ fontSize: 12, padding: "6px 14px" }} onClick={mandaWa}>Manda su WhatsApp</button>}
-              {mail && <a className="bg" href={mail} target="_blank" rel="noreferrer" style={{ fontSize: 12, padding: "6px 13px", textDecoration: "none" }}>Apri la mail già scritta</a>}
+              {haTel && <button className="bp" style={{ fontSize: 12, padding: "6px 14px" }} onClick={mandaWa}>Invia su WhatsApp</button>}
+              {mail && <a className="bp" href={mail} target="_blank" rel="noreferrer" style={{ fontSize: 12, padding: "6px 14px", textDecoration: "none" }}>Invia per email</a>}
               <button className="bg" style={{ fontSize: 12, padding: "6px 13px" }} onClick={() => setInvio(null)}>Annulla</button>
             </div>
             {!haTel && <div style={{ fontSize: 11, color: "var(--gray)", marginTop: 6 }}>Il lead non ha un telefono: si può mandare solo per mail.</div>}
