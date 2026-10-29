@@ -72,7 +72,9 @@ export const handler = async (event) => {
       const r = await fetch(K.sbUrl("whatsapp_uscita"), {
         method: "POST",
         headers: K.sbHead({ Prefer: "return=representation" }),
-        body: JSON.stringify({ destinatario: num + "@c.us", testo, tipo: body.tipo === "lead_risposta" ? "lead_risposta" : "lead_valutazione" }),
+        // tipo "disponibilita" = messaggio in chat privata: è l'unico tipo che wa-webhook (valente.uscita.preleva)
+        // e il server consegnano a numeri diversi dal 328. lead_risposta/lead_valutazione restavano in coda (29/10/2026).
+        body: JSON.stringify({ destinatario: num + "@c.us", testo, tipo: "disponibilita" }),
       });
       const d = await r.json().catch(() => null);
       if (!r.ok) return risp(502, { ok: false, errore: "Non sono riuscito a mettere in coda il messaggio" });
