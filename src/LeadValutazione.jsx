@@ -92,6 +92,12 @@ async function carica(l, file, vecchio) {
     ? await fetch(`${SUPABASE_URL}/rest/v1/documenti?id=eq.${vecchio.id}`, { method: "PATCH", headers: intest({ "Content-Type": "application/json" }), body: JSON.stringify(riga) })
     : await fetch(`${SUPABASE_URL}/rest/v1/documenti`, { method: "POST", headers: intest({ "Content-Type": "application/json", Prefer: "return=minimal" }), body: JSON.stringify(riga) });
   if (!rr.ok) { alert("Il PDF è caricato ma non sono riuscito a registrarlo."); return false; }
+  // Sostituzione: il file vecchio si cancella, così i link già mandati non aprono più la versione superata.
+  if (vecchio && vecchio.path && vecchio.path !== path) {
+    await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}`, {
+      method: "DELETE", headers: intest({ "Content-Type": "application/json" }), body: JSON.stringify({ prefixes: [vecchio.path] }),
+    }).catch(() => {});
+  }
   await caricaTutte(true);
   return true;
 }
