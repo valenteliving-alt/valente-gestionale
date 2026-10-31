@@ -40,6 +40,12 @@
   to = "/valutazione.html"
   status = 200
 
+# App Spese: foto scontrini, spese per appartamento, invio a Pachino Risparmio
+[[redirects]]
+  from = "/spese"
+  to = "/spese.html"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

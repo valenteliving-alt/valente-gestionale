@@ -1,0 +1,14 @@
+{
+  "name": "Spese Valente Living",
+  "short_name": "Spese VL",
+  "description": "Foto degli scontrini, spese per appartamento e invio a Pachino Risparmio",
+  "start_url": "/spese",
+  "scope": "/spese",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#4338CA",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

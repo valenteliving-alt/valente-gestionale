@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spese Valente</title>
+<meta name="theme-color" content="#4338CA">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Spese VL">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="/spese.webmanifest">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" defer></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{--p:#4F46E5;--pd:#3730A3;--pl:#EEF2FF;--g50:#F8FAFC;--g100:#F1F5F9;--g200:#E2E8F0;--g300:#CBD5E1;--g400:#94A3B8;--g600:#475569;--g900:#0F172A;--ok:#047857;--okl:#D1FAE5;--am:#B45309;--aml:#FEF3C7;--r:#DC2626;--rl:#FEE2E2}
+html,body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:var(--g50);color:var(--g900);font-size:15px;-webkit-text-size-adjust:100%}
+body{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+header{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid var(--g200);padding:calc(10px + env(safe-area-inset-top)) 16px 10px}
+.hrow{display:flex;align-items:center;gap:10px}
+.brand{font-weight:700;font-size:16px;letter-spacing:-.01em}
+.brand small{display:block;font-weight:500;font-size:11px;color:var(--g400);letter-spacing:.08em;text-transform:uppercase}
+.mese{margin-left:auto;display:flex;align-items:center;gap:4px}
+.mese button{border:none;background:var(--g100);width:32px;height:32px;border-radius:8px;font-size:16px;color:var(--g600)}
+.mese span{min-width:108px;text-align:center;font-weight:600;font-size:14px;text-transform:capitalize}
+.tabs{display:flex;gap:6px;margin-top:10px}
+.tabs button{flex:1;border:none;background:var(--g100);color:var(--g600);padding:8px 0;border-radius:9px;font-weight:600;font-size:13px}
+.tabs button.on{background:var(--pl);color:var(--pd)}
+main{padding:14px 16px;max-width:640px;margin:0 auto}
+.kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.kpi div{background:#fff;border:1px solid var(--g200);border-radius:12px;padding:10px}
+.kpi b{display:block;font-size:16px;font-variant-numeric:tabular-nums}
+.kpi span{font-size:11px;color:var(--g400)}
+.card{background:#fff;border:1px solid var(--g200);border-radius:14px;padding:12px;display:flex;gap:12px;margin-bottom:8px;align-items:center}
+.thumb{width:52px;height:52px;border-radius:10px;background:var(--g100) center/cover no-repeat;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--g400);font-weight:600}
+.cbody{flex:1;min-width:0}
+.ct{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cs{font-size:12px;color:var(--g600);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.camt{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.tag{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;margin-top:4px;letter-spacing:.02em}
+.t-prop{background:var(--aml);color:var(--am)}.t-val{background:var(--g100);color:var(--g600)}
+.t-inv{background:var(--okl);color:var(--ok)}.t-da{background:var(--pl);color:var(--pd)}
+.vuoto{text-align:center;color:var(--g400);padding:40px 10px;line-height:1.6}
+.fab{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));max-width:608px;margin:0 auto;display:flex;gap:8px;z-index:30}
+.btn{border:none;border-radius:12px;padding:14px 16px;font-weight:700;font-size:15px;background:var(--p);color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;width:100%}
+.btn.sec{background:#fff;color:var(--g900);border:1px solid var(--g300)}
+.btn.ghost{background:transparent;color:var(--r);border:1px solid var(--rl)}
+.btn:disabled{opacity:.5}
+.sheet-bg{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:50;display:none}
+.sheet{position:fixed;left:0;right:0;bottom:0;max-height:94vh;overflow-y:auto;background:#fff;border-radius:18px 18px 0 0;z-index:51;padding:16px 16px calc(20px + env(safe-area-inset-bottom));display:none;max-width:640px;margin:0 auto}
+.sheet h2{font-size:18px;margin-bottom:12px;display:flex;align-items:center}
+.sheet h2 .x{margin-left:auto;border:none;background:var(--g100);width:32px;height:32px;border-radius:50%;font-size:16px}
+label{display:block;font-size:12px;font-weight:600;color:var(--g600);margin:12px 0 5px}
+input,select,textarea{width:100%;border:1px solid var(--g300);border-radius:10px;padding:11px 12px;font-size:16px;font-family:inherit;background:#fff;color:var(--g900)}
+textarea{min-height:90px;resize:vertical}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.seg{display:flex;background:var(--g100);border-radius:10px;padding:3px}
+.seg button{flex:1;border:none;background:transparent;padding:9px 4px;border-radius:8px;font-weight:600;font-size:13px;color:var(--g600)}
+.seg button.on{background:#fff;color:var(--pd);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.foto{width:100%;max-height:260px;object-fit:contain;border-radius:12px;background:var(--g100);display:block}
+.ai{font-size:12px;padding:8px 10px;border-radius:9px;margin-top:8px;background:var(--pl);color:var(--pd)}
+.ai.err{background:var(--aml);color:var(--am)}
+.hint{font-size:12px;color:var(--g400);margin-top:5px}
+.grp{background:#fff;border:1px solid var(--g200);border-radius:14px;margin-bottom:10px;overflow:hidden}
+.grp-h{padding:12px;display:flex;justify-content:space-between;font-weight:700;border-bottom:1px solid var(--g100)}
+.grp-r{padding:9px 12px;display:flex;justify-content:space-between;font-size:13px;border-bottom:1px solid var(--g100);gap:10px}
+.grp-r:last-child{border-bottom:none}
+.grp-r span:first-child{color:var(--g600);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mail{border:1px solid var(--g200);border-radius:12px;padding:12px;background:var(--g50);font-size:14px}
+.mail div{margin-bottom:6px}.mail b{color:var(--g600);font-weight:600}
+.allegati{font-size:13px;color:var(--g600);margin-top:8px;line-height:1.7}
+.login{max-width:360px;margin:12vh auto 0;padding:0 20px}
+.login h1{font-size:22px;margin-bottom:4px}
+.login p{color:var(--g400);font-size:13px;margin-bottom:16px}
+.toast{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top));transform:translateX(-50%);background:var(--g900);color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;z-index:99;display:none;max-width:90vw}
+.spin{width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:s .8s linear infinite;display:inline-block}
+@keyframes s{to{transform:rotate(360deg)}}
+.sel-h{font-size:12px;color:var(--g400);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="sheet-bg" id="bg"></div>
+<div class="sheet" id="sheet"></div>
+<div class="toast" id="toast"></div>
+<input type="file" id="cam" accept="image/*" capture="environment" hidden>
+<input type="file" id="gal" accept="image/*,application/pdf" hidden>
+
+<script>
+const SUPABASE_URL = "https://heabtbdmwbjlgujsisor.supabase.co";
+const KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlYWJ0YmRtd2JqbGd1anNpc29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzMjA4NDgsImV4cCI6MjA5NTg5Njg0OH0.FRk1tARhQHylLjfhACorn6O_E7ommm47tBTfJHOVxAU";
+const PACHINO = "hellopachinorisparmio@gmail.com";
+const BUCKET = "scontrini";
+const CATEGORIE = ["manutenzione","riparazioni","pulizie","biancheria","forniture","arredo","utenze","carburante","trasporti","commissioni","altro"];
+const METODI = {carta:"Carta Finom",bonifico:"Bonifico Finom",contanti:"Contanti",anticipata:"Anticipata (da rimborsare)"};
+
+/* ── sessione: la stessa del CRM (stesso dominio) ── */
+const AUTH_KEY = "vl_sessione";
+const auth = {
+  leggi(){try{return JSON.parse(localStorage.getItem(AUTH_KEY)||"null")}catch{return null}},
+  scrivi(s){try{s?localStorage.setItem(AUTH_KEY,JSON.stringify(s)):localStorage.removeItem(AUTH_KEY)}catch{}},
+  token(){const s=auth.leggi();return s&&s.access_token},
+  async login(email,password){
+    const r=await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`,{method:"POST",headers:{apikey:KEY,"Content-Type":"application/json"},body:JSON.stringify({email:email.trim(),password})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error_description||d.msg||"Accesso non riuscito");
+    auth.scrivi({access_token:d.access_token,refresh_token:d.refresh_token,scade:Date.now()+(d.expires_in||3600)*1000,user:d.user});
+  },
+  async rinnova(){
+    const s=auth.leggi();if(!s||!s.refresh_token)return null;
+    const r=await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`,{method:"POST",headers:{apikey:KEY,"Content-Type":"application/json"},body:JSON.stringify({refresh_token:s.refresh_token})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){auth.scrivi(null);return null}
+    auth.scrivi({access_token:d.access_token,refresh_token:d.refresh_token,scade:Date.now()+(d.expires_in||3600)*1000,user:d.user||s.user});
+    return d.access_token;
+  },
+  async valido(){const s=auth.leggi();if(!s)return null;if(!s.scade||s.scade-Date.now()<120000)return await auth.rinnova();return s.access_token}
+};
+
+async function api(path,{method="GET",body,headers={},raw=false}={}){
+  let t=await auth.valido(); if(!t){mostraLogin();throw new Error("Sessione scaduta")}
+  const go=tok=>fetch(SUPABASE_URL+path,{method,headers:{apikey:KEY,Authorization:"Bearer "+tok,...(raw?{}:{"Content-Type":"application/json"}),...headers},body:raw?body:(body!==undefined?JSON.stringify(body):undefined)});
+  let r=await go(t);
+  if(r.status===401){t=await auth.rinnova();if(!t){mostraLogin();throw new Error("Sessione scaduta")}r=await go(t)}
+  if(!r.ok){const e=await r.text();throw new Error(e.slice(0,200)||("Errore "+r.status))}
+  const txt=await r.text();return txt?JSON.parse(txt):null;
+}
+const db={
+  get:(t,q)=>api(`/rest/v1/${t}?${q}`),
+  ins:(t,b)=>api(`/rest/v1/${t}`,{method:"POST",body:b,headers:{Prefer:"return=representation"}}),
+  upd:(t,q,b)=>api(`/rest/v1/${t}?${q}`,{method:"PATCH",body:b,headers:{Prefer:"return=representation"}}),
+  del:(t,q)=>api(`/rest/v1/${t}?${q}`,{method:"DELETE"})
+};
+const storage={
+  async carica(path,blob){return api(`/storage/v1/object/${BUCKET}/${path}`,{method:"POST",body:blob,raw:true,headers:{"Content-Type":blob.type||"application/octet-stream","x-upsert":"true"}})},
+  async firma(paths){
+    if(!paths.length)return {};
+    const d=await api(`/storage/v1/object/sign/${BUCKET}`,{method:"POST",body:{expiresIn:3600,paths}});
+    const m={};(d||[]).forEach(x=>{if(x.signedURL)m[x.path]=SUPABASE_URL+"/storage/v1"+x.signedURL});return m;
+  },
+  async elimina(path){return api(`/storage/v1/object/${BUCKET}`,{method:"DELETE",body:{prefixes:[path]}})}
+};
+
+/* ── utilità ── */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const eur=n=>(Number(n)||0).toLocaleString("it-IT",{style:"currency",currency:"EUR"});
+const oggi=()=>new Date().toLocaleDateString("sv-SE");
+const nomeMese=(y,m)=>new Date(y,m-1,1).toLocaleDateString("it-IT",{month:"long",year:"numeric"});
+const pad=n=>String(n).padStart(2,"0");
+function toast(m,ms=2600){const t=$("#toast");t.textContent=m;t.style.display="block";clearTimeout(toast._t);toast._t=setTimeout(()=>t.style.display="none",ms)}
+function uuid(){return crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)}
+const blobToB64=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=rej;r.readAsDataURL(b)});
+const blobToDataURL=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(b)});
+
+async function comprimi(file){
+  if(file.type==="application/pdf")return file;
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=url});
+    const max=1800,k=Math.min(1,max/Math.max(img.width,img.height));
+    const c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+    c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+    return await new Promise(res=>c.toBlob(res,"image/jpeg",.78));
+  }finally{URL.revokeObjectURL(url)}
+}
+
+/* ── stato ── */
+const S={y:new Date().getFullYear(),m:new Date().getMonth()+1,tab:"lista",spese:[],prop:[],proprietari:{},foto:{},io:""};
+const propById=id=>S.prop.find(p=>p.id===id);
+const nomeProprietario=id=>{const p=S.proprietari[id];return p?[p.nome,p.cognome].filter(Boolean).join(" ").trim():""};
+
+function mostraLogin(){
+  $("#app").innerHTML=`<div class="login"><h1>Spese Valente</h1><p>Entra con le credenziali del CRM.</p>
+  <label>Email</label><input id="le" type="email" autocomplete="username">
+  <label>Password</label><input id="lp" type="password" autocomplete="current-password">
+  <div style="height:14px"></div><button class="btn" id="lb">Entra</button><div id="lerr" class="hint" style="color:var(--r)"></div></div>`;
+  $("#lb").onclick=async()=>{$("#lb").disabled=true;try{await auth.login($("#le").value,$("#lp").value);avvia()}catch(e){$("#lerr").textContent=e.message;$("#lb").disabled=false}};
+}
+
+async function avvia(){
+  if(!(await auth.valido()))return mostraLogin();
+  $("#app").innerHTML=`<div class="vuoto">Carico…</div>`;
+  try{
+    const [prop,pp]=await Promise.all([
+      db.get("proprieta","select=id,nome,citta,tipo_contratto,proprietario_id,stato&order=nome"),
+      db.get("proprietari","select=id,nome,cognome")
+    ]);
+    S.prop=(prop||[]).filter(p=>p.stato!=="inattivo");
+    S.proprietari={};(pp||[]).forEach(p=>S.proprietari[p.id]=p);
+    const me=await db.get("collaboratori",`select=nome&user_id=eq.${auth.leggi().user.id}`).catch(()=>[]);
+    S.io=(me&&me[0]&&me[0].nome)||"";
+    await caricaMese();
+  }catch(e){$("#app").innerHTML=`<div class="vuoto">Errore: ${esc(e.message)}<br>Se non hai i permessi per le spese chiedi a Tommaso.</div>`}
+}
+
+async function caricaMese(){
+  const da=`${S.y}-${pad(S.m)}-01`,a=new Date(S.y,S.m,0).toLocaleDateString("sv-SE");
+  S.spese=await db.get("spese",`select=*&data=gte.${da}&data=lte.${a}&order=data.desc,created_at.desc`)||[];
+  const paths=S.spese.filter(s=>s.foto_path&&!S.foto[s.foto_path]).map(s=>s.foto_path);
+  try{Object.assign(S.foto,await storage.firma(paths))}catch{}
+  render();
+}
+
+/* ── render ── */
+function render(){
+  const tot=S.spese.reduce((a,s)=>a+(+s.importo||0),0);
+  const totP=S.spese.filter(s=>s.addebito==="proprietario").reduce((a,s)=>a+(+s.importo||0),0);
+  const daInv=S.spese.filter(s=>!s.invio_pachino_id);
+  $("#app").innerHTML=`
+  <header><div class="hrow"><div class="brand">Spese<small>Valente Living</small></div>
+    <div class="mese"><button id="mp">‹</button><span>${nomeMese(S.y,S.m)}</span><button id="mn">›</button></div></div>
+    <div class="tabs"><button data-t="lista" class="${S.tab==="lista"?"on":""}">Spese</button><button data-t="prop" class="${S.tab==="prop"?"on":""}">Per proprietario</button></div>
+  </header>
+  <main>
+    <div class="kpi"><div><b>${eur(tot)}</b><span>Totale mese</span></div><div><b>${eur(totP)}</b><span>Ai proprietari</span></div><div><b>${daInv.length}</b><span>Da inviare</span></div></div>
+    ${S.tab==="lista"?vistaLista():vistaProprietari()}
+  </main>
+  <div class="fab"><button class="btn" id="nuova">📷 Nuova spesa</button>${daInv.length?`<button class="btn sec" id="invia" style="width:auto;white-space:nowrap">Invia a Pachino</button>`:""}</div>`;
+  $("#mp").onclick=()=>{S.m--;if(S.m<1){S.m=12;S.y--}caricaMese()};
+  $("#mn").onclick=()=>{S.m++;if(S.m>12){S.m=1;S.y++}caricaMese()};
+  document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{S.tab=b.dataset.t;render()});
+  $("#nuova").onclick=sceltaFoto;
+  if($("#invia"))$("#invia").onclick=apriInvio;
+  document.querySelectorAll(".card[data-id]").forEach(c=>c.onclick=()=>apriForm(S.spese.find(s=>s.id===c.dataset.id)));
+}
+
+function vistaLista(){
+  if(!S.spese.length)return `<div class="vuoto">Nessuna spesa a ${nomeMese(S.y,S.m)}.<br>Premi <b>Nuova spesa</b> e fotografa lo scontrino.</div>`;
+  return S.spese.map(s=>{
+    const p=propById(s.proprieta_id);
+    const url=s.foto_path&&S.foto[s.foto_path];
+    const isPdf=s.foto_path&&s.foto_path.endsWith(".pdf");
+    return `<div class="card" data-id="${s.id}">
+      <div class="thumb" style="${url&&!isPdf?`background-image:url('${url}')`:""}">${isPdf?"PDF":(!s.foto_path?"—":"")}</div>
+      <div class="cbody"><div class="ct">${esc(s.fornitore||s.descrizione||"Spesa")}</div>
+        <div class="cs">${new Date(s.data).toLocaleDateString("it-IT",{day:"2-digit",month:"short"})} · ${esc(p?p.nome:"Generale Valente")}</div>
+        <span class="tag ${s.addebito==="proprietario"?"t-prop":"t-val"}">${s.addebito==="proprietario"?"Al proprietario":"Valente"}</span>
+        <span class="tag ${s.invio_pachino_id?"t-inv":"t-da"}">${s.invio_pachino_id?"Inviata":"Da inviare"}</span></div>
+      <div class="camt">${eur(s.importo)}</div></div>`}).join("");
+}
+
+function raggruppa(lista){
+  const g={};
+  lista.filter(s=>s.addebito==="proprietario").forEach(s=>{
+    const p=propById(s.proprieta_id);const pid=s.proprietario_id||(p&&p.proprietario_id)||"?";
+    const k=pid;(g[k]=g[k]||{nome:nomeProprietario(pid)||"Proprietario non indicato",tot:0,righe:[]});
+    g[k].tot+=+s.importo||0;g[k].righe.push({...s,app:p?p.nome:"—"});
+  });
+  return Object.values(g).sort((a,b)=>b.tot-a.tot);
+}
+function vistaProprietari(){
+  const g=raggruppa(S.spese);
+  const val=S.spese.filter(s=>s.addebito!=="proprietario");
+  let h=g.length?`<div class="sel-h">Da addebitare nelle distinte</div>`+g.map(x=>`<div class="grp"><div class="grp-h"><span>${esc(x.nome)}</span><span>${eur(x.tot)}</span></div>
+    ${x.righe.map(r=>`<div class="grp-r"><span>${esc(r.app)} · ${esc(r.fornitore||r.descrizione||"")}</span><span>${eur(r.importo)}</span></div>`).join("")}</div>`).join("")
+    :`<div class="vuoto">Nessuna spesa da addebitare ai proprietari questo mese.</div>`;
+  if(val.length)h+=`<div class="sel-h">A carico Valente</div><div class="grp"><div class="grp-h"><span>Valente Living</span><span>${eur(val.reduce((a,s)=>a+(+s.importo||0),0))}</span></div>
+    ${val.map(r=>`<div class="grp-r"><span>${esc((propById(r.proprieta_id)||{}).nome||"Generale")} · ${esc(r.fornitore||r.descrizione||"")}</span><span>${eur(r.importo)}</span></div>`).join("")}</div>`;
+  return h;
+}
+
+/* ── sheet ── */
+function apriSheet(html){$("#sheet").innerHTML=html;$("#sheet").style.display="block";$("#bg").style.display="block";$("#sheet").scrollTop=0}
+function chiudiSheet(){$("#sheet").style.display="none";$("#bg").style.display="none"}
+$("#bg").onclick=chiudiSheet;
+
+function sceltaFoto(){
+  apriSheet(`<h2>Nuova spesa<button class="x" id="xx">✕</button></h2>
+    <button class="btn" id="bcam">📷 Scatta foto</button><div style="height:8px"></div>
+    <button class="btn sec" id="bgal">🖼 Scegli dalla galleria o PDF</button><div style="height:8px"></div>
+    <button class="btn sec" id="bman">✍️ Senza scontrino</button>`);
+  $("#xx").onclick=chiudiSheet;
+  $("#bcam").onclick=()=>$("#cam").click();
+  $("#bgal").onclick=()=>$("#gal").click();
+  $("#bman").onclick=()=>apriForm(null);
+}
+["#cam","#gal"].forEach(id=>$(id).onchange=async e=>{const f=e.target.files[0];e.target.value="";if(f)await nuovaDaFile(f)});
+
+async function nuovaDaFile(file){
+  const blob=await comprimi(file);
+  const isPdf=blob.type==="application/pdf";
+  const prev=isPdf?"":URL.createObjectURL(blob);
+  apriForm(null,{blob,prev,isPdf,leggendo:true});
+  try{
+    const b64=await blobToB64(blob);
+    const r=await fetch("/.netlify/functions/leggi-scontrino",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+(await auth.valido())},body:JSON.stringify({data:b64,mediaType:blob.type})});
+    const j=await r.json();
+    if(!r.ok)throw new Error(j.error||"lettura non riuscita");
+    const d=j.dati||{};
+    const set=(id,v)=>{const el=$(id);if(el&&v!==null&&v!==undefined&&v!==""&&!el.dataset.toccato)el.value=v};
+    set("#f-data",d.data);set("#f-imp",d.importo);set("#f-forn",d.fornitore);set("#f-desc",d.descrizione);
+    set("#f-cat",d.categoria);set("#f-iva",d.iva_pct);set("#f-num",d.numero_documento);set("#f-piva",d.piva_fornitore);
+    $("#ai").textContent="Dati letti dallo scontrino: controlla e scegli l'appartamento.";
+  }catch(e){const a=$("#ai");if(a){a.className="ai err";a.textContent="Non sono riuscito a leggere lo scontrino ("+e.message+"). Compila a mano."}}
+}
+
+function apriForm(s,foto){
+  const nuova=!s;s=s||{data:oggi(),addebito:"valente",metodo_pagamento:"carta",categoria:"manutenzione"};
+  const bloccata=!!s.invio_pachino_id;
+  const url=foto?foto.prev:(s.foto_path&&S.foto[s.foto_path]);
+  const isPdf=foto?foto.isPdf:(s.foto_path||"").endsWith(".pdf");
+  const opts=`<option value="">— Spesa generale Valente —</option>`+S.prop.map(p=>`<option value="${p.id}" ${p.id===s.proprieta_id?"selected":""}>${esc(p.nome)}${p.citta?" · "+esc(p.citta):""}</option>`).join("");
+  apriSheet(`<h2>${nuova?"Nuova spesa":"Spesa"}<button class="x" id="xx">✕</button></h2>
+   ${url?`<a href="${url}" target="_blank"><img class="foto" src="${url}"></a>`:isPdf?`<div class="foto" style="padding:30px;text-align:center">📄 PDF allegato${!foto&&S.foto[s.foto_path]?` · <a href="${S.foto[s.foto_path]}" target="_blank">apri</a>`:""}</div>`:""}
+   ${foto&&foto.leggendo?`<div class="ai" id="ai">Leggo lo scontrino…</div>`:""}
+   ${bloccata?`<div class="ai">Già inviata a Pachino il ${new Date(s.inviata_pachino_il).toLocaleDateString("it-IT")}: non si modifica più.</div>`:""}
+   <label>Appartamento</label><select id="f-prop">${opts}</select>
+   <div id="f-propinfo" class="hint"></div>
+   <label>A carico di</label><div class="seg" id="f-add"><button data-v="proprietario">Proprietario</button><button data-v="valente">Valente</button></div>
+   <div class="row2"><div><label>Importo €</label><input id="f-imp" inputmode="decimal" value="${s.importo??""}"></div><div><label>Data</label><input id="f-data" type="date" value="${s.data||oggi()}"></div></div>
+   <label>Fornitore</label><input id="f-forn" value="${esc(s.fornitore||"")}">
+   <label>Cosa</label><input id="f-desc" value="${esc(s.descrizione||"")}" placeholder="es. lampadine, sifone lavandino">
+   <div class="row2"><div><label>Categoria</label><select id="f-cat">${CATEGORIE.map(c=>`<option ${c===s.categoria?"selected":""}>${c}</option>`).join("")}</select></div>
+   <div><label>Pagata con</label><select id="f-met">${Object.entries(METODI).map(([k,v])=>`<option value="${k}" ${k===s.metodo_pagamento?"selected":""}>${v}</option>`).join("")}</select></div></div>
+   <div class="row2"><div><label>N. documento</label><input id="f-num" value="${esc(s.numero_documento||"")}"></div><div><label>IVA %</label><input id="f-iva" inputmode="decimal" value="${s.iva_pct??""}"></div></div>
+   <label>P.IVA fornitore</label><input id="f-piva" inputmode="numeric" value="${esc(s.piva_fornitore||"")}">
+   <label>Note</label><input id="f-note" value="${esc(s.note||"")}" placeholder="es. rotto dall'ospite, prenotazione…">
+   <div style="height:16px"></div>
+   ${bloccata?"":`<button class="btn" id="f-salva">Salva spesa</button>`}
+   ${!nuova&&!bloccata?`<div style="height:8px"></div><button class="btn ghost" id="f-del">Elimina</button>`:""}`);
+  $("#xx").onclick=chiudiSheet;
+  document.querySelectorAll("#sheet input,#sheet select").forEach(el=>el.addEventListener("input",()=>el.dataset.toccato="1"));
+  let addebito=s.addebito;let addToccato=!nuova;
+  const segna=()=>document.querySelectorAll("#f-add button").forEach(b=>b.classList.toggle("on",b.dataset.v===addebito));
+  document.querySelectorAll("#f-add button").forEach(b=>b.onclick=()=>{addebito=b.dataset.v;addToccato=true;segna()});
+  const info=()=>{const p=propById($("#f-prop").value);
+    $("#f-propinfo").textContent=p?`${p.tipo_contratto==="sublocazione"?"Sublocazione":"Gestione"} · proprietario: ${nomeProprietario(p.proprietario_id)||"non indicato"}`:"";
+    if(!addToccato){addebito=p&&p.tipo_contratto==="gestione"?"proprietario":"valente";segna()}};
+  $("#f-prop").onchange=info;info();segna();
+  if(bloccata)document.querySelectorAll("#sheet input,#sheet select,#f-add button").forEach(el=>el.disabled=true);
+  if($("#f-salva"))$("#f-salva").onclick=()=>salva(s,nuova,foto,()=>addebito);
+  if($("#f-del"))$("#f-del").onclick=()=>elimina(s);
+}
+
+async function salva(s,nuova,foto,getAdd){
+  const imp=parseFloat(String($("#f-imp").value).replace(/\./g,"").replace(",","."));
+  if(!(imp>0))return toast("Manca l'importo");
+  if(!$("#f-data").value)return toast("Manca la data");
+  const btn=$("#f-salva");btn.disabled=true;btn.innerHTML=`<span class="spin"></span> Salvo…`;
+  try{
+    const pid=$("#f-prop").value||null;const p=propById(pid);
+    const rec={data:$("#f-data").value,importo:imp,fornitore:$("#f-forn").value.trim()||null,descrizione:$("#f-desc").value.trim()||null,
+      categoria:$("#f-cat").value,metodo_pagamento:$("#f-met").value,numero_documento:$("#f-num").value.trim()||null,
+      iva_pct:$("#f-iva").value?parseFloat(String($("#f-iva").value).replace(",",".")):null,piva_fornitore:$("#f-piva").value.trim()||null,
+      note:$("#f-note").value.trim()||null,proprieta_id:pid,proprietario_id:p?p.proprietario_id:null,addebito:getAdd(),
+      pagata:$("#f-met").value!=="anticipata"};
+    if(foto&&foto.blob){
+      const ext=foto.isPdf?"pdf":"jpg";const path=`${rec.data.slice(0,7)}/${uuid()}.${ext}`;
+      await storage.carica(path,foto.blob);rec.foto_path=path;
+    }
+    if(nuova)await db.ins("spese",rec);else await db.upd("spese",`id=eq.${s.id}`,rec);
+    chiudiSheet();toast("Spesa salvata");
+    const [y,m]=rec.data.split("-").map(Number);S.y=y;S.m=m;await caricaMese();
+  }catch(e){toast("Errore: "+e.message,5000);btn.disabled=false;btn.textContent="Salva spesa"}
+}
+
+async function elimina(s){
+  if(!confirm("Eliminare questa spesa?"))return;
+  try{await db.del("spese",`id=eq.${s.id}`);if(s.foto_path)storage.elimina(s.foto_path).catch(()=>{});chiudiSheet();toast("Eliminata");caricaMese()}
+  catch(e){toast("Errore: "+e.message)}
+}
+
+/* ── invio a Pachino ── */
+let INV=null;
+function testoMail(lista){
+  const tot=lista.reduce((a,s)=>a+(+s.importo||0),0);
+  const totP=lista.filter(s=>s.addebito==="proprietario").reduce((a,s)=>a+(+s.importo||0),0);
+  const ant=lista.filter(s=>s.metodo_pagamento==="anticipata");
+  const firma=(S.io||"Tommaso").split(" ")[0];
+  const mese=nomeMese(S.y,S.m);
+  let t=`Ciao Andrea,\nti mando le spese di ${mese}: ${lista.length} ${lista.length===1?"spesa":"spese"}, totale ${eur(tot)}.\n`;
+  if(totP)t+=`Di queste ${eur(totP)} vanno addebitate ai proprietari nelle distinte, trovi il dettaglio per proprietario nel PDF.\n`;
+  if(ant.length)t+=`${ant.length===1?"Una è stata anticipata":ant.length+" sono state anticipate"} di tasca nostra (${eur(ant.reduce((a,s)=>a+(+s.importo||0),0))}), da rimborsare.\n`;
+  t+=`Nel PDF ci sono anche tutti gli scontrini, nel CSV gli stessi dati in tabella.\n\nSaluti,\n${firma}`;
+  return {oggetto:`Spese ${mese} - Valente Living`,testo:t};
+}
+
+function apriInvio(){
+  const lista=S.spese.filter(s=>!s.invio_pachino_id);
+  const senzaApp=lista.filter(s=>s.addebito==="proprietario"&&!s.proprieta_id).length;
+  const m=testoMail(lista);
+  INV={lista,...m};
+  apriSheet(`<h2>Invia a Pachino<button class="x" id="xx">✕</button></h2>
+   ${senzaApp?`<div class="ai err">${senzaApp} spese a carico proprietario non hanno l'appartamento: sistemale prima.</div>`:""}
+   <div class="mail"><div><b>A:</b> ${PACHINO}</div><div><b>Oggetto:</b> <input id="i-ogg" value="${esc(m.oggetto)}" style="margin-top:4px"></div>
+   <textarea id="i-txt" style="min-height:190px;margin-top:6px">${esc(m.testo)}</textarea>
+   <div class="allegati">📎 Spese-${S.y}-${pad(S.m)}.pdf (riepilogo + ${lista.filter(s=>s.foto_path).length} scontrini)<br>📎 Spese-${S.y}-${pad(S.m)}.csv${lista.some(s=>(s.foto_path||"").endsWith(".pdf"))?"<br>📎 fatture in PDF originali":""}</div></div>
+   <div class="hint">Si apre la condivisione del telefono: scegli Gmail. L'indirizzo di Pachino lo copio io, incollalo nel destinatario.</div>
+   <div style="height:14px"></div>
+   <button class="btn" id="i-go" ${senzaApp?"disabled":""}>Prepara e invia</button>`);
+  $("#xx").onclick=chiudiSheet;
+  $("#i-go").onclick=preparaInvio;
+}
+
+async function fileAllegati(lista){
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:"mm",format:"a4"});
+  const mese=nomeMese(S.y,S.m);
+  doc.setFontSize(16);doc.text(`Valente Living SRL — Spese ${mese}`,14,18);
+  doc.setFontSize(9);doc.setTextColor(110);doc.text(`P.IVA 02123860476 · generato il ${new Date().toLocaleDateString("it-IT")} da ${S.io||""}`,14,24);doc.setTextColor(0);
+  const tot=lista.reduce((a,s)=>a+(+s.importo||0),0);
+  const corpo=lista.slice().sort((a,b)=>a.data.localeCompare(b.data)).map((s,i)=>{const p=propById(s.proprieta_id);
+    return [i+1,new Date(s.data).toLocaleDateString("it-IT"),p?p.nome:"Generale",s.addebito==="proprietario"?(nomeProprietario(s.proprietario_id||(p&&p.proprietario_id))||"—"):"Valente",
+      (s.fornitore||"")+(s.descrizione?" — "+s.descrizione:""),METODI[s.metodo_pagamento]||s.metodo_pagamento||"",eur(s.importo)]});
+  doc.autoTable({startY:30,head:[["#","Data","Appartamento","A carico","Fornitore / cosa","Pagata con","Importo"]],body:corpo,
+    foot:[["","","","","","Totale",eur(tot)]],styles:{fontSize:8,cellPadding:1.6},headStyles:{fillColor:[67,56,202]},footStyles:{fillColor:[241,245,249],textColor:20,fontStyle:"bold"},columnStyles:{6:{halign:"right"}}});
+  const g=raggruppa(lista);
+  if(g.length){
+    doc.autoTable({startY:doc.lastAutoTable.finalY+8,head:[["Da addebitare al proprietario","Appartamenti","Totale"]],
+      body:g.map(x=>[x.nome,[...new Set(x.righe.map(r=>r.app))].join(", "),eur(x.tot)]),styles:{fontSize:9},headStyles:{fillColor:[180,83,9]},columnStyles:{2:{halign:"right"}}});
+  }
+  const extra=[];
+  const ordinate=lista.slice().sort((a,b)=>a.data.localeCompare(b.data));
+  const firme=await storage.firma(ordinate.filter(s=>s.foto_path).map(s=>s.foto_path));
+  for(let i=0;i<ordinate.length;i++){
+    const s=ordinate[i];if(!s.foto_path)continue;const url=firme[s.foto_path];if(!url)continue;
+    const p=propById(s.proprieta_id);
+    const blob=await (await fetch(url)).blob();
+    if(s.foto_path.endsWith(".pdf")){extra.push(new File([blob],`Spesa-${i+1}-${(s.fornitore||"fattura").replace(/[^\w-]+/g,"_").slice(0,30)}.pdf`,{type:"application/pdf"}));continue}
+    const du=await blobToDataURL(blob);
+    const img=await new Promise(r=>{const im=new Image();im.onload=()=>r(im);im.src=du});
+    doc.addPage();doc.setFontSize(11);
+    doc.text(`#${i+1} · ${new Date(s.data).toLocaleDateString("it-IT")} · ${eur(s.importo)} · ${p?p.nome:"Generale Valente"}`,14,14);
+    doc.setFontSize(9);doc.setTextColor(110);doc.text(`${s.fornitore||""} ${s.descrizione?"— "+s.descrizione:""}`.slice(0,110),14,20);doc.setTextColor(0);
+    const W=182,H=262,k=Math.min(W/img.width,H/img.height);
+    doc.addImage(du,"JPEG",14+(W-img.width*k)/2,26,img.width*k,img.height*k);
+  }
+  const nome=`Spese-${S.y}-${pad(S.m)}`;
+  const pdf=new File([doc.output("blob")],nome+".pdf",{type:"application/pdf"});
+  const q=v=>`"${String(v??"").replace(/"/g,'""')}"`;
+  const righe=[["Data","Appartamento","Proprietario","A carico","Fornitore","P.IVA fornitore","N. documento","Descrizione","Categoria","Importo","IVA %","Pagata con","Note"].map(q).join(";")]
+    .concat(ordinate.map(s=>{const p=propById(s.proprieta_id);return [s.data,p?p.nome:"Generale",nomeProprietario(s.proprietario_id||(p&&p.proprietario_id)),s.addebito,s.fornitore,s.piva_fornitore,s.numero_documento,s.descrizione,s.categoria,String(s.importo).replace(".",","),s.iva_pct??"",METODI[s.metodo_pagamento]||"",s.note].map(q).join(";")}));
+  const csv=new File(["﻿"+righe.join("\n")],nome+".csv",{type:"text/csv"});
+  return [pdf,csv,...extra];
+}
+
+async function preparaInvio(){
+  const btn=$("#i-go");btn.disabled=true;btn.innerHTML=`<span class="spin"></span> Preparo gli allegati…`;
+  INV.oggetto=$("#i-ogg").value;INV.testo=$("#i-txt").value;
+  try{
+    const files=await fileAllegati(INV.lista);
+    try{await navigator.clipboard.writeText(PACHINO)}catch{}
+    if(navigator.canShare&&navigator.canShare({files})){
+      btn.textContent="Condividi su Gmail";btn.disabled=false;
+      // la condivisione deve partire da un tocco: secondo tocco sul pulsante
+      btn.onclick=async()=>{
+        try{await navigator.share({files,title:INV.oggetto,text:INV.testo});chiediConferma()}
+        catch(e){if(e.name!=="AbortError")toast("Condivisione non riuscita: "+e.message)}
+      };
+      toast("Allegati pronti, indirizzo di Pachino copiato");
+    }else{
+      files.forEach(f=>{const a=document.createElement("a");a.href=URL.createObjectURL(f);a.download=f.name;a.click()});
+      location.href=`mailto:${PACHINO}?subject=${encodeURIComponent(INV.oggetto)}&body=${encodeURIComponent(INV.testo)}`;
+      chiediConferma("Ho scaricato gli allegati e aperto la mail: allegali tu e invia.");
+    }
+  }catch(e){toast("Errore: "+e.message,5000);btn.disabled=false;btn.textContent="Prepara e invia"}
+}
+
+function chiediConferma(msg){
+  apriSheet(`<h2>Mail inviata?</h2>${msg?`<div class="ai">${esc(msg)}</div>`:""}
+   <p class="hint" style="font-size:14px;margin:10px 0 16px">Se l'hai mandata, segno le ${INV.lista.length} spese come inviate così il mese prossimo non le rimandi.</p>
+   <button class="btn" id="c-si">Sì, inviata</button><div style="height:8px"></div><button class="btn sec" id="c-no">Non ancora</button>`);
+  $("#c-no").onclick=chiudiSheet;
+  $("#c-si").onclick=async()=>{
+    $("#c-si").disabled=true;
+    try{
+      const tot=INV.lista.reduce((a,s)=>a+(+s.importo||0),0);
+      const totP=INV.lista.filter(s=>s.addebito==="proprietario").reduce((a,s)=>a+(+s.importo||0),0);
+      const [inv]=await db.ins("invii_pachino",{periodo_da:`${S.y}-${pad(S.m)}-01`,periodo_a:new Date(S.y,S.m,0).toLocaleDateString("sv-SE"),n_spese:INV.lista.length,totale:tot,totale_proprietari:totP});
+      await db.upd("spese",`id=in.(${INV.lista.map(s=>s.id).join(",")})`,{invio_pachino_id:inv.id,inviata_pachino_il:new Date().toISOString()});
+      chiudiSheet();toast("Segnate come inviate");caricaMese();
+    }catch(e){toast("Errore: "+e.message,5000);$("#c-si").disabled=false}
+  };
+}
+
+avvia();
+</script>
+</body>
+</html>
