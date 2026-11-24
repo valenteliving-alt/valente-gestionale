@@ -42,6 +42,17 @@ const CANALI = {
 };
 const canale = (c) => CANALI[String(c || "").toUpperCase()] || { col: "#8A8A8A", eti: c || "—" };
 
+/* I colori della fatturazione: la vista predefinita del planner. */
+const STATI_FATTURA = {
+  fatturata: { col: "#2E8B57", eti: "Fatturata" },
+  scoperta:  { col: "#D93025", eti: "Finita, senza fattura" },
+  incorso:   { col: "#E8A33D", eti: "In corso / futura" },
+};
+const statoFattura = (r) => {
+  if (r.fatturata) return STATI_FATTURA.fatturata;
+  return giorno(r.partenza) <= new Date() ? STATI_FATTURA.scoperta : STATI_FATTURA.incorso;
+};
+
 const GIORNO = 86400000;
 const MESI = ["gennaio","febbraio","marzo","aprile","maggio","giugno","luglio","agosto","settembre","ottobre","novembre","dicembre"];
 const euro = (n) => (n == null || n === "" ? "—" : "€" + Math.round(Number(n)).toLocaleString("it-IT"));
@@ -59,6 +70,7 @@ export default function Planner() {
   const [scelta, setScelta] = useState(null);      // la prenotazione aperta
   const [soloScoperte, setSoloScoperte] = useState(false);
   const [cerca, setCerca] = useState("");
+  const [colori, setColori] = useState("fattura");  // "fattura" | "canale"
 
   const inizio = useMemo(() => new Date(anno, mese, 1), [anno, mese]);
   const fine = useMemo(() => new Date(anno, mese + 1, 0), [anno, mese]);
@@ -159,12 +171,20 @@ export default function Planner() {
           Solo quelle senza fattura
         </label>
         <div style={{ display: "flex", gap: 10, marginLeft: "auto", fontSize: 11, color: "var(--gray)", alignItems: "center", flexWrap: "wrap" }}>
-          {Object.values(CANALI).map((c) => (
+          <div style={{ display: "flex", border: "1px solid var(--cd)", borderRadius: 7, overflow: "hidden" }}>
+            {[["fattura", "Colori: fattura"], ["canale", "Colori: canale"]].map(([k, eti]) => (
+              <button key={k} onClick={() => setColori(k)} style={{
+                border: 0, padding: "5px 9px", fontSize: 11, cursor: "pointer",
+                background: colori === k ? "var(--gold)" : "transparent", color: colori === k ? "#fff" : "inherit",
+              }}>{eti}</button>
+            ))}
+          </div>
+          {Object.values(colori === "fattura" ? STATI_FATTURA : CANALI).map((c) => (
             <span key={c.eti} style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <i style={{ width: 10, height: 10, borderRadius: 3, background: c.col, display: "inline-block" }} />{c.eti}
             </span>
           ))}
-          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>€ = fatturata</span>
+          {colori === "canale" && <span style={{ display: "flex", alignItems: "center", gap: 4 }}>€ = fatturata</span>}
         </div>
       </div>
 
@@ -234,13 +254,13 @@ export default function Planner() {
                     const da = Math.max(0, Math.round((arr - inizio) / GIORNO));
                     const al = Math.min(nGiorni, Math.round((par - inizio) / GIORNO));
                     const larg = Math.max(1, al - da);
-                    const c = canale(r.canale);
+                    const c = colori === "fattura" ? statoFattura(r) : canale(r.canale);
                     const partita = par <= oggi;
-                    const scoperta = partita && !r.fatturata;
+                    const scoperta = colori === "canale" && partita && !r.fatturata;
                     return (
                       <div key={r.id_reservation}
                         onClick={() => setScelta(r)}
-                        title={`${r.ospite} · ${dataIt(r.arrivo)} → ${dataIt(r.partenza)} · ${euro(r.totale_addebiti)}`}
+                        title={`${r.ospite} · ${dataIt(r.arrivo)} → ${dataIt(r.partenza)} · ${euro(r.totale_addebiti)} · ${r.fatturata ? `fattura n. ${r.doc_numero}` : "senza fattura"}`}
                         style={{
                           position: "absolute", left: da * LARG + 2, width: larg * LARG - 4,
                           top: 6, height: 30, borderRadius: 6, cursor: "pointer",
@@ -325,6 +345,7 @@ function Dettaglio({ r, onChiudi }) {
               <div style={{ fontSize: 12, color: "var(--gray)", marginTop: 3 }}>
                 {r.doc_tipo} n. {r.doc_numero} del {dataIt(r.doc_data)} · {euro(r.doc_totale)}
               </div>
+              <Fattura idRes={r.id_reservation} />
             </>
           ) : partita ? (
             <>
@@ -378,6 +399,91 @@ function Dettaglio({ r, onChiudi }) {
         )}
       </div>
     </>
+  );
+}
+
+/* La fattura emessa, letta da Kross al momento (righe, cliente, totali).
+   Kross non dà il PDF via API: qui si ricostruisce il documento dai suoi dati. */
+const TIPI_DOC = { F: "Fattura", R: "Ricevuta", NC: "Nota di credito", PF: "Proforma", N: "Documento" };
+const euro2 = (n) => (n == null ? "—" : "€ " + Number(n).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+
+function Fattura({ idRes }) {
+  const [aperta, setAperta] = useState(false);
+  const [stato, setStato] = useState({ caricando: false, docs: null, errore: "" });
+
+  const apri = async () => {
+    setAperta(true);
+    if (stato.docs) return;
+    setStato({ caricando: true, docs: null, errore: "" });
+    try {
+      const r = await fetch("/.netlify/functions/kross-api", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: "/documents/get-list", payload: { id_reservation: idRes, date_form: "2020-01-01", date_to: "2030-12-31", with_elements: true } }),
+      });
+      const j = await r.json().catch(() => null);
+      if (j && j.ok && Array.isArray(j.dati)) { setStato({ caricando: false, docs: j.dati, errore: "" }); return; }
+      throw new Error((j && j.errore) || "Kross non risponde");
+    } catch (e) {
+      // Ripiego: la copia che abbiamo su Supabase (solo testata, senza righe)
+      const { ok, data } = await api("kross_documenti", `?select=*&id_reservation=eq.${idRes}&order=data.asc`);
+      if (ok && Array.isArray(data) && data.length) {
+        setStato({ caricando: false, errore: "Kross è occupato: ti mostro la copia salvata (senza righe). Riprova tra un minuto per il dettaglio.",
+          docs: data.map((d) => ({ id_document: d.id_document, number_document: d.numero, date: d.data, cod_document: d.tipo,
+            surname: d.cliente, city: d.citta, vat: d.piva, tax_code: d.codice_fiscale,
+            total_amount: d.imponibile, total_vat: d.iva, total_amount_vat: d.totale, elements: [] })) });
+      } else setStato({ caricando: false, docs: null, errore: "Non riesco a leggere la fattura da Kross. Riprova tra un minuto." });
+    }
+  };
+
+  if (!aperta) return (
+    <button className="bg" onClick={apri} style={{ marginTop: 9, fontSize: 12 }}>📄 Vedi fattura emessa</button>
+  );
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      {stato.caricando && <div style={{ fontSize: 12, color: "var(--gray)" }}>Leggo la fattura da Kross…</div>}
+      {stato.errore && <div style={{ fontSize: 11.5, color: "#B06000", marginBottom: 8 }}>{stato.errore}</div>}
+      {(stato.docs || []).map((d) => (
+        <div key={d.id_document} style={{ background: "#fff", border: "1px solid var(--cd)", borderRadius: 8, padding: 12, marginBottom: 8, color: "#222" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+            <strong style={{ fontSize: 13.5 }}>{TIPI_DOC[d.cod_document] || d.cod_document} n. {d.number_document}</strong>
+            <span style={{ fontSize: 12, color: "var(--gray)" }}>{dataIt(d.date)}</span>
+          </div>
+          <div style={{ fontSize: 12, marginTop: 6, lineHeight: 1.45 }}>
+            <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--gray)" }}>Intestata a</div>
+            <div style={{ fontWeight: 600 }}>{d.company || [d.name, d.surname].filter(Boolean).join(" ") || "—"}</div>
+            {(d.address || d.city) && <div>{[d.address, d.postcode, d.city, d.country].filter(Boolean).join(", ")}</div>}
+            {d.vat && <div>P.IVA {d.vat}</div>}
+            {d.tax_code && <div>C.F. {d.tax_code}</div>}
+          </div>
+          {d.elements && d.elements.length > 0 && (
+            <table style={{ width: "100%", fontSize: 11.5, marginTop: 9, borderCollapse: "collapse" }}>
+              <thead><tr style={{ color: "var(--gray)", textAlign: "left" }}>
+                <th style={{ padding: "3px 0", fontWeight: 500 }}>Descrizione</th>
+                <th style={{ fontWeight: 500, textAlign: "center" }}>Q.tà</th>
+                <th style={{ fontWeight: 500, textAlign: "center" }}>IVA</th>
+                <th style={{ fontWeight: 500, textAlign: "right" }}>Importo</th>
+              </tr></thead>
+              <tbody>{d.elements.map((e, i) => (
+                <tr key={e.id_document_element || i} style={{ borderTop: "1px solid rgba(0,0,0,.06)" }}>
+                  <td style={{ padding: "4px 6px 4px 0" }}>{e.description}</td>
+                  <td style={{ textAlign: "center" }}>{e.qta}</td>
+                  <td style={{ textAlign: "center" }}>{e.vat_percent != null ? e.vat_percent + "%" : "—"}</td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{euro2(e.amount)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          )}
+          <div style={{ marginTop: 9, borderTop: "1px solid var(--cd)", paddingTop: 6, fontSize: 12 }}>
+            <Riga eti="Imponibile" val={euro2(d.total_amount)} />
+            <Riga eti="IVA" val={euro2(d.total_vat)} />
+            <Riga eti="Totale" val={euro2(d.total_amount_vat)} grosso />
+          </div>
+        </div>
+      ))}
+      {stato.docs && !stato.docs.length && <div style={{ fontSize: 12, color: "var(--gray)" }}>Kross non restituisce documenti per questa prenotazione.</div>}
+      <button className="bg" onClick={() => setAperta(false)} style={{ fontSize: 11.5 }}>Nascondi</button>
+    </div>
   );
 }
 
