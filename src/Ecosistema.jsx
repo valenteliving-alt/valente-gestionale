@@ -18,6 +18,10 @@ const NODI = {
   gmail:    { label: "Gmail 2FA",         icona: "✉️", col: "#f87171", x: 0.08, y: 0.50, desc: "La casella email che riceve il codice di sicurezza (2FA) per far entrare il robot in Kross in automatico." },
   kross:    { label: "Krossbooking",      icona: "🏨", col: "#fb923c", x: 0.16, y: 0.24, desc: "Il gestionale dove arrivano prenotazioni e messaggi degli ospiti dai vari canali (Airbnb, Booking...)." },
   cowork:   { label: "Agenti Cowork",     icona: "🕹️", col: "#f472b6", x: 0.30, y: 0.62, desc: "Claude che lavora al posto tuo usando il browser: check-in in Questura, recupero fatture dai portali, pubblicazione dei siti. Non vive nel gestionale, ma agisce sugli stessi sistemi." },
+  numero:   { label: "Numero 351 → Zadarma", icona: "📞", col: "#facc15", x: 0.64, y: 0.07, desc: "Il numero di lavoro +39 351 419 9498 (SIM Iliad) inoltra tutte le chiamate al numero virtuale Zadarma 055 093 9753 (6 € al mese), che le passa via internet al bot telefonico. Se si toglie l'inoltro (##21#) il 351 torna a squillare normale." },
+  telefono: { label: "Bot telefonico", icona: "🎙️", col: "#fb7185", x: 0.68, y: 0.30, desc: "L'assistente vocale (ElevenLabs, voce femminile) che risponde per primo a tutte le chiamate. Riconosce l'ospite dal numero, dice prezzi veri letti dal sito, manda link e info su WhatsApp, guida i guasti e passa la chiamata a te o a Francesco solo per le cose importanti. Dopo ogni chiamata ti arriva il riassunto, il lunedì il report." },
+  whatsapp: { label: "WhatsApp lavoro", icona: "💬", col: "#22c55e", x: 0.95, y: 0.76, desc: "Il WhatsApp collegato (OpenWA) che spedisce i messaggi messi in coda nel database: link di prenotazione e info agli ospiti, riassunti delle chiamate, avvisi urgenti e report a te." },
+  ecco:     { label: "Ecco AI", icona: "🪄", col: "#c084fc", x: 0.04, y: 0.33, desc: "Servizio esterno (tryecco.com) che risponde ai messaggi degli ospiti. Ha accesso a Kross. Le sue schede appartamento (wifi, ingresso, parcheggio, guasti...) vengono copiate nel database e sono la fonte da cui legge anche il bot telefonico: se aggiorni una scheda su Ecco, il bot usa il dato nuovo." },
   crm:      { label: "CRM Valente",       icona: "💠", col: "#818cf8", x: 0.50, y: 0.50, desc: "Il cuore: il tuo gestionale (valentelivingcrm). Prenotazioni, immobili, contabilità e il pannello Messaggi AI Ospiti." },
 };
 
@@ -42,6 +46,16 @@ const ARCHI = [
   ["cowork", "kross", "check-in e schedine"],
   ["cowork", "crm", "ti consegna i file"],
   ["cowork", "github", "pubblica le modifiche"],
+  ["ospiti", "numero", "chiamano il 351"],
+  ["numero", "telefono", "inoltro chiamate"],
+  ["telefono", "supabase", "prenotazioni, schede, prezzi"],
+  ["telefono", "tu", "passa solo le urgenze"],
+  ["telefono", "whatsapp", "link, info, riassunti"],
+  ["supabase", "whatsapp", "coda messaggi"],
+  ["whatsapp", "ospiti", "link e info scritte"],
+  ["ospiti", "ecco", "chat"],
+  ["ecco", "kross", "legge prenotazioni"],
+  ["ecco", "supabase", "schede copiate"],
 ];
 
 
@@ -63,7 +77,7 @@ function AgentiDelNodo({ nodo }) {
     return (
       <div style={{ marginTop: 10, fontSize: 12.5, color: "#64748b", lineHeight: 1.5 }}>
         Su questo nodo non gira nessun agente: è un pezzo di infrastruttura o una fonte di dati.
-        Prova <b>Cervello AI</b>, <b>Robot 24/7</b>, <b>CRM Valente</b>, <b>Netlify</b> o <b>Agenti Cowork</b>.
+        Prova <b>Bot telefonico</b>, <b>Cervello AI</b>, <b>Robot 24/7</b>, <b>CRM Valente</b>, <b>Netlify</b>, <b>Supabase</b> o <b>Agenti Cowork</b>.
       </div>
     );
   }

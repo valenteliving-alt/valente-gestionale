@@ -24,6 +24,7 @@ async function leggi(table, query) {
 
 /* ── I GRUPPI ──────────────────────────────────────────────────────────────── */
 export const GRUPPI = {
+  telefono:   { label: "Centralino telefonico", col: "#fb7185", desc: "Rispondono alle chiamate sul numero di lavoro. Il bot parla da solo con l'ospite, ma passa a una persona le urgenze e non manda mai codici a chi non ha una prenotazione verificata." },
   ospiti:     { label: "Risposte agli ospiti", col: "#a78bfa", desc: "Leggono i messaggi degli ospiti su Kross e propongono la risposta. Nessuna risposta parte senza la regola di approvazione." },
   documenti:  { label: "Documenti e dati",     col: "#38bdf8", desc: "Leggono PDF e immagini per classificarli, descriverli o riempire schede. Propongono, non salvano da soli." },
   assistenti: { label: "Assistenti a domanda", col: "#34d399", desc: "Rispondono a te, non ai clienti. Partono solo quando li interroghi." },
@@ -35,6 +36,45 @@ export const GRUPPI = {
    Campi: id, gruppo, nome, icona, cosaFa, trigger, modello, scrive, legge, file, note, stato
    `stato` è la chiave usata per agganciare il dato live (vedi useEffect). */
 export const AGENTI = [
+  // ── Centralino telefonico ──────────────────────────────────────────────────
+  {
+    id: "botvoce", nodo: "telefono", gruppo: "telefono", nome: "Assistente vocale", icona: "🎙️",
+    cosaFa: "Risponde a tutte le chiamate del 351 (inoltrate a Zadarma). Dice prezzi e disponibilità veri per le date chieste, verifica le prenotazioni, dà wifi, ingresso e regole dalle schede, guida i guasti (es. reset del quadro al Leoncino), gestisce arrivi tardi, early check-in e late check-out guardando se quel giorno c'è un cambio ospite. Parla italiano, inglese, tedesco, francese e spagnolo.",
+    regola: "Passa la chiamata solo per le cose importanti: tra le 8 e le 22 per le emergenze, a qualsiasi ora se l'ospite è chiuso fuori, c'è una perdita d'acqua o odore di gas. Va a Francesco se l'appartamento è suo, altrimenti a Tommaso. Tutto il resto diventa un messaggio WhatsApp allo staff. Niente codici a chi non ha una prenotazione verificata.",
+    trigger: "Ogni chiamata in arrivo sul 351", modello: "ElevenLabs Agents (voce Valeria)",
+    legge: "kross_prenotazioni, ecco_schede, be_appartamenti, sito di prenotazione Kross", scrive: "whatsapp_uscita (avvisi a te, link agli ospiti)",
+    file: "ElevenLabs agente «Assistente Valente Living» + supabase/functions/assistente-voce",
+  },
+  {
+    id: "riconosci", nodo: "telefono", gruppo: "telefono", nome: "Riconosce l'ospite dal numero", icona: "🪪",
+    cosaFa: "Appena squilla, cerca il numero di chi chiama nelle prenotazioni attive o in arrivo. Se lo trova, il bot saluta dicendo l'appartamento e la data di arrivo, e sa già chi lo gestisce: niente domande inutili.",
+    trigger: "All'inizio di ogni chiamata", modello: "nessuno (regola)",
+    legge: "kross_prenotazioni, kross_appartamenti, v_kross_aggancio", scrive: "niente",
+    file: "supabase/functions/voce-inizio",
+  },
+  {
+    id: "infoscritte", nodo: "telefono", gruppo: "telefono", nome: "Info scritte su WhatsApp", icona: "📲",
+    cosaFa: "Dopo aver detto wifi, codici o istruzioni a voce, il bot offre di mandarle per scritto. Al cliente nuovo manda invece i link di prenotazione già con le sue date e i prezzi.",
+    regola: "Le info dell'appartamento partono SOLO verso il numero registrato sulla prenotazione verificata, mai verso un numero detto al telefono.",
+    trigger: "Quando l'ospite dice sì", modello: "nessuno (regola)",
+    legge: "ecco_schede, prezzi dal sito", scrive: "whatsapp_uscita", file: "supabase/functions/assistente-voce (invia_info, alloggi)",
+  },
+  {
+    id: "riassunti", nodo: "telefono", gruppo: "telefono", nome: "Riassunto chiamate e report", icona: "📊",
+    cosaFa: "Dopo ogni chiamata ti manda su WhatsApp chi ha chiamato, cosa voleva, com'è finita e a cosa il bot non ha saputo rispondere. Ogni lunedì alle 8:37 arriva il report della settimana con l'elenco delle informazioni da aggiungere su Ecco.",
+    trigger: "Fine di ogni chiamata · lunedì 8:37", modello: "riassunto di ElevenLabs",
+    legge: "dati della chiamata", scrive: "voce_chiamate, whatsapp_uscita",
+    file: "supabase/functions/voce-riepilogo + funzione SQL voce_report_settimanale",
+  },
+  {
+    id: "ecco", nodo: "ecco", gruppo: "ospiti", nome: "Ecco AI (servizio esterno)", icona: "🪄",
+    cosaFa: "Assistente esterno che gestisce i messaggi degli ospiti e contiene le schede di ogni appartamento. Quelle schede vengono copiate nel database (ecco_schede) e il bot telefonico le usa per rispondere.",
+    trigger: "Messaggi degli ospiti", modello: "di Ecco (esterno)",
+    legge: "Kross (utente amministratore)", scrive: "le sue risposte agli ospiti",
+    file: "dashboard.tryecco.com — fuori da questo repository",
+    note: "Se una scheda su Ecco è vuota (es. spazzatura, quadro elettrico), anche il bot telefonico non saprà rispondere: il report del lunedì ti dice quali mancano.",
+  },
+
   // ── Risposte agli ospiti ───────────────────────────────────────────────────
   {
     id: "cervello", nodo: "cervello", gruppo: "ospiti", nome: "Cervello AI risposte", icona: "🧠",
