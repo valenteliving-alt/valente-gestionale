@@ -35,6 +35,7 @@ const DELICATI = [
   [/scont|discount|r[ée]duction|descuento|rabatt|prezzo|price|prix|precio|preis|quanto cost|how much|tariff/i, "prezzo/sconto"],
   [/cancell|annull|cancel|stornier/i, "cancellazione"],
   [/disponib|available|availability|disponible|libero (dal|il|per)|free (on|from)|verf[üu]gbar/i, "disponibilità/date"],
+  [/notte in pi[uù]|notti in pi[uù]|un giorno in pi[uù]|restare (ancora|un'altra|un altro)|rimanere (ancora|un'altra|un altro)|prolung|allung\w* (il )?soggiorno|estend|extend|extra night|another night|one more night|stay (longer|an extra)|nuit suppl|noche (extra|m[aá]s)|zus[aä]tzliche nacht|l[aä]nger bleiben/i, "estensione soggiorno"],
   [/early check|check-?in anticip|arriv\w* prima|late check|check-?out (tardi|posticip)|partire (dopo|più tardi)|later check|lasciare (i |le )?(bagagli|valigie)|luggage|bagages|maletas|gep[äa]ck/i, "orari fuori standard/bagagli"],
   [/animal|cane|cani|gatto|dog|chien|perro|hund|pet\b|pets/i, "animali"],
   [/ospite in pi|persona in pi|extra (guest|person)|una persona in più|additional guest|ajouter une personne/i, "persone in più"],
@@ -211,6 +212,14 @@ FASE DELLA PRENOTAZIONE: ${fasePren}. Regole:
 - prima dell'arrivo: codici scatolina/porta/portone, wifi e istruzioni di ingresso SOLO se il check-in online è fatto (adesso: ${checkinFatto ? "SÌ, fatto" : "NO, non ancora fatto"}). Se non è fatto, ricorda gentilmente di completare il check-in online (obbligatorio per legge) senza inventare link.
 - in soggiorno: aiuta a risolvere usando la scheda e gli esempi (es. come ripartire l'acqua calda). Se è un guasto o un problema vero, anche se sai la soluzione, metti "avvisa": true.
 - dopo la partenza: ringraziamenti brevi; oggetti dimenticati, danni, reclami, rimborsi → approvazione.
+
+NOTTE IN PIÙ (l'ospite vuole restare una o più notti in più, o allungare il soggiorno):
+- metti sempre "approvazione" e scrivi la bozza per l'ospite. Spiega cosa fa lui dal suo telefono, in base al canale della prenotazione:
+- Airbnb: apre l'app Airbnb, entra nella prenotazione, tocca per modificarla, sceglie la nuova data di partenza e invia la richiesta. La riceviamo noi e la accettiamo.
+- Booking: apre l'app di Booking o la mail di conferma, modifica la prenotazione e sceglie la nuova data di partenza. Se Booking non glielo permette, digli di scriverti qui che vediamo noi come fare.
+- Prenotazione diretta o canale sconosciuto: non spiegare passaggi che non conosci. Scrivi una bozza breve e metti in "lacuna" come estendere questa prenotazione.
+- Non dire mai che la notte è libera e non dire il prezzo della notte in più: lo decide e lo conferma Tommaso. Metti in "lacuna": verificare se la notte dopo è libera.
+- Non nominare mai extranet, pannelli o strumenti interni.
 
 DECISIONE:
 - "invia" = domanda di routine con risposta certa nelle fonti (orari standard check-in/out, wifi, parcheggio, come entrare, dotazioni presenti in scheda, rifiuti, consigli già dati da Tommaso).
