@@ -170,6 +170,8 @@ const SiNo = ({ v, onChange, si = "Sì", no = "No" }) => (
 
 function Prenotazioni({ modello }) {
   const sub = modello === "sublocazione";
+  const [ana, setAna] = useState({});
+  useEffect(() => { caricaAnagrafica().then(({ app }) => setAna(Object.fromEntries(app.map((a) => [a.id_room_type, a])))); }, []);
   const [righe, setRighe] = useState(null);
   const [cerca, setCerca] = useState("");
   const [mese, setMese] = useState("");
@@ -188,10 +190,11 @@ function Prenotazioni({ modello }) {
       if (filtro === "avvisi" && !(r.avvisi || []).length) return false;
       if (filtro === "pronte" && (r.avvisi || []).length) return false;
       if (!q) return true;
-      return [r.ospite, r.cod_reservation, r.nome_kross, r.nome_proprieta, r.email, r.canale, String(r.id_reservation)]
+      const x = ana[r.id_room_type];
+      return [r.ospite, r.cod_reservation, r.nome_kross, r.nome_proprieta, r.email, r.canale, String(r.id_reservation), nomeOwn(x?.own), x?.prop?.agente, x?.prop?.gestore_interno]
         .some((x) => String(x || "").toLowerCase().includes(q));
     });
-  }, [righe, cerca, mese, filtro, modello]);
+  }, [righe, cerca, mese, filtro, modello, ana]);
   useEffect(() => { setLimite(100); setAperta(null); }, [cerca, mese, filtro, modello]);
 
   const tot = useMemo(() => filtrate.reduce((a, r) => ({
@@ -242,7 +245,7 @@ function Prenotazioni({ modello }) {
                 return (
                   <tr key={r.id_reservation} className={aperta?.id_reservation === r.id_reservation ? "sel" : ""} onClick={() => setAperta(r)}>
                     <td><div style={{ fontWeight: 500 }}>{r.ospite || "—"}</div><div className="muted">{r.cod_reservation}</div></td>
-                    <td><div>{r.nome_proprieta || r.nome_kross}</div>{r.nome_proprieta && r.nome_proprieta !== r.nome_kross && <div className="muted">{r.nome_kross}</div>}</td>
+                    <td><div>{r.nome_proprieta || r.nome_kross}</div><div className="muted">{[nomeOwn(ana[r.id_room_type]?.own), ana[r.id_room_type]?.prop?.gestore_interno && "PM " + ana[r.id_room_type].prop.gestore_interno].filter(Boolean).join(" · ") || "—"}</div></td>
                     <td style={{ whiteSpace: "nowrap" }}><div>{dataBreve(r.arrivo)} – {dataBreve(r.partenza)}</div><div className="muted">{r.notti} notti</div></td>
                     <td><span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><span className="dot" style={{ background: col }} />{can}</span></td>
                     <td className="num">{euro(r.totale_ospite)}</td>
@@ -263,12 +266,12 @@ function Prenotazioni({ modello }) {
         </div>
         {filtrate.length > limite && <div style={{ textAlign: "center", padding: 14, borderTop: "1px solid var(--line)" }}><button className="btn" onClick={() => setLimite(limite + 200)}>Mostra altre {Math.min(200, filtrate.length - limite)} (ne restano {filtrate.length - limite})</button></div>}
       </div>
-      {aperta && <DettaglioPrenotazione r={aperta} chiudi={chiudi} />}
+      {aperta && <DettaglioPrenotazione r={aperta} a={ana[aperta.id_room_type]} chiudi={chiudi} />}
     </div>
   );
 }
 
-function DettaglioPrenotazione({ r, chiudi }) {
+function DettaglioPrenotazione({ r, a, chiudi }) {
   const sub = r.tipo_gestione === "sublocazione";
   const [int, setInt] = useState(undefined);
   const [boz, setBoz] = useState([]);
@@ -298,6 +301,17 @@ function DettaglioPrenotazione({ r, chiudi }) {
           {(r.avvisi || []).length > 0 && (
             <div className="sec"><div className="note warn"><Ico n="warn" /><div>{r.avvisi.map((a, i) => <div key={i}>{a}</div>)}</div></div></div>
           )}
+          <div className="sec">
+            <h2 style={{ marginBottom: 6 }}>Persone</h2>
+            {!a?.prop ? <div className="note warn"><Ico n="warn" />Appartamento non collegato a una proprietà del CRM.</div> : <>
+              <div className="row"><span>Proprietario</span><span>{nomeOwn(a.own) || "—"}{a.own?.codice_fiscale ? ` · ${a.own.codice_fiscale}` : ""}</span></div>
+              {a.own && <div className="row"><span>Contatti proprietario</span><span>{[a.own.email, a.own.telefono].filter(Boolean).join(" · ") || "—"}</span></div>}
+              <div className="row"><span>Property manager</span><span>{a.prop.gestore_interno || "—"}</span></div>
+              <div className="row"><span>Agente</span><span>{a.prop.agente || "—"}</span></div>
+              {!sub && a.prop.agente && <div className="row"><span>Quota agente {a.regola?.agente_pct != null ? `(${String(a.regola.agente_pct).replace(".", ",")}% della provvigione)` : ""}</span>
+                <span>{a.regola?.agente_pct != null ? euro((Number(r.prov_netta) || 0) * a.regola.agente_pct / 100) : <span className="pill warn">% da decidere</span>}</span></div>}
+            </>}
+          </div>
           <div className="sec">
             <h2 style={{ marginBottom: 8 }}>Intestatario della fattura</h2>
             {int === undefined ? <div className="muted">Carico…</div> : int ? (
@@ -345,10 +359,31 @@ function DettaglioPrenotazione({ r, chiudi }) {
 
 /* ───────────────────────────── Appartamenti (criteri) ───────────────────────────── */
 
+/* Anagrafica: appartamenti Kross + proprietà CRM (agente, property manager) + proprietario + regola. */
+async function caricaAnagrafica() {
+  const [k, r, pr, ow, co] = await Promise.all([
+    leggi("kross_appartamenti", "?select=id_room_type,nome_kross,citta,provincia,indirizzo,cin,tipo_gestione,proprieta_id&order=nome_kross"),
+    leggi("fat_regole", "?select=*"),
+    leggi("proprieta", "?select=id,nome,agente,gestore_interno,proprietario_id"),
+    leggi("proprietari", "?select=id,nome,cognome,codice_fiscale,email,telefono,pec,indirizzo,citta"),
+    leggi("collaboratori", "?select=nome,ruolo,attivo&order=nome"),
+  ]);
+  const reg = Object.fromEntries(r.map((x) => [x.id_room_type, x]));
+  const prop = Object.fromEntries(pr.map((x) => [x.id, x]));
+  const own = Object.fromEntries(ow.map((x) => [x.id, x]));
+  const app = k.map((a) => {
+    const p = prop[a.proprieta_id] || null;
+    return { ...a, regola: reg[a.id_room_type] || null, prop: p, own: p ? own[p.proprietario_id] || null : null };
+  });
+  const team = co.filter((c) => c.attivo !== false).map((c) => ({ nome: String(c.nome || "").trim(), ruolo: c.ruolo || "" })).filter((c) => c.nome);
+  return { app, team };
+}
+const nomeOwn = (o) => (o ? [o.nome, o.cognome].filter(Boolean).join(" ") : "");
+
 const DEFAULT_REGOLA = {
   modello: "gestione", commissione: null, commissione_iva_inclusa: true, base_calcolo: "alloggio_meno_ota",
   addebita_ota_al_proprietario: true, addebita_pulizie_al_proprietario: true, sostituto_imposta: null, cedolare_pct: 21,
-  chi_fattura_ospite: null, iva_alloggio: null, pulizie_iva_inclusa: true, attiva_fatturazione: false, confermata: false, note: null,
+  chi_fattura_ospite: null, iva_alloggio: null, pulizie_iva_inclusa: true, attiva_fatturazione: false, confermata: false, note: null, agente_pct: null,
 };
 const statoRegola = (r) => (r.attiva_fatturazione ? ["ok", "Attiva"] : r.confermata ? ["acc", "Confermata"] : ["warn", "Da confermare"]);
 const triVal = (v) => (v === null || v === undefined ? "" : String(v));
@@ -359,15 +394,11 @@ function Appartamenti({ modello }) {
   const [cerca, setCerca] = useState("");
   const [filtro, setFiltro] = useState("tutti");
   const [sel, setSel] = useState(null);
+  const [team, setTeam] = useState([]);
 
   const carica = useCallback(async () => {
-    const [k, r] = await Promise.all([
-      leggi("kross_appartamenti", "?select=id_room_type,nome_kross,citta,provincia,indirizzo,cin,tipo_gestione&order=nome_kross"),
-      leggi("fat_regole", "?select=*"),
-    ]);
-    const perId = Object.fromEntries(r.map((x) => [x.id_room_type, x]));
-    const lista = k.map((a) => ({ ...a, regola: perId[a.id_room_type] || null }));
-    setApp(lista);
+    const { app: lista, team: t } = await caricaAnagrafica();
+    setApp(lista); setTeam(t);
     return lista;
   }, []);
   useEffect(() => { carica(); }, [carica]);
@@ -379,7 +410,7 @@ function Appartamenti({ modello }) {
       if ((a.regola?.modello || a.tipo_gestione || "gestione") !== modello) return false;
       if (filtro === "attivi" && !r.attiva_fatturazione) return false;
       if (filtro === "daconf" && r.confermata) return false;
-      return !q || [a.nome_kross, a.citta, a.indirizzo].some((x) => String(x || "").toLowerCase().includes(q));
+      return !q || [a.nome_kross, a.citta, a.indirizzo, nomeOwn(a.own), a.prop?.agente, a.prop?.gestore_interno].some((x) => String(x || "").toLowerCase().includes(q));
     });
   }, [app, cerca, filtro, modello]);
 
@@ -404,7 +435,7 @@ function Appartamenti({ modello }) {
       <div className="split">
         <div className="card" style={{ overflow: "hidden" }}>
           <div style={{ padding: 12, borderBottom: "1px solid var(--line)", display: "grid", gap: 10 }}>
-            <Cerca v={cerca} set={setCerca} ph="Cerca appartamento o città…" w={400} />
+            <Cerca v={cerca} set={setCerca} ph="Cerca appartamento, città, proprietario…" w={400} />
             <div className="seg">
               {[["tutti", "Tutti"], ["daconf", "Da confermare"], ["attivi", "Attivi"]].map(([k, t]) => <button key={k} className={filtro === k ? "on" : ""} onClick={() => setFiltro(k)}>{t}</button>)}
             </div>
@@ -416,7 +447,7 @@ function Appartamenti({ modello }) {
                 <div key={a.id_room_type} className={"aitem" + (sel === a.id_room_type ? " on" : "")} onClick={() => setSel(a.id_room_type)}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.nome_kross}</div>
-                    <div className="muted">{[a.citta, a.regola?.modello || a.tipo_gestione].filter(Boolean).join(" · ") || "—"}</div>
+                    <div className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{[a.citta, nomeOwn(a.own)].filter(Boolean).join(" · ") || "—"}</div>
                   </div>
                   <span className={"pill " + tono}>{eti}</span>
                 </div>
@@ -425,19 +456,41 @@ function Appartamenti({ modello }) {
             {elenco.length === 0 && <Vuoto t="Nessun appartamento." />}
           </div>
         </div>
-        {scelto ? <SchedaRegola key={scelto.id_room_type} a={scelto} salvato={carica} /> : <div className="card"><Vuoto t="Scegli un appartamento dall'elenco." /></div>}
+        {scelto ? <SchedaRegola key={scelto.id_room_type} a={scelto} team={team} salvato={carica} /> : <div className="card"><Vuoto t="Scegli un appartamento dall'elenco." /></div>}
       </div>
     </div>
   );
 }
 
-function SchedaRegola({ a, salvato }) {
+const CAMPI_OWN = [["nome", "Nome"], ["cognome", "Cognome"], ["codice_fiscale", "Codice fiscale / P.IVA"], ["email", "Email"], ["telefono", "Telefono"], ["pec", "PEC"], ["indirizzo", "Indirizzo"], ["citta", "Città"]];
+
+function SceltaPersona({ v, onChange, team, ph }) {
+  const nomi = team.map((t) => t.nome);
+  const fuori = v && !nomi.some((n) => n.toLowerCase() === String(v).trim().toLowerCase());
+  return (
+    <>
+      <select value={v || ""} onChange={(e) => onChange(e.target.value || null)}>
+        <option value="">{ph}</option>
+        {fuori && <option value={v}>{v} (non è nel team)</option>}
+        {team.map((t) => <option key={t.nome} value={t.nome}>{t.nome}{t.ruolo ? ` · ${t.ruolo.trim()}` : ""}</option>)}
+      </select>
+      {fuori && <div className="hint" style={{ color: "var(--warn)" }}>Il nome non corrisponde a nessun collaboratore: sceglilo dall'elenco, così vede l'appartamento nel CRM.</div>}
+    </>
+  );
+}
+
+function SchedaRegola({ a, team, salvato }) {
   const iniziale = useMemo(() => ({ ...DEFAULT_REGOLA, ...(a.regola || {}), id_room_type: a.id_room_type }), [a]);
   const [b, setB] = useState(iniziale);
+  const persIniz = useMemo(() => ({ agente: a.prop?.agente || null, gestore_interno: a.prop?.gestore_interno || null }), [a]);
+  const [pers, setPers] = useState(persIniz);
+  const ownIniz = useMemo(() => Object.fromEntries(CAMPI_OWN.map(([k]) => [k, a.own?.[k] || ""])), [a]);
+  const [own, setOwn] = useState(ownIniz);
   const [msg, setMsg] = useState(null);
   const [lavoro, setLavoro] = useState(false);
   const set = (k, v) => { setB((x) => ({ ...x, [k]: v })); setMsg(null); };
-  const modificato = JSON.stringify(b) !== JSON.stringify(iniziale);
+  const modificato = JSON.stringify(b) !== JSON.stringify(iniziale) || JSON.stringify(pers) !== JSON.stringify(persIniz) || JSON.stringify(own) !== JSON.stringify(ownIniz);
+  const sub = b.modello === "sublocazione";
   const num = (v) => (v === "" || v == null ? null : Number(v));
 
   const salva = async () => {
@@ -448,9 +501,11 @@ function SchedaRegola({ a, salvato }) {
       addebita_pulizie_al_proprietario: !!b.addebita_pulizie_al_proprietario, sostituto_imposta: b.sostituto_imposta,
       cedolare_pct: num(b.cedolare_pct), chi_fattura_ospite: b.chi_fattura_ospite || null, iva_alloggio: num(b.iva_alloggio),
       pulizie_iva_inclusa: !!b.pulizie_iva_inclusa, confermata: !!b.confermata, attiva_fatturazione: !!b.confermata && !!b.attiva_fatturazione,
-      note: b.note || null, aggiornato_il: new Date().toISOString(),
+      note: b.note || null, agente_pct: num(b.agente_pct), aggiornato_il: new Date().toISOString(),
     };
-    const ok = a.regola ? await aggiorna("fat_regole", `id_room_type=eq.${a.id_room_type}`, corpo) : await inserisciOAggiorna("fat_regole", corpo, "id_room_type");
+    let ok = a.regola ? await aggiorna("fat_regole", `id_room_type=eq.${a.id_room_type}`, corpo) : await inserisciOAggiorna("fat_regole", corpo, "id_room_type");
+    if (ok && a.prop && JSON.stringify(pers) !== JSON.stringify(persIniz)) ok = await aggiorna("proprieta", `id=eq.${a.prop.id}`, pers);
+    if (ok && a.own && JSON.stringify(own) !== JSON.stringify(ownIniz)) ok = await aggiorna("proprietari", `id=eq.${a.own.id}`, Object.fromEntries(Object.entries(own).map(([k, v]) => [k, String(v).trim() || null])));
     setLavoro(false);
     if (ok) { setMsg(["ok", "Modifiche salvate"]); salvato(); }
     else setMsg(["err", "Salvataggio non riuscito. Controlla di aver fatto l'accesso."]);
@@ -466,6 +521,45 @@ function SchedaRegola({ a, salvato }) {
           <div className="sub">{[a.indirizzo, a.citta, a.provincia].filter(Boolean).join(", ") || "Indirizzo non presente su Kross"}{a.cin ? ` · CIN ${a.cin}` : ""}</div>
         </div>
         <div className="muted">ID Kross {a.id_room_type}</div>
+      </div>
+
+      <div className="sec">
+        <h2 style={{ marginBottom: 4 }}>{sub ? "Proprietario (locatore)" : "Proprietario"}</h2>
+        <div className="sub" style={{ marginBottom: 14 }}>{sub ? "Chi ci affitta l'immobile." : "Intestatario della fattura delle provvigioni e destinatario del rendiconto."}</div>
+        {!a.prop ? (
+          <div className="note warn"><Ico n="warn" />Questo appartamento di Kross non è collegato a nessuna proprietà del CRM: niente proprietario, agente né property manager. Va collegato nel CRM, sezione Proprietà.</div>
+        ) : !a.own ? (
+          <div className="note warn"><Ico n="warn" />La proprietà «{a.prop.nome}» non ha un proprietario collegato nel CRM.</div>
+        ) : (
+          <>
+            <div className="grid2">
+              {CAMPI_OWN.map(([k, l]) => <Campo key={k} l={l}><input value={own[k]} onChange={(e) => { const v = e.target.value; setOwn((x) => ({ ...x, [k]: v })); setMsg(null); }} /></Campo>)}
+            </div>
+            {(() => {
+              const manca = [["codice_fiscale", "codice fiscale"], ["indirizzo", "indirizzo"], ["email", "email"]].filter(([k]) => !String(own[k]).trim()).map(([, l]) => l);
+              return manca.length > 0 && <div className="hint" style={{ color: "var(--warn)" }}>Per fatturare servono anche: {manca.join(", ")}.</div>;
+            })()}
+          </>
+        )}
+      </div>
+
+      <div className="sec">
+        <h2 style={{ marginBottom: 14 }}>Chi segue l'appartamento</h2>
+        {!a.prop ? <div className="muted">Disponibile dopo il collegamento alla proprietà nel CRM.</div> : (
+          <div className="grid2">
+            <Campo l="Property manager" h="Segue l'appartamento e lo vede nel CRM.">
+              <SceltaPersona v={pers.gestore_interno} onChange={(v) => { setPers((x) => ({ ...x, gestore_interno: v })); setMsg(null); }} team={team} ph="Nessuno" />
+            </Campo>
+            <Campo l="Agente" h="Chi ha portato il mandato.">
+              <SceltaPersona v={pers.agente} onChange={(v) => { setPers((x) => ({ ...x, agente: v })); setMsg(null); }} team={team} ph="Nessun agente" />
+            </Campo>
+            {!sub && pers.agente && (
+              <Campo l="Quota dell'agente (% sulla provvigione netta)" h="Regola in memoria per i mandati attuali: 20% ricorrente. Vuoto = da decidere.">
+                <input type="number" step="0.01" value={b.agente_pct ?? ""} onChange={(e) => set("agente_pct", e.target.value)} placeholder="da decidere" />
+              </Campo>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="sec">
@@ -521,7 +615,7 @@ function SchedaRegola({ a, salvato }) {
         </label>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
           {msg && <span style={{ fontSize: 12.5, color: msg[0] === "ok" ? "var(--ok)" : "var(--err)", display: "inline-flex", gap: 5, alignItems: "center" }}>{msg[0] === "ok" && <Ico n="check" s={14} />}{msg[1]}</span>}
-          <button className="btn" disabled={!modificato || lavoro} onClick={() => { setB(iniziale); setMsg(null); }}>Annulla</button>
+          <button className="btn" disabled={!modificato || lavoro} onClick={() => { setB(iniziale); setPers(persIniz); setOwn(ownIniz); setMsg(null); }}>Annulla</button>
           <button className="btn pri" disabled={!modificato || lavoro} onClick={salva}>{lavoro ? "Salvo…" : "Salva modifiche"}</button>
         </div>
       </div>
