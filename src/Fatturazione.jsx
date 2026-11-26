@@ -169,12 +169,49 @@ const SiNo = ({ v, onChange, si = "Sì", no = "No" }) => (
   <select value={String(!!v)} onChange={(e) => onChange(e.target.value === "true")}><option value="true">{si}</option><option value="false">{no}</option></select>
 );
 
+/* Quanto resta a Valente su UNA prenotazione (IVA esclusa), prima dei costi fissi del mese.
+   Gestione: provvigione + pulizie pagate dall'ospite (se restano a noi) − costo pulizia − agente − % PM.
+   Sublocazione: incasso senza IVA − commissione OTA − costo pulizia − % PM. */
+function contoPrenotazione(r, a, costoPulizia, ivaSub = 10, pctPmGenerale = 0) {
+  const sub = r.tipo_gestione === "sublocazione";
+  const reg = a?.regola || {};
+  const ivaAll = reg.iva_alloggio != null ? Number(reg.iva_alloggio) : ivaSub;
+  const pulOspite = Number(r.pulizie) || 0;
+  const pulizieNoi = !sub && reg.addebita_pulizie_al_proprietario !== false ? pulOspite / (reg.pulizie_iva_inclusa === false ? 1 : 1.22) : 0;
+  const ricavo = sub
+    ? (Number(r.totale_ospite) || 0) / (1 + ivaAll / 100) - (Number(r.ota) || 0)
+    : (Number(r.prov_netta) || 0) + pulizieNoi;
+  const agPct = !sub && a?.prop?.agente && reg.agente_pct != null ? Number(reg.agente_pct) : 0;
+  const agente = (Number(r.prov_netta) || 0) * agPct / 100;
+  const pmPct = reg.pm_pct != null ? Number(reg.pm_pct) : pctPmGenerale;
+  const pm = Math.max(ricavo, 0) * pmPct / 100;
+  const pul = costoPulizia ?? (r.costo_pulizia != null ? Number(r.costo_pulizia) : reg.costo_pulizia != null ? Number(reg.costo_pulizia) : null);
+  const aCaricoProprietario = !sub && !!r.base_meno_pulizie;   // tolta dalla base: la paga il proprietario
+  const pulNoi = aCaricoProprietario ? 0 : (pul || 0);
+  return { sub, ricavo, pulizieNoi, agente, agPct, pm, pmPct, pulizia: pul, aCaricoProprietario, resta: ricavo - agente - pm - pulNoi };
+}
+
 /* ───────────────────────────── Prenotazioni ───────────────────────────── */
 
 function Prenotazioni({ modello }) {
   const sub = modello === "sublocazione";
   const [ana, setAna] = useState({});
-  useEffect(() => { caricaAnagrafica().then(({ app }) => setAna(Object.fromEntries(app.map((a) => [a.id_room_type, a])))); }, []);
+  const [pul, setPul] = useState({});
+  const [cfg, setCfg] = useState({ ivaSub: 10, comp: {} });
+  const caricaPulizie = useCallback(() => leggiTutto("fat_pulizie", "?select=id_reservation,costo").then((x) => setPul(Object.fromEntries(x.map((p) => [p.id_reservation, Number(p.costo)])))), []);
+  useEffect(() => {
+    caricaAnagrafica().then(({ app }) => setAna(Object.fromEntries(app.map((a) => [a.id_room_type, a]))));
+    caricaPulizie();
+    Promise.all([leggi("fat_config", "?select=chiave,valore"), leggi("fat_compensi", "?select=*")]).then(([c, k]) => setCfg({
+      ivaSub: Number((c.find((x) => x.chiave === "iva_sublocazione") || {}).valore) || 0,
+      comp: Object.fromEntries(k.map((x) => [x.persona.toLowerCase(), x])),
+    }));
+  }, [caricaPulizie]);
+  const conto = useCallback((r) => {
+    const a = ana[r.id_room_type];
+    const pmGen = Number(cfg.comp[String(a?.prop?.gestore_interno || "").trim().toLowerCase()]?.pct_provvigione) || 0;
+    return contoPrenotazione(r, a, pul[r.id_reservation], cfg.ivaSub, pmGen);
+  }, [ana, pul, cfg]);
   const [righe, setRighe] = useState(null);
   const [cerca, setCerca] = useState("");
   const [mese, setMese] = useState("");
@@ -186,7 +223,14 @@ function Prenotazioni({ modello }) {
   const sf = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const nFiltri = Object.entries(f).filter(([k, v]) => k !== "ordine" && v).length + (mese ? 1 : 0) + (filtro !== "tutte" ? 1 : 0) + (cerca ? 1 : 0);
 
-  useEffect(() => { leggiTutto("v_fat_prenotazione", "?select=*&order=arrivo.desc").then(setRighe); }, []);
+  const caricaRighe = useCallback(() => leggiTutto("v_fat_prenotazione", "?select=*&order=arrivo.desc").then((x) => { setRighe(x); return x; }), []);
+  useEffect(() => { caricaRighe(); }, [caricaRighe]);
+  const dopoPulizia = useCallback(async (id) => {
+    await caricaPulizie();
+    const x = await caricaRighe();
+    const nuova = x.find((r) => r.id_reservation === id);
+    if (nuova) setAperta(nuova);
+  }, [caricaPulizie, caricaRighe]);
   const mesi = useMemo(() => [...new Set((righe || []).map((r) => r.mese_rendiconto).filter(Boolean))].sort().reverse(), [righe]);
 
   /* Le scelte dei menu a tendina, prese solo dalle prenotazioni di questo modello. */
@@ -238,7 +282,8 @@ function Prenotazioni({ modello }) {
     prop: a.prop + (Number(r.quota_proprietario_lorda) || 0),
     ota: a.ota + (Number(r.ota) || 0),
     pul: a.pul + (Number(r.pulizie) || 0),
-  }), { ospite: 0, prop: 0, prov: 0, ota: 0, pul: 0 }), [filtrate]);
+    resta: a.resta + conto(r).resta,
+  }), { ospite: 0, prop: 0, prov: 0, ota: 0, pul: 0, resta: 0 }), [filtrate, conto]);
   const chiudi = useCallback(() => setAperta(null), []);
 
   if (!righe) return <Vuoto t="Carico le prenotazioni…" />;
@@ -250,11 +295,11 @@ function Prenotazioni({ modello }) {
         <Kpi t="Pagato dagli ospiti" v={euro(tot.ospite)} />
         {sub ? <>
           <Kpi t="Commissioni OTA" v={euro(tot.ota)} />
-          <Kpi t="Pulizie" v={euro(tot.pul)} />
         </> : <>
           <Kpi t="Provvigioni (netto IVA)" v={euro(tot.prov)} />
           <Kpi t="Quota proprietari" v={euro(tot.prop)} />
         </>}
+        <Kpi t="Resta a Valente" v={euro(tot.resta)} n="dopo pulizie, agente e PM; prima dei costi fissi" tono={tot.resta < 0 ? "warn" : "ok"} />
       </div>
       <div className="card" style={{ overflow: "hidden" }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", padding: 14, borderBottom: "1px solid var(--line)" }}>
@@ -288,7 +333,7 @@ function Prenotazioni({ modello }) {
           <table>
             <thead><tr>
               <th>Ospite</th><th>Appartamento</th><th>Soggiorno</th><th>Canale</th>
-              <th className="num">Totale ospite</th>{sub ? <><th className="num">Pulizie</th><th className="num">Commissione OTA</th></> : <><th className="num">Provvigione</th><th className="num">Al proprietario</th></>}<th>Stato</th>
+              <th className="num">Totale ospite</th>{sub ? <><th className="num">Commissione OTA</th></> : <><th className="num">Provvigione</th><th className="num">Al proprietario</th></>}<th className="num">Costo pulizia</th><th className="num">Resta a Valente</th><th>Stato</th>
             </tr></thead>
             <tbody>
               {filtrate.slice(0, limite).map((r) => {
@@ -302,12 +347,15 @@ function Prenotazioni({ modello }) {
                     <td><span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><span className="dot" style={{ background: col }} />{can}</span></td>
                     <td className="num">{euro(r.totale_ospite)}</td>
                     {sub ? <>
-                      <td className="num">{euro(r.pulizie)}</td>
                       <td className="num">{euro(r.ota)}</td>
                     </> : <>
                       <td className="num">{euro(r.prov_netta)}</td>
                       <td className="num">{euro(r.quota_proprietario_lorda)}</td>
                     </>}
+                    {(() => { const c = conto(r); return <>
+                      <td className="num">{c.pulizia == null ? <span className="pill warn">manca</span> : euro(c.pulizia)}</td>
+                      <td className="num" style={{ fontWeight: 600, color: c.resta < 0 ? "var(--err)" : undefined }}>{euro(c.resta)}</td>
+                    </>; })()}
                     <td>{nav ? <span className="pill warn">{nav} {nav === 1 ? "avviso" : "avvisi"}</span> : <span className="pill ok">Pronta</span>}</td>
                   </tr>
                 );
@@ -318,13 +366,23 @@ function Prenotazioni({ modello }) {
         </div>
         {filtrate.length > limite && <div style={{ textAlign: "center", padding: 14, borderTop: "1px solid var(--line)" }}><button className="btn" onClick={() => setLimite(limite + 200)}>Mostra altre {Math.min(200, filtrate.length - limite)} (ne restano {filtrate.length - limite})</button></div>}
       </div>
-      {aperta && <DettaglioPrenotazione r={aperta} a={ana[aperta.id_room_type]} chiudi={chiudi} />}
+      {aperta && <DettaglioPrenotazione r={aperta} a={ana[aperta.id_room_type]} chiudi={chiudi} conto={conto(aperta)} costoSalvato={pul[aperta.id_reservation]} salvato={() => dopoPulizia(aperta.id_reservation)} />}
     </div>
   );
 }
 
-function DettaglioPrenotazione({ r, a, chiudi }) {
+function DettaglioPrenotazione({ r, a, chiudi, conto, costoSalvato, salvato }) {
   const sub = r.tipo_gestione === "sublocazione";
+  const [costo, setCosto] = useState(conto?.pulizia ?? "");
+  const [statoPul, setStatoPul] = useState(null);
+  useEffect(() => { setCosto(conto?.pulizia ?? ""); setStatoPul(null); }, [r.id_reservation]); // eslint-disable-line
+  const salvaPulizia = async () => {
+    const ok = costo === ""
+      ? (await fetch(`${SUPABASE_URL}/rest/v1/fat_pulizie?id_reservation=eq.${r.id_reservation}`, { method: "DELETE", headers: intest() })).ok
+      : await inserisciOAggiorna("fat_pulizie", { id_reservation: r.id_reservation, costo: Number(costo), aggiornato_il: new Date().toISOString() }, "id_reservation");
+    setStatoPul(ok ? "ok" : "err"); if (ok) salvato();
+  };
+  const otaTot = (Number(r.ota) || 0) + (Number(r.ota_iva) || 0);
   const [int, setInt] = useState(undefined);
   const [boz, setBoz] = useState([]);
   useEffect(() => {
@@ -384,6 +442,43 @@ function DettaglioPrenotazione({ r, a, chiudi }) {
             ) : <div className="note info">I dati di fatturazione di questa prenotazione non sono ancora stati letti da Kross. Arrivano con la prossima sincronizzazione.</div>}
           </div>
           <div className="sec">
+            <h2 style={{ marginBottom: 6 }}>Rendicontazione</h2>
+            <div className="row"><span>Totale pernottamenti</span><span>{euro(r.alloggio)}</span></div>
+            <div className="row"><span>Pulizie pagate dall'ospite</span><span>{euro(r.pulizie)}</span></div>
+            <div className="row"><span>Commissioni OTA con IVA <span className="muted">(di cui IVA {euro(r.ota_iva)})</span></span><span>− {euro(otaTot)}</span></div>
+            <div className="row" style={{ alignItems: "center" }}>
+              <span>Costo pulizia, IVA esclusa{costo !== "" && Number(costo) ? <span className="muted"> · con IVA {euro(Number(costo) * 1.22)}</span> : ""}{costoSalvato == null && conto?.pulizia != null ? <span className="muted"> · standard dell'appartamento</span> : ""}</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <input type="number" step="0.01" value={costo} onChange={(e) => { setCosto(e.target.value); setStatoPul(null); }} placeholder="es. 85" style={{ width: 100, padding: "5px 8px", textAlign: "right" }} />
+                <button className="btn" style={{ padding: "5px 10px" }} disabled={String(costo) === String(conto?.pulizia ?? "")} onClick={salvaPulizia}>{statoPul === "ok" ? "✓" : "Salva"}</button>
+              </span>
+            </div>
+            {statoPul === "err" && <div className="hint" style={{ color: "var(--err)" }}>Salvataggio non riuscito.</div>}
+            {!sub && r.base_meno_pulizie && <div className="row"><span>Pulizia tolta dalla base, con IVA <span className="muted">(a carico del proprietario)</span></span><span>{r.costo_pulizia_lordo != null ? `− ${euro(r.costo_pulizia_lordo)}` : <span className="pill warn">manca il costo</span>}</span></div>}
+            {!sub && <div className="row"><span style={{ color: "var(--ink)" }}>Base di calcolo</span><span>{euro(r.base_importo)}</span></div>}
+            {!sub && <>
+              <div className="row"><span>Percentuale Valente ({r.commissione != null ? `${String(r.commissione).replace(".", ",")}%` : "—"}{r.commissione_iva_inclusa ? " IVA incl." : ""} su {euro(r.base_importo)})</span><span>{euro((Number(r.prov_netta) || 0) + (Number(r.prov_iva) || 0))}</span></div>
+              <div className="row tot"><span style={{ color: "var(--ink)" }}>Totale proprietario</span><span>{euro(r.quota_proprietario_lorda)}</span></div>
+              <div className="row"><span>Imposta trattenuta {r.sostituto_imposta ? `(${r.cedolare_pct}%)` : r.sostituto_imposta === false ? "(non applicata)" : "(sostituto da decidere)"}</span><span>{euro(r.cedolare)}</span></div>
+              <div className="row tot"><span style={{ color: "var(--ink)" }}>Netto proprietario</span><span>{euro(r.netto_proprietario)}</span></div>
+            </>}
+            <div className="hint">Rendiconto di {meseEsteso(r.mese_rendiconto)}.</div>
+          </div>
+          <div className="sec">
+            <h2 style={{ marginBottom: 6 }}>Quanto resta a Valente</h2>
+            {sub ? <>
+              <div className="row"><span>Incasso senza IVA meno commissioni OTA</span><span>{euro(conto?.ricavo)}</span></div>
+            </> : <>
+              <div className="row"><span>Provvigione netta (senza IVA)</span><span>{euro(r.prov_netta)}</span></div>
+              {conto?.pulizieNoi > 0 && <div className="row"><span>Pulizie pagate dall'ospite (senza IVA)</span><span>{euro(conto.pulizieNoi)}</span></div>}
+            </>}
+            <div className="row"><span>Costo pulizia (IVA esclusa){conto?.aCaricoProprietario ? " · la paga il proprietario" : ""}</span><span>{conto?.aCaricoProprietario ? "—" : conto?.pulizia == null ? <span className="pill warn">da inserire</span> : `− ${euro(conto.pulizia)}`}</span></div>
+            {conto?.agente > 0 && <div className="row"><span>Agente · {a?.prop?.agente} ({String(conto.agPct).replace(".", ",")}%)</span><span>− {euro(conto.agente)}</span></div>}
+            {conto?.pm > 0 && <div className="row"><span>Property manager · {a?.prop?.gestore_interno} ({String(conto.pmPct).replace(".", ",")}%)</span><span>− {euro(conto.pm)}</span></div>}
+            <div className="row tot"><span style={{ color: "var(--ink)" }}>Resta a Valente</span><span style={{ color: (conto?.resta || 0) < 0 ? "var(--err)" : undefined }}>{euro(conto?.resta)}</span></div>
+            <div className="hint">Prima dei costi fissi del mese (affitto, bollette, gestionale, fisso dei PM): quelli sono nei Margini.</div>
+          </div>
+          <div className="sec" style={{ display: "none" }}>
             <h2 style={{ marginBottom: 6 }}>Calcolo</h2>
             {[["Alloggio", r.alloggio], ["Pulizie", r.pulizie], ["Tassa di soggiorno", r.tassa], ["Totale pagato dall'ospite", r.totale_ospite]].map(([k, v]) => <div className="row" key={k}><span>{k}</span><span>{euro(v)}</span></div>)}
             <div className="row"><span>Commissione OTA (+ IVA {euro(r.ota_iva)})</span><span>− {euro(r.ota)}</span></div>
@@ -810,8 +905,8 @@ function SchedaRegola({ a, team, salvato, proprietaLibere = [] }) {
         <h2 style={{ marginBottom: 14 }}>{b.modello === "sublocazione" ? "Contratto" : "Contratto e commissione"}</h2>
         <div className="grid2">
           <Campo l="Modello"><select value={b.modello} onChange={(e) => set("modello", e.target.value)}><option value="gestione">Gestione per conto terzi</option><option value="sublocazione">Sublocazione</option></select></Campo>
-          <Campo l="Costo di una pulizia (€)" h="Quanto paghi l'impresa a ogni check-out. Nei margini si toglie per ogni prenotazione.">
-            <input type="number" step="0.01" value={b.costo_pulizia ?? ""} onChange={(e) => set("costo_pulizia", e.target.value)} placeholder="es. 40" />
+          <Campo l="Costo standard di una pulizia (€, IVA esclusa)" h="Es. 85 = 85 € + IVA (103,70 €). Vale per ogni prenotazione; sulla singola prenotazione si può cambiare.">
+            <input type="number" step="0.01" value={b.costo_pulizia ?? ""} onChange={(e) => set("costo_pulizia", e.target.value)} placeholder="es. 85" />
           </Campo>
           {b.modello !== "sublocazione" && <>
           <Campo l="Commissione (%)"><input type="number" step="0.01" value={b.commissione ?? ""} onChange={(e) => set("commissione", e.target.value)} placeholder="es. 20" /></Campo>
@@ -971,7 +1066,7 @@ const pct = (v) => (v == null || !isFinite(v) ? "—" : `${v.toFixed(1).replace(
 
 async function caricaEconomia() {
   const [pren, { app, team }, costi, compensi, conf, bollette] = await Promise.all([
-    leggiTutto("v_fat_prenotazione", "?select=id_room_type,mese_rendiconto,totale_ospite,ota,prov_netta,quota_proprietario_lorda,tipo_gestione"),
+    leggiTutto("v_fat_prenotazione", "?select=id_reservation,id_room_type,mese_rendiconto,totale_ospite,ota,pulizie,prov_netta,quota_proprietario_lorda,tipo_gestione,costo_pulizia,base_meno_pulizie"),
     caricaAnagrafica(),
     leggi("fat_costi", "?select=*&order=categoria,voce"),
     leggi("fat_compensi", "?select=*&order=persona"),
@@ -998,14 +1093,17 @@ function calcolaMargini(eco, periodo) {
     const incasso = mie.reduce((s, p) => s + (Number(p.totale_ospite) || 0), 0);
     const ota = mie.reduce((s, p) => s + (Number(p.ota) || 0), 0);
     const proprietario = sub ? 0 : mie.reduce((s, p) => s + (Number(p.quota_proprietario_lorda) || 0), 0);
-    const ricavo = sub ? incasso / (1 + ivaAll / 100) - ota : mie.reduce((s, p) => s + (Number(p.prov_netta) || 0), 0);
-
     const pm = pmDi(a), c = comp[pm.toLowerCase()];
-    const pmPct = a.regola?.pm_pct != null ? Number(a.regola.pm_pct) : c?.pct_provvigione != null ? Number(c.pct_provvigione) : 0;
+    const pmGen = c?.pct_provvigione != null ? Number(c.pct_provvigione) : 0;
+    const conti = mie.map((p) => contoPrenotazione({ ...p, tipo_gestione: sub ? "sublocazione" : "gestione" }, a, undefined, ivaSub, pmGen));
+    const ricavo = conti.reduce((x, k) => x + k.ricavo, 0);
+    const pmPct = a.regola?.pm_pct != null ? Number(a.regola.pm_pct) : pmGen;
     const pmFisso = c?.fisso_mensile ? (Number(c.fisso_mensile) / (seguiti[pm.toLowerCase()] || 1)) * mesi.length : 0;
-    const costoPm = pmFisso + Math.max(ricavo, 0) * pmPct / 100;
+    const costoPm = pmFisso + conti.reduce((x, k) => x + k.pm, 0);
     const agPct = !sub && a.prop?.agente && a.regola?.agente_pct != null ? Number(a.regola.agente_pct) : 0;
-    const costoAg = Math.max(ricavo, 0) * agPct / 100;
+    const costoAg = conti.reduce((x, k) => x + k.agente, 0);
+    const pulizieCosto = conti.reduce((x, k) => x + (k.aCaricoProprietario ? 0 : (k.pulizia || 0)), 0);
+    const senzaCostoPul = conti.filter((k) => k.pulizia == null && !k.aCaricoProprietario).length;
 
     const perCat = {};
     mesi.forEach((m) => costi.forEach((k) => {
@@ -1016,7 +1114,7 @@ function calcolaMargini(eco, periodo) {
       if (v) perCat[k.categoria] = (perCat[k.categoria] || 0) + v;
     }));
     const cp = Number(a.regola?.costo_pulizia) || 0;
-    if (cp && mie.length) perCat.pulizie = (perCat.pulizie || 0) + cp * mie.length;
+    if (pulizieCosto) perCat.pulizie = (perCat.pulizie || 0) + pulizieCosto;
     bollette.forEach((b) => {
       const ids = b.id_room_types || [];
       if (!ids.includes(a.id_room_type)) return;
@@ -1028,7 +1126,7 @@ function calcolaMargini(eco, periodo) {
     return {
       a, sub, n: mie.length, incasso, ota, netto: incasso - ota, proprietario, ricavo, pm, pmPct, pmFisso, costoPm,
       agente: a.prop?.agente || null, agPct, agPctMancante: !sub && !!a.prop?.agente && a.regola?.agente_pct == null, costoAg,
-      perCat, costiTot, margine, margPct: ricavo > 0 ? (margine / ricavo) * 100 : null, ivaAll, costoPulizia: cp,
+      perCat, costiTot, margine, margPct: ricavo > 0 ? (margine / ricavo) * 100 : null, ivaAll, costoPulizia: cp, senzaCostoPul,
     };
   });
   return righe;
@@ -1065,7 +1163,7 @@ function Margini({ modello }) {
   const mancaAg = righe.filter((r) => r.agPctMancante).length;
   const senzaCosti = righe.filter((r) => sub && !r.perCat.affitto).length;
   const bolDaAss = sub ? (eco.bollette || []).filter((b) => !(b.id_room_types || []).length).length : 0;
-  const senzaPul = sub ? righe.filter((r) => r.n > 0 && !r.costoPulizia).length : 0;
+  const senzaPul = righe.filter((r) => r.senzaCostoPul > 0).length;
   const Th = ({ k, children }) => <th className="num" style={{ cursor: "pointer", color: ordine === k ? "var(--ink)" : undefined }} onClick={() => setOrdine(k)}>{children}{ordine === k ? " ↓" : ""}</th>;
 
   return (
@@ -1091,7 +1189,7 @@ function Margini({ modello }) {
       {(mancaAg > 0 || senzaCosti > 0 || bolDaAss > 0 || senzaPul > 0) && (
         <div className="note warn"><Ico n="warn" /><div>
           {mancaAg > 0 && <div>{mancaAg} appartamenti hanno un agente ma la sua quota è «da decidere»: il costo agente qui vale zero.</div>}
-          {senzaPul > 0 && <div>{senzaPul} sublocazioni non hanno il costo della pulizia: inseriscilo nella scheda dell'appartamento (quanto paghi l'impresa a ogni check-out).</div>}
+          {senzaPul > 0 && <div>{senzaPul} appartamenti hanno prenotazioni senza costo pulizia: inseriscilo nella scheda dell'appartamento (costo standard) o sulla singola prenotazione.</div>}
           {bolDaAss > 0 && <div>{bolDaAss} bollette non sono assegnate a nessun appartamento: assegnale in «Costi e compensi».</div>}
           {senzaCosti > 0 && <div>{senzaCosti} sublocazioni non hanno l'affitto inserito: il margine è sovrastimato. Inseriscilo in «Costi e compensi».</div>}
         </div></div>
@@ -1186,7 +1284,7 @@ function DettaglioMargine({ r, periodo, chiudi }) {
           </div>
           <div className="sec">
             <h2 style={{ marginBottom: 6 }}>Costi fissi</h2>
-            {Object.keys(r.perCat).length ? Object.entries(r.perCat).map(([k, v]) => <Riga key={k} l={k === "pulizie" && r.costoPulizia ? `Pulizie · ${r.n} × ${euro(r.costoPulizia)}` : etiCat(k)} v={v} meno />) : <div className="muted">Nessun costo inserito per questo appartamento.</div>}
+            {Object.keys(r.perCat).length ? Object.entries(r.perCat).map(([k, v]) => <Riga key={k} l={k === "pulizie" ? "Pulizie pagate all'impresa (IVA esclusa)" : etiCat(k)} v={v} meno />) : <div className="muted">Nessun costo inserito per questo appartamento.</div>}
             <div className="hint">I costi generali (es. il gestionale) sono divisi in parti uguali su tutti gli appartamenti di Kross.</div>
           </div>
           <div className="sec">
