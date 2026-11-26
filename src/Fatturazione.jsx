@@ -1976,7 +1976,145 @@ function RendicontoMensile({ modello }) {
 
 /* ───────────────────────────── Pagina ───────────────────────────── */
 
-const TABS = [["prenotazioni", "Prenotazioni", "list"], ["rendiconto", "Rendiconto mensile", "doc"], ["margini", "Margini", "chart"], ["planner", "Planner", "cal"], ["appartamenti", "Appartamenti e criteri", "home"], ["pm", "Property manager", "user"], ["agenti", "Agenti", "user"], ["costi", "Costi e compensi", "euro"], ["impostazioni", "Impostazioni", "gear"]];
+
+/* ───────────── Cassa: quando arrivano e quando escono i soldi ───────────── */
+const isoG = (d) => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
+const lunedi = (s) => { const d = new Date(s + "T00:00:00"); const g = (d.getDay() + 6) % 7; d.setDate(d.getDate() - g); return isoG(d); };
+const piuGiorni = (s, n) => { const d = new Date(s + "T00:00:00"); d.setDate(d.getDate() + n); return isoG(d); };
+
+function Cassa() {
+  const [d, setD] = useState(null);
+  const [aperta, setAperta] = useState(null);
+  const [sett, setSett] = useState(10);
+  const oggi = isoG(new Date());
+  useEffect(() => { (async () => {
+    const da = piuGiorni(oggi, -70), a = piuGiorni(oggi, 200);
+    const meseDa = da.slice(0, 7) + "-01";
+    const [inc, prop, costi, comp] = await Promise.all([
+      leggiTutto("v_fat_cassa_incassi", `?select=*&data_incasso=gte.${da}&data_incasso=lte.${a}&order=data_incasso`),
+      leggiTutto("v_fat_prenotazione", `?select=id_reservation,arrivo,quota_proprietario_lorda&tipo_gestione=eq.gestione&arrivo=gte.${piuGiorni(meseDa, -40)}`),
+      leggi("fat_costi", "?select=*&attivo=eq.true"),
+      leggi("fat_compensi", "?select=*"),
+    ]);
+    setD({ inc, prop, costi, comp });
+  })(); }, [oggi]);
+
+  const conto = useMemo(() => {
+    if (!d) return null;
+    const incassoDi = Object.fromEntries(d.inc.map((r) => [r.id_reservation, r.data_incasso]));
+    // Uscite: proprietari il 10 del mese dopo il check-in; costi mensili il 10; compensi fissi il 5.
+    const uscite = [];
+    const perMese = {};
+    d.prop.forEach((r) => { const m = String(r.arrivo).slice(0, 7); perMese[m] = (perMese[m] || 0) + (Number(r.quota_proprietario_lorda) || 0); });
+    Object.entries(perMese).forEach(([m, v]) => {
+      const [y, mm] = m.split("-").map(Number); const g = isoG(new Date(y, mm, 10));
+      uscite.push({ data: g, voce: `Proprietari · ${meseEsteso(m)}`, tipo: "proprietari", importo: v });
+    });
+    const inizio = piuGiorni(oggi, -70), fine = piuGiorni(oggi, 200);
+    for (let x = new Date(inizio.slice(0, 7) + "-01T00:00:00"); isoG(x) <= fine; x.setMonth(x.getMonth() + 1)) {
+      const g10 = isoG(new Date(x.getFullYear(), x.getMonth(), 10)), g5 = isoG(new Date(x.getFullYear(), x.getMonth(), 5));
+      let tot = 0;
+      d.costi.forEach((c) => {
+        if (c.dal && c.dal > g10) return; if (c.al && c.al < isoG(new Date(x.getFullYear(), x.getMonth(), 1))) return;
+        tot += Number(c.importo_mensile) || 0;
+      });
+      if (tot) uscite.push({ data: g10, voce: "Affitti, personale e costi fissi", tipo: "costi", importo: tot });
+      const fissi = d.comp.reduce((t, c) => t + (Number(c.fisso_mensile) || 0), 0);
+      if (fissi) uscite.push({ data: g5, voce: "Compensi fissi", tipo: "costi", importo: fissi });
+    }
+    const primo = lunedi(piuGiorni(oggi, -28));
+    const settimane = Array.from({ length: 4 + sett }, (_, i) => piuGiorni(primo, i * 7));
+    const righe = settimane.map((w) => {
+      const fineW = piuGiorni(w, 6);
+      const dentro = (x) => x >= w && x <= fineW;
+      const inc = d.inc.filter((r) => dentro(r.data_incasso));
+      const usc = uscite.filter((u) => dentro(u.data));
+      const g = inc.filter((r) => r.tipo_gestione !== "sublocazione").reduce((t, r) => t + Number(r.importo || 0), 0);
+      const s = inc.filter((r) => r.tipo_gestione === "sublocazione").reduce((t, r) => t + Number(r.importo || 0), 0);
+      const pr = usc.filter((u) => u.tipo === "proprietari").reduce((t, u) => t + u.importo, 0);
+      const co = usc.filter((u) => u.tipo === "costi").reduce((t, u) => t + u.importo, 0);
+      return { w, fineW, inc, usc, g, s, pr, co, netto: g + s - pr - co, passata: fineW < oggi, corrente: dentro(oggi) };
+    });
+    let cum = 0; righe.forEach((r) => { if (!r.passata) { cum += r.netto; r.cum = cum; } });
+    // Soldi dei proprietari già arrivati e non ancora girati
+    const daGirare = d.prop.filter((r) => {
+      const di = incassoDi[r.id_reservation]; if (!di || di > oggi) return false;
+      const [y, mm] = String(r.arrivo).slice(0, 7).split("-").map(Number);
+      return isoG(new Date(y, mm, 10)) >= oggi;
+    }).reduce((t, r) => t + (Number(r.quota_proprietario_lorda) || 0), 0);
+    const somma = (f) => d.inc.filter(f).reduce((t, r) => t + Number(r.importo || 0), 0);
+    const p30 = piuGiorni(oggi, 30), m30 = piuGiorni(oggi, -30);
+    return {
+      righe, daGirare,
+      incassati30: somma((r) => r.data_incasso > m30 && r.data_incasso <= oggi),
+      arrivo30: somma((r) => r.data_incasso > oggi && r.data_incasso <= p30),
+      uscite30: uscite.filter((u) => u.data > oggi && u.data <= p30).reduce((t, u) => t + u.importo, 0),
+    };
+  }, [d, sett, oggi]);
+
+  if (!conto) return <Vuoto t="Calcolo il flusso di cassa…" />;
+  const r0 = aperta != null ? conto.righe[aperta] : null;
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <div className="kpis">
+        <Kpi t="Incassato ultimi 30 giorni" v={euro(conto.incassati30)} n="netto commissioni OTA" />
+        <Kpi t="In arrivo prossimi 30 giorni" v={euro(conto.arrivo30)} n="solo prenotazioni già fatte" />
+        <Kpi t="Da girare ai proprietari" v={euro(conto.daGirare)} tono="warn" n="già incassati, si pagano il 10" />
+        <Kpi t="Uscite prossimi 30 giorni" v={euro(conto.uscite30)} n="proprietari, affitti, personale, fissi" />
+      </div>
+      <div className="note info"><Ico n="warn" /><div>
+        Quando arrivano i soldi: <b>Airbnb</b> il giorno dopo il check-in, <b>Booking</b> il giovedì (o venerdì) dopo il check-out, <b>dirette</b> alla prenotazione. Importi già senza commissione OTA e senza tassa di soggiorno.
+        Uscite stimate: proprietari il 10 del mese dopo il check-in, affitti/personale/costi fissi il 10, compensi fissi il 5. Bollette e spese una tantum non sono contate; le prenotazioni che arriveranno in futuro non ci sono ancora.
+      </div></div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <span className="muted">Settimane future:</span>
+        <select value={sett} onChange={(e) => setSett(Number(e.target.value))} style={{ width: 120 }}>
+          {[6, 10, 16, 26].map((n) => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </div>
+      <div className="card" style={{ overflowX: "auto" }}>
+        <table>
+          <thead><tr><th>Settimana</th><th className="num">Incassi gestioni</th><th className="num">Incassi sublocazioni</th><th className="num">Ai proprietari</th><th className="num">Affitti e costi</th><th className="num">Netto settimana</th><th className="num">Cumulato da oggi</th></tr></thead>
+          <tbody>
+            {conto.righe.map((r, i) => (
+              <tr key={r.w} onClick={() => setAperta(i)} style={{ cursor: "pointer", opacity: r.passata ? 0.6 : 1, background: r.corrente ? "var(--soft, #F4F1EA)" : undefined }}>
+                <td>{dataBreve(r.w)} – {dataBreve(r.fineW)}{r.corrente && <span className="pill acc" style={{ marginLeft: 6 }}>oggi</span>}{r.passata && <span className="muted"> · già avvenuta</span>}</td>
+                <td className="num">{euro(r.g)}</td>
+                <td className="num">{euro(r.s)}</td>
+                <td className="num">{r.pr ? "−" + euro(r.pr) : "—"}</td>
+                <td className="num">{r.co ? "−" + euro(r.co) : "—"}</td>
+                <td className="num" style={{ color: r.netto < 0 ? "#B42318" : undefined, fontWeight: 600 }}>{euro(r.netto)}</td>
+                <td className="num">{r.cum != null ? euro(r.cum) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {r0 && (
+        <div className="card" style={{ padding: 18 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <b>Settimana {dataBreve(r0.w)} – {dataBreve(r0.fineW)}</b>
+            <button className="btn" onClick={() => setAperta(null)}>Chiudi</button>
+          </div>
+          <table>
+            <thead><tr><th>Data</th><th>Canale</th><th>Appartamento</th><th>Ospite</th><th>Regola</th><th className="num">Importo</th></tr></thead>
+            <tbody>
+              {r0.inc.map((x) => (
+                <tr key={x.id_reservation}><td>{dataBreve(x.data_incasso)}</td><td>{canale(x.canale)[1]}</td><td>{x.appartamento}</td><td>{x.ospite}</td><td className="muted">{x.regola}</td><td className="num">{euro(x.importo)}</td></tr>
+              ))}
+              {r0.usc.map((u, k) => (
+                <tr key={"u" + k}><td>{dataBreve(u.data)}</td><td>Uscita</td><td colSpan={3}>{u.voce}</td><td className="num">−{euro(u.importo)}</td></tr>
+              ))}
+              {!r0.inc.length && !r0.usc.length && <tr><td colSpan={6} className="muted">Niente in questa settimana.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TABS = [["prenotazioni", "Prenotazioni", "list"], ["rendiconto", "Rendiconto mensile", "doc"], ["margini", "Margini", "chart"], ["cassa", "Cassa", "euro"], ["planner", "Planner", "cal"], ["appartamenti", "Appartamenti e criteri", "home"], ["pm", "Property manager", "user"], ["agenti", "Agenti", "user"], ["costi", "Costi e compensi", "euro"], ["impostazioni", "Impostazioni", "gear"]];
 
 export default function Fatturazione() {
   const [tab, setTab] = useState("prenotazioni");
@@ -2040,6 +2178,7 @@ export default function Fatturazione() {
       {tab === "prenotazioni" && <Prenotazioni modello={modello} />}
       {tab === "appartamenti" && <Appartamenti modello={modello} />}
       {tab === "margini" && <Margini modello={modello} />}
+      {tab === "cassa" && <Cassa />}
       {tab === "rendiconto" && <RendicontoMensile key={modello} modello={modello} />}
       {tab === "costi" && <Costi modello={modello} />}
       {tab === "agenti" && <Persone key="ag" ruolo="agente" />}
