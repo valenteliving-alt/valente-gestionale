@@ -1461,7 +1461,9 @@ function RigaCompenso({ persona, c, n, salva }) {
    L'agente di un appartamento sta in proprieta.agente (uno solo per appartamento); la sua quota
    in fat_regole.agente_pct, % sulla provvigione di Valente senza IVA (20% per i mandati attuali). */
 
-function Agenti() {
+function Persone({ ruolo }) {
+  const pm = ruolo === "pm";
+  const campo = pm ? "gestore_interno" : "agente";
   const [dati, setDati] = useState(null);
   const [sel, setSel] = useState("");
   const [cerca, setCerca] = useState("");
@@ -1470,27 +1472,29 @@ function Agenti() {
   const anno = String(new Date().getFullYear());
 
   const carica = useCallback(async () => {
-    const [{ app, team, soloCrm }, pren] = await Promise.all([
+    const [{ app, team, soloCrm }, pren, compensi] = await Promise.all([
       caricaAnagrafica(),
       leggiTutto("v_fat_prenotazione", `?select=id_room_type,mese_rendiconto,prov_netta&mese_rendiconto=like.${anno}-*`),
+      leggi("fat_compensi", "?select=*"),
     ]);
-    setDati({ app, team, soloCrm, pren });
+    setDati({ app, team, soloCrm, pren, compensi });
   }, [anno]);
   useEffect(() => { carica(); }, [carica]);
 
   const agenti = useMemo(() => {
     if (!dati) return [];
     const nomi = new Map();
-    dati.team.filter((t) => /agent/i.test(t.ruolo)).forEach((t) => nomi.set(t.nome.toLowerCase(), t.nome));
-    [...dati.app, ...dati.soloCrm].forEach((a) => { const n = String(a.prop?.agente || "").trim(); if (n && !nomi.has(n.toLowerCase())) nomi.set(n.toLowerCase(), n); });
+    dati.team.filter((t) => (pm ? /property|pm|manager|burocr|titolare/i : /agent/i).test(t.ruolo)).forEach((t) => nomi.set(t.nome.toLowerCase(), t.nome));
+    [...dati.app, ...dati.soloCrm].forEach((a) => { const n = String(a.prop?.[campo] || "").trim(); if (n && !nomi.has(n.toLowerCase())) nomi.set(n.toLowerCase(), n); });
     return [...nomi.values()].sort((a, b) => a.localeCompare(b, "it")).map((nome) => {
-      const mie = [...dati.app, ...dati.soloCrm].filter((a) => String(a.prop?.agente || "").trim().toLowerCase() === nome.toLowerCase());
+      const mie = [...dati.app, ...dati.soloCrm].filter((a) => String(a.prop?.[campo] || "").trim().toLowerCase() === nome.toLowerCase());
+      const comp = dati.compensi.find((c) => c.persona.toLowerCase() === nome.toLowerCase());
       const maturato = mie.filter((a) => a.id_room_type != null).reduce((s, a) => {
-        const pct = Number(a.regola?.agente_pct) || 0;
+        const pct = pm ? Number(a.regola?.pm_pct ?? comp?.pct_provvigione) || 0 : Number(a.regola?.agente_pct) || 0;
         const prov = dati.pren.filter((p) => p.id_room_type === a.id_room_type).reduce((x, p) => x + (Number(p.prov_netta) || 0), 0);
         return s + prov * pct / 100;
       }, 0);
-      return { nome, n: mie.length, maturato, nelTeam: dati.team.some((t) => t.nome.toLowerCase() === nome.toLowerCase()) };
+      return { nome, n: mie.length, maturato, comp, nelTeam: dati.team.some((t) => t.nome.toLowerCase() === nome.toLowerCase()) };
     });
   }, [dati]);
   useEffect(() => { if (!sel && agenti.length) setSel(agenti[0].nome); }, [agenti, sel]);
@@ -1498,19 +1502,19 @@ function Agenti() {
   if (!dati) return <Vuoto t="Carico gli agenti…" />;
   const tutti = [...dati.app, ...dati.soloCrm].sort((a, b) => String(a.nome_kross).localeCompare(String(b.nome_kross), "it"));
   const q = cerca.trim().toLowerCase();
-  const lista = tutti.filter((a) => !q || [a.nome_kross, a.citta, nomeOwn(a.own), a.prop?.agente].some((x) => String(x || "").toLowerCase().includes(q)));
-  const suo = (a) => String(a.prop?.agente || "").trim().toLowerCase() === sel.toLowerCase();
+  const lista = tutti.filter((a) => !q || [a.nome_kross, a.citta, nomeOwn(a.own), a.prop?.[campo]].some((x) => String(x || "").toLowerCase().includes(q)));
+  const suo = (a) => String(a.prop?.[campo] || "").trim().toLowerCase() === sel.toLowerCase();
   const chiave = (a) => (a.soloCrm ? `p${a.prop.id}` : `k${a.id_room_type}`);
 
   const spunta = async (a) => {
     if (!a.prop) return;
     const togli = suo(a);
-    const altro = String(a.prop.agente || "").trim();
+    const altro = String(a.prop[campo] || "").trim();
     if (!togli && altro && !window.confirm(`«${a.nome_kross.trim()}» oggi è di ${altro}. Lo passo a ${sel}?`)) return;
     setLav(chiave(a)); setMsg("");
-    let ok = await aggiorna("proprieta", `id=eq.${a.prop.id}`, { agente: togli ? null : sel });
+    let ok = await aggiorna("proprieta", `id=eq.${a.prop.id}`, { [campo]: togli ? null : sel });
     const gestione = (a.regola?.modello || a.tipo_gestione || "gestione") === "gestione";
-    if (ok && a.id_room_type != null && gestione) {
+    if (ok && !pm && a.id_room_type != null && gestione) {
       const pct = togli ? null : a.regola?.agente_pct > 0 ? a.regola.agente_pct : 20;
       ok = await inserisciOAggiorna("fat_regole", { id_room_type: a.id_room_type, agente_pct: pct, aggiornato_il: new Date().toISOString() }, "id_room_type");
     }
@@ -1518,7 +1522,7 @@ function Agenti() {
     await carica(); setLav(null);
   };
   const cambiaPct = async (a, v) => {
-    const ok = await inserisciOAggiorna("fat_regole", { id_room_type: a.id_room_type, agente_pct: v === "" ? null : Number(v), aggiornato_il: new Date().toISOString() }, "id_room_type");
+    const ok = await inserisciOAggiorna("fat_regole", { id_room_type: a.id_room_type, [pm ? "pm_pct" : "agente_pct"]: v === "" ? null : Number(v), aggiornato_il: new Date().toISOString() }, "id_room_type");
     if (!ok) setMsg("Salvataggio non riuscito."); else carica();
   };
   const ag = agenti.find((x) => x.nome === sel);
@@ -1526,13 +1530,13 @@ function Agenti() {
   return (
     <div className="split">
       <div className="card" style={{ overflow: "hidden" }}>
-        <div className="sec" style={{ padding: "14px 16px" }}><h2>Agenti</h2><div className="sub">Provvigione maturata nel {anno} (sulla nostra provvigione, IVA esclusa).</div></div>
+        <div className="sec" style={{ padding: "14px 16px" }}><h2>{pm ? "Property manager" : "Agenti"}</h2><div className="sub">{pm ? `Parte variabile maturata nel ${anno} (% sul ricavo); il fisso è indicato a parte.` : `Provvigione maturata nel ${anno} (sulla nostra provvigione, IVA esclusa).`}</div></div>
         <div className="alist" style={{ minHeight: 0 }}>
           {agenti.map((x) => (
             <div key={x.nome} className={"aitem" + (sel === x.nome ? " on" : "")} onClick={() => setSel(x.nome)}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 500 }}>{x.nome}</div>
-                <div className="muted">{x.n} appartamenti{!x.nelTeam ? " · non è nel team" : ""}</div>
+                <div className="muted">{x.n} appartamenti{pm && x.comp?.fisso_mensile ? ` · fisso ${euro(x.comp.fisso_mensile)}/mese` : ""}{!x.nelTeam ? " · non è nel team" : ""}</div>
               </div>
               <span className="num" style={{ fontWeight: 600, fontSize: 13 }}>{euro(x.maturato)}</span>
             </div>
@@ -1544,7 +1548,8 @@ function Agenti() {
         <div className="sec" style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div>
             <h2 style={{ fontSize: 17 }}>{sel || "—"}</h2>
-            <div className="sub">Spunta gli appartamenti che ha portato. La quota parte dal 20% e si cambia sulla riga.</div>
+            <div className="sub">{pm ? "Spunta gli appartamenti che gestisce. Sulla riga puoi mettere una % diversa solo per quell'appartamento; fisso e % generali stanno in «Costi e compensi»." : "Spunta gli appartamenti che ha portato. La quota parte dal 20% e si cambia sulla riga."}</div>
+            {pm && ag && <div className="hint">Compenso: {ag.comp?.fisso_mensile ? `${euro(ag.comp.fisso_mensile)} al mese` : "nessun fisso"} · {ag.comp?.pct_provvigione != null ? `${String(ag.comp.pct_provvigione).replace(".", ",")}% sul ricavo` : "nessuna %"}</div>}
             {ag && !ag.nelTeam && <div className="hint" style={{ color: "var(--warn)" }}>Questo nome non corrisponde a nessun collaboratore del CRM: conviene spostare i suoi appartamenti sul nome giusto.</div>}
           </div>
           <Cerca v={cerca} set={setCerca} ph="Cerca appartamento…" w={280} />
@@ -1552,11 +1557,11 @@ function Agenti() {
         {msg && <div className="sec"><div className="note warn"><Ico n="warn" />{msg}</div></div>}
         <div style={{ maxHeight: "calc(100vh - 300px)", overflow: "auto" }}>
           <table>
-            <thead><tr><th style={{ width: 40 }}></th><th>Appartamento</th><th>Modello</th><th>Oggi è di</th><th className="num">Quota</th></tr></thead>
+            <thead><tr><th style={{ width: 40 }}></th><th>Appartamento</th><th>Modello</th><th>Oggi è di</th><th className="num">{pm ? "% solo qui" : "Quota"}</th></tr></thead>
             <tbody>
               {lista.map((a) => {
                 const mio = suo(a), gest = (a.regola?.modello || a.tipo_gestione || "gestione") === "gestione";
-                const altro = String(a.prop?.agente || "").trim();
+                const altro = String(a.prop?.[campo] || "").trim();
                 return (
                   <tr key={chiave(a)} style={{ cursor: a.prop ? "pointer" : "default", opacity: lav === chiave(a) ? 0.5 : 1 }} className={mio ? "sel" : ""} onClick={() => spunta(a)}>
                     <td><input type="checkbox" checked={mio} disabled={!a.prop} readOnly /></td>
@@ -1564,8 +1569,8 @@ function Agenti() {
                     <td><span className="pill">{gest ? "Gestione" : "Sublocazione"}</span></td>
                     <td className="muted">{altro && !mio ? altro : mio ? "—" : "nessuno"}</td>
                     <td className="num" onClick={(e) => e.stopPropagation()}>
-                      {mio && gest && a.id_room_type != null
-                        ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><input type="number" step="0.5" defaultValue={a.regola?.agente_pct ?? ""} onBlur={(e) => e.target.value !== String(a.regola?.agente_pct ?? "") && cambiaPct(a, e.target.value)} style={{ width: 70, padding: "5px 8px", textAlign: "right" }} />%</span>
+                      {mio && (gest || pm) && a.id_room_type != null
+                        ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><input type="number" step="0.5" defaultValue={(pm ? a.regola?.pm_pct : a.regola?.agente_pct) ?? ""} placeholder={pm ? "—" : ""} onBlur={(e) => e.target.value !== String((pm ? a.regola?.pm_pct : a.regola?.agente_pct) ?? "") && cambiaPct(a, e.target.value)} style={{ width: 80, padding: "5px 8px", textAlign: "right" }} />%</span>
                         : <span className="muted">{mio && !gest ? "—" : ""}</span>}
                     </td>
                   </tr>
@@ -1581,7 +1586,7 @@ function Agenti() {
 
 /* ───────────────────────────── Pagina ───────────────────────────── */
 
-const TABS = [["prenotazioni", "Prenotazioni", "list"], ["margini", "Margini", "chart"], ["planner", "Planner", "cal"], ["appartamenti", "Appartamenti e criteri", "home"], ["agenti", "Agenti", "user"], ["costi", "Costi e compensi", "euro"], ["impostazioni", "Impostazioni", "gear"]];
+const TABS = [["prenotazioni", "Prenotazioni", "list"], ["margini", "Margini", "chart"], ["planner", "Planner", "cal"], ["appartamenti", "Appartamenti e criteri", "home"], ["pm", "Property manager", "user"], ["agenti", "Agenti", "user"], ["costi", "Costi e compensi", "euro"], ["impostazioni", "Impostazioni", "gear"]];
 
 export default function Fatturazione() {
   const [tab, setTab] = useState("prenotazioni");
@@ -1646,7 +1651,8 @@ export default function Fatturazione() {
       {tab === "appartamenti" && <Appartamenti modello={modello} />}
       {tab === "margini" && <Margini modello={modello} />}
       {tab === "costi" && <Costi modello={modello} />}
-      {tab === "agenti" && <Agenti />}
+      {tab === "agenti" && <Persone key="ag" ruolo="agente" />}
+      {tab === "pm" && <Persone key="pm" ruolo="pm" />}
       {tab === "impostazioni" && <Impostazioni stato={stato} sincronizza={sincronizza} lavoro={lavoro} esitoSync={esitoSync} />}
     </div>
   );
