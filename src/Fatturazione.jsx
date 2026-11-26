@@ -387,7 +387,7 @@ function DettaglioPrenotazione({ r, a, chiudi }) {
             {[["Alloggio", r.alloggio], ["Pulizie", r.pulizie], ["Tassa di soggiorno", r.tassa], ["Totale pagato dall'ospite", r.totale_ospite]].map(([k, v]) => <div className="row" key={k}><span>{k}</span><span>{euro(v)}</span></div>)}
             <div className="row"><span>Commissione OTA (+ IVA {euro(r.ota_iva)})</span><span>− {euro(r.ota)}</span></div>
             {!sub && <>
-            <div className="row"><span>Base provvigione · {String(r.base_calcolo || "").replace(/_/g, " ")}</span><span>{euro(r.base_importo)}</span></div>
+            <div className="row"><span>Base provvigione · {String(r.base_calcolo || "").replace(/_/g, " ")}{r.base_meno_pulizie ? " meno pulizie" : ""}</span><span>{euro(r.base_importo)}</span></div>
             <div className="row"><span>Provvigione {r.comm_pct_netta != null ? `(${Number(r.comm_pct_netta).toFixed(2).replace(".", ",")}% netto IVA)` : ""}</span><span>{euro(r.prov_netta)}</span></div>
             <div className="row"><span>IVA sulla provvigione</span><span>{euro(r.prov_iva)}</span></div>
             <div className="row"><span>Quota proprietario lorda</span><span>{euro(r.quota_proprietario_lorda)}</span></div>
@@ -434,7 +434,7 @@ const nomeOwn = (o) => (o ? [o.nome, o.cognome].filter(Boolean).join(" ") : "");
 const DEFAULT_REGOLA = {
   modello: "gestione", commissione: null, commissione_iva_inclusa: true, base_calcolo: "alloggio_meno_ota",
   addebita_ota_al_proprietario: true, addebita_pulizie_al_proprietario: true, sostituto_imposta: null, cedolare_pct: 21,
-  chi_fattura_ospite: null, iva_alloggio: null, pulizie_iva_inclusa: true, attiva_fatturazione: false, confermata: false, note: null, agente_pct: null, pm_pct: null,
+  chi_fattura_ospite: null, iva_alloggio: null, pulizie_iva_inclusa: true, attiva_fatturazione: false, confermata: false, note: null, agente_pct: null, pm_pct: null, base_meno_pulizie: false,
 };
 const statoRegola = (r) => (r.attiva_fatturazione ? ["ok", "Attiva"] : r.confermata ? ["acc", "Confermata"] : ["warn", "Da confermare"]);
 const triVal = (v) => (v === null || v === undefined ? "" : String(v));
@@ -552,7 +552,7 @@ function SchedaRegola({ a, team, salvato }) {
       addebita_pulizie_al_proprietario: !!b.addebita_pulizie_al_proprietario, sostituto_imposta: b.sostituto_imposta,
       cedolare_pct: num(b.cedolare_pct), chi_fattura_ospite: b.chi_fattura_ospite || null, iva_alloggio: num(b.iva_alloggio),
       pulizie_iva_inclusa: !!b.pulizie_iva_inclusa, confermata: !!b.confermata, attiva_fatturazione: !!b.confermata && !!b.attiva_fatturazione,
-      note: b.note || null, agente_pct: num(b.agente_pct), pm_pct: num(b.pm_pct), aggiornato_il: new Date().toISOString(),
+      note: b.note || null, agente_pct: num(b.agente_pct), pm_pct: num(b.pm_pct), base_meno_pulizie: !!b.base_meno_pulizie, aggiornato_il: new Date().toISOString(),
     };
     let ok = a.regola ? await aggiorna("fat_regole", `id_room_type=eq.${a.id_room_type}`, corpo) : await inserisciOAggiorna("fat_regole", corpo, "id_room_type");
     if (ok && a.prop && JSON.stringify(pers) !== JSON.stringify(persIniz)) ok = await aggiorna("proprieta", `id=eq.${a.prop.id}`, pers);
@@ -627,6 +627,9 @@ function SchedaRegola({ a, team, salvato }) {
             <select value={b.base_calcolo} onChange={(e) => set("base_calcolo", e.target.value)}>
               <option value="alloggio_meno_ota">Alloggio meno commissione OTA</option><option value="alloggio_lordo">Alloggio lordo</option><option value="lordo_ospite">Totale pagato dall'ospite</option>
             </select>
+          </Campo>
+          <Campo l="Togli le pulizie dalla base di calcolo" h="La commissione si calcola senza il costo delle pulizie.">
+            <SiNo v={b.base_meno_pulizie} onChange={(x) => set("base_meno_pulizie", x)} si="Sì, togli le pulizie" no="No" />
           </Campo>
           <Campo l="Commissione OTA a carico del proprietario"><SiNo v={b.addebita_ota_al_proprietario} onChange={(x) => set("addebita_ota_al_proprietario", x)} /></Campo>
           <Campo l="Pulizie a carico del proprietario"><SiNo v={b.addebita_pulizie_al_proprietario} onChange={(x) => set("addebita_pulizie_al_proprietario", x)} /></Campo>
