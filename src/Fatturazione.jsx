@@ -597,7 +597,7 @@ const nomeOwn = (o) => (o ? [o.nome, o.cognome].filter(Boolean).join(" ") : "");
 const DEFAULT_REGOLA = {
   modello: "gestione", commissione: null, commissione_iva_inclusa: true, base_calcolo: "alloggio_meno_ota",
   addebita_ota_al_proprietario: true, addebita_pulizie_al_proprietario: true, sostituto_imposta: null, cedolare_pct: 21,
-  chi_fattura_ospite: null, iva_alloggio: null, pulizie_iva_inclusa: true, attiva_fatturazione: false, confermata: false, note: null, agente_pct: null, pm_pct: null, base_meno_pulizie: false,
+  chi_fattura_ospite: null, iva_alloggio: null, pulizie_iva_inclusa: true, attiva_fatturazione: false, confermata: false, note: null, agente_pct: null, pm_pct: null, base_meno_pulizie: false, costo_pulizia: null,
 };
 const statoRegola = (r) => (r.attiva_fatturazione ? ["ok", "Attiva"] : r.confermata ? ["acc", "Confermata"] : ["warn", "Da confermare"]);
 const triVal = (v) => (v === null || v === undefined ? "" : String(v));
@@ -727,7 +727,7 @@ function SchedaRegola({ a, team, salvato, proprietaLibere = [] }) {
       addebita_pulizie_al_proprietario: !!b.addebita_pulizie_al_proprietario, sostituto_imposta: b.sostituto_imposta,
       cedolare_pct: num(b.cedolare_pct), chi_fattura_ospite: b.chi_fattura_ospite || null, iva_alloggio: num(b.iva_alloggio),
       pulizie_iva_inclusa: !!b.pulizie_iva_inclusa, confermata: !!b.confermata, attiva_fatturazione: !!b.confermata && !!b.attiva_fatturazione,
-      note: b.note || null, agente_pct: num(b.agente_pct), pm_pct: num(b.pm_pct), base_meno_pulizie: !!b.base_meno_pulizie, aggiornato_il: new Date().toISOString(),
+      note: b.note || null, agente_pct: num(b.agente_pct), pm_pct: num(b.pm_pct), base_meno_pulizie: !!b.base_meno_pulizie, costo_pulizia: num(b.costo_pulizia), aggiornato_il: new Date().toISOString(),
     };
     let ok = a.regola ? await aggiorna("fat_regole", `id_room_type=eq.${a.id_room_type}`, corpo) : await inserisciOAggiorna("fat_regole", corpo, "id_room_type");
     if (ok && a.prop && JSON.stringify(pers) !== JSON.stringify(persIniz)) ok = await aggiorna("proprieta", `id=eq.${a.prop.id}`, pers);
@@ -810,6 +810,9 @@ function SchedaRegola({ a, team, salvato, proprietaLibere = [] }) {
         <h2 style={{ marginBottom: 14 }}>{b.modello === "sublocazione" ? "Contratto" : "Contratto e commissione"}</h2>
         <div className="grid2">
           <Campo l="Modello"><select value={b.modello} onChange={(e) => set("modello", e.target.value)}><option value="gestione">Gestione per conto terzi</option><option value="sublocazione">Sublocazione</option></select></Campo>
+          <Campo l="Costo di una pulizia (€)" h="Quanto paghi l'impresa a ogni check-out. Nei margini si toglie per ogni prenotazione.">
+            <input type="number" step="0.01" value={b.costo_pulizia ?? ""} onChange={(e) => set("costo_pulizia", e.target.value)} placeholder="es. 40" />
+          </Campo>
           {b.modello !== "sublocazione" && <>
           <Campo l="Commissione (%)"><input type="number" step="0.01" value={b.commissione ?? ""} onChange={(e) => set("commissione", e.target.value)} placeholder="es. 20" /></Campo>
           <Campo l="La commissione comprende l'IVA"><SiNo v={b.commissione_iva_inclusa} onChange={(x) => set("commissione_iva_inclusa", x)} si="Sì, IVA inclusa" no="No, IVA in aggiunta" /></Campo>
@@ -1012,6 +1015,8 @@ function calcolaMargini(eco, periodo) {
       else if (k.id_room_type == null) v = (Number(k.importo_mensile) || 0) / nApp;
       if (v) perCat[k.categoria] = (perCat[k.categoria] || 0) + v;
     }));
+    const cp = Number(a.regola?.costo_pulizia) || 0;
+    if (cp && mie.length) perCat.pulizie = (perCat.pulizie || 0) + cp * mie.length;
     bollette.forEach((b) => {
       const ids = b.id_room_types || [];
       if (!ids.includes(a.id_room_type)) return;
@@ -1023,7 +1028,7 @@ function calcolaMargini(eco, periodo) {
     return {
       a, sub, n: mie.length, incasso, ota, netto: incasso - ota, proprietario, ricavo, pm, pmPct, pmFisso, costoPm,
       agente: a.prop?.agente || null, agPct, agPctMancante: !sub && !!a.prop?.agente && a.regola?.agente_pct == null, costoAg,
-      perCat, costiTot, margine, margPct: ricavo > 0 ? (margine / ricavo) * 100 : null, ivaAll,
+      perCat, costiTot, margine, margPct: ricavo > 0 ? (margine / ricavo) * 100 : null, ivaAll, costoPulizia: cp,
     };
   });
   return righe;
@@ -1060,6 +1065,7 @@ function Margini({ modello }) {
   const mancaAg = righe.filter((r) => r.agPctMancante).length;
   const senzaCosti = righe.filter((r) => sub && !r.perCat.affitto).length;
   const bolDaAss = sub ? (eco.bollette || []).filter((b) => !(b.id_room_types || []).length).length : 0;
+  const senzaPul = sub ? righe.filter((r) => r.n > 0 && !r.costoPulizia).length : 0;
   const Th = ({ k, children }) => <th className="num" style={{ cursor: "pointer", color: ordine === k ? "var(--ink)" : undefined }} onClick={() => setOrdine(k)}>{children}{ordine === k ? " ↓" : ""}</th>;
 
   return (
@@ -1082,9 +1088,10 @@ function Margini({ modello }) {
         <Kpi t="Resta a Valente Living" v={euro(tot.margine)} tono={tot.margine < 0 ? "warn" : "ok"} n={tot.ricavo > 0 ? `${pct((tot.margine / tot.ricavo) * 100)} del ricavo` : null} />
       </div>
 
-      {(mancaAg > 0 || senzaCosti > 0 || bolDaAss > 0) && (
+      {(mancaAg > 0 || senzaCosti > 0 || bolDaAss > 0 || senzaPul > 0) && (
         <div className="note warn"><Ico n="warn" /><div>
           {mancaAg > 0 && <div>{mancaAg} appartamenti hanno un agente ma la sua quota è «da decidere»: il costo agente qui vale zero.</div>}
+          {senzaPul > 0 && <div>{senzaPul} sublocazioni non hanno il costo della pulizia: inseriscilo nella scheda dell'appartamento (quanto paghi l'impresa a ogni check-out).</div>}
           {bolDaAss > 0 && <div>{bolDaAss} bollette non sono assegnate a nessun appartamento: assegnale in «Costi e compensi».</div>}
           {senzaCosti > 0 && <div>{senzaCosti} sublocazioni non hanno l'affitto inserito: il margine è sovrastimato. Inseriscilo in «Costi e compensi».</div>}
         </div></div>
@@ -1179,7 +1186,7 @@ function DettaglioMargine({ r, periodo, chiudi }) {
           </div>
           <div className="sec">
             <h2 style={{ marginBottom: 6 }}>Costi fissi</h2>
-            {Object.keys(r.perCat).length ? Object.entries(r.perCat).map(([k, v]) => <Riga key={k} l={etiCat(k)} v={v} meno />) : <div className="muted">Nessun costo inserito per questo appartamento.</div>}
+            {Object.keys(r.perCat).length ? Object.entries(r.perCat).map(([k, v]) => <Riga key={k} l={k === "pulizie" && r.costoPulizia ? `Pulizie · ${r.n} × ${euro(r.costoPulizia)}` : etiCat(k)} v={v} meno />) : <div className="muted">Nessun costo inserito per questo appartamento.</div>}
             <div className="hint">I costi generali (es. il gestionale) sono divisi in parti uguali su tutti gli appartamenti di Kross.</div>
           </div>
           <div className="sec">
