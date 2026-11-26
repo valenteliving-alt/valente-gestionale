@@ -46,6 +46,12 @@
   to = "/spese.html"
   status = 200
 
+# App Fatturazione installabile sul telefono
+[[redirects]]
+  from = "/fatturazione"
+  to = "/fatturazione.html"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

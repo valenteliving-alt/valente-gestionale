@@ -121,6 +121,7 @@ const CSS = `
 .fx .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
 .fx .split{display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:16px;align-items:start}
 @media (max-width:860px){.fx .split{grid-template-columns:1fr}}
+@media (max-width:700px){.fx .card{overflow-x:auto;-webkit-overflow-scrolling:touch}.fx .kpis{grid-template-columns:1fr 1fr;gap:8px}.fx table{font-size:12.5px}.fx th,.fx td{padding:8px 9px;white-space:nowrap}.fx .tabs{margin:12px 0 14px}.fx select,.fx input{font-size:16px}}
 .fx .alist{max-height:calc(100vh - 320px);min-height:420px;overflow:auto}
 .fx .aitem{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line2);cursor:pointer}
 .fx .aitem:hover{background:#FAFAFF}.fx .aitem.on{background:var(--acc2)}

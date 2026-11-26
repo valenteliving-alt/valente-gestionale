@@ -50,14 +50,14 @@ function App() {
   const campo = { padding: "10px 12px", borderRadius: 8, border: "1px solid #E5E7EB", font: "inherit", fontSize: 14, width: "100%", outline: "none" };
   if (ok) return (
     <div style={{ minHeight: "100vh", background: "#F8FAFC" }}>
-      <header style={{ background: "#fff", borderBottom: "1px solid #E5E7EB", height: 56, display: "flex", alignItems: "center", padding: "0 28px", gap: 12 }}>
+      <header style={{ background: "#fff", borderBottom: "1px solid #E5E7EB", height: 56, display: "flex", alignItems: "center", padding: "0 clamp(12px,3vw,28px)", paddingTop: "env(safe-area-inset-top)", gap: 12 }}>
         <div style={{ width: 28, height: 28, borderRadius: 7, background: "#0F172A", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 14 }}>V</div>
         <div style={{ fontWeight: 600, fontSize: 14, letterSpacing: "-.01em" }}>Valente Living</div>
         <div style={{ color: "#CBD5E1" }}>/</div>
         <div style={{ color: "#64748B", fontSize: 14 }}>Fatturazione</div>
         <button onClick={() => { scrivi(null); setOk(false); }} style={{ marginLeft: "auto", fontSize: 13, padding: "6px 12px", borderRadius: 8, border: "1px solid #E5E7EB", background: "#fff", cursor: "pointer", color: "#334155" }}>Esci</button>
       </header>
-      <main style={{ maxWidth: 1600, margin: "0 auto", padding: "28px 28px 60px" }}><Fatturazione /></main>
+      <main style={{ maxWidth: 1600, margin: "0 auto", padding: "clamp(12px,3vw,28px) clamp(10px,3vw,28px) 60px" }}><Fatturazione /></main>
     </div>
   );
   return (
