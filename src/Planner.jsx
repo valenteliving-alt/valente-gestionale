@@ -60,7 +60,7 @@ const giorno = (d) => (d ? new Date(d + "T00:00:00") : null);
 const iso = (d) => d.toISOString().slice(0, 10);
 const dataIt = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("it-IT", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 
-export default function Planner() {
+export default function Planner({ compatto = false, soloAppartamenti = null } = {}) {
   const oggi = new Date();
   const [anno, setAnno] = useState(oggi.getFullYear());
   const [mese, setMese] = useState(oggi.getMonth());
@@ -96,6 +96,7 @@ export default function Planner() {
   const perAppartamento = useMemo(() => {
     const q = cerca.trim().toLowerCase();
     const filtrate = righe.filter((r) => {
+      if (soloAppartamenti && !soloAppartamenti.has(r.id_room_type)) return false;
       if (soloScoperte && r.fatturata) return false;
       if (!q) return true;
       return [r.ospite, r.appartamento, r.cod_reservation, r.email, r.citta]
@@ -108,7 +109,7 @@ export default function Planner() {
       m.get(k).push(r);
     });
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], "it"));
-  }, [righe, soloScoperte, cerca]);
+  }, [righe, soloScoperte, cerca, soloAppartamenti]);
 
   /* Il riepilogo del mese: serve a vedere il buco senza doverlo cercare. */
   const conti = useMemo(() => {
@@ -135,7 +136,7 @@ export default function Planner() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
-        <div>
+        <div style={compatto ? { display: "none" } : undefined}>
           <h1 style={{ fontSize: 26, fontWeight: 700 }}>Planner</h1>
           <p style={{ fontSize: 12, color: "var(--gray)", marginTop: 4 }}>
             Le prenotazioni di Kross con i dati ospite e lo stato della fattura

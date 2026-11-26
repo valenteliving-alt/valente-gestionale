@@ -47,23 +47,34 @@ function App() {
     setAtt(false);
   };
 
+  const campo = { padding: "10px 12px", borderRadius: 8, border: "1px solid #E5E7EB", font: "inherit", fontSize: 14, width: "100%", outline: "none" };
   if (ok) return (
-    <div style={{ maxWidth: 1400, margin: "0 auto", padding: 20 }}>
-      <Fatturazione />
-      <div style={{ textAlign: "right", marginTop: 20 }}>
-        <button onClick={() => { scrivi(null); setOk(false); }} style={{ fontSize: 12, padding: "6px 12px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer" }}>Esci</button>
-      </div>
+    <div style={{ minHeight: "100vh", background: "#F8FAFC" }}>
+      <header style={{ background: "#fff", borderBottom: "1px solid #E5E7EB", height: 56, display: "flex", alignItems: "center", padding: "0 28px", gap: 12 }}>
+        <div style={{ width: 28, height: 28, borderRadius: 7, background: "#0F172A", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 14 }}>V</div>
+        <div style={{ fontWeight: 600, fontSize: 14, letterSpacing: "-.01em" }}>Valente Living</div>
+        <div style={{ color: "#CBD5E1" }}>/</div>
+        <div style={{ color: "#64748B", fontSize: 14 }}>Fatturazione</div>
+        <button onClick={() => { scrivi(null); setOk(false); }} style={{ marginLeft: "auto", fontSize: 13, padding: "6px 12px", borderRadius: 8, border: "1px solid #E5E7EB", background: "#fff", cursor: "pointer", color: "#334155" }}>Esci</button>
+      </header>
+      <main style={{ maxWidth: 1360, margin: "0 auto", padding: "28px 28px 60px" }}><Fatturazione /></main>
     </div>
   );
   return (
-    <form onSubmit={entra} style={{ maxWidth: 340, margin: "14vh auto", display: "grid", gap: 10, fontFamily: "Inter,system-ui,sans-serif" }}>
-      <h2 style={{ fontSize: 22 }}>Fatturazione · Valente Living</h2>
-      <p style={{ fontSize: 12.5, color: "#64748B" }}>Accedi con le stesse credenziali del CRM.</p>
-      <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" style={{ padding: 10, borderRadius: 9, border: "1px solid #E2E8F0" }} />
-      <input type="password" placeholder="Password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" style={{ padding: 10, borderRadius: 9, border: "1px solid #E2E8F0" }} />
-      {err && <div style={{ color: "#B42318", fontSize: 12.5 }}>{err}</div>}
-      <button disabled={att} style={{ padding: 10, borderRadius: 9, border: "none", background: "#6366F1", color: "#fff", fontWeight: 600, cursor: "pointer" }}>{att ? "…" : "Entra"}</button>
-    </form>
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#F8FAFC", padding: 20 }}>
+      <form onSubmit={entra} style={{ width: "100%", maxWidth: 380, background: "#fff", border: "1px solid #E5E7EB", borderRadius: 14, padding: "32px 30px", boxShadow: "0 10px 30px rgba(15,23,42,.06)", display: "grid", gap: 14 }}>
+        <div style={{ width: 36, height: 36, borderRadius: 9, background: "#0F172A", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700 }}>V</div>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 650, letterSpacing: "-.02em", margin: 0 }}>Accedi a Fatturazione</h2>
+          <p style={{ fontSize: 13, color: "#64748B", margin: "4px 0 0" }}>Usa le stesse credenziali del CRM Valente Living.</p>
+        </div>
+        <label style={{ fontSize: 12.5, fontWeight: 500, color: "#334155" }}>Email<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" style={{ ...campo, marginTop: 6 }} /></label>
+        <label style={{ fontSize: 12.5, fontWeight: 500, color: "#334155" }}>Password<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" style={{ ...campo, marginTop: 6 }} /></label>
+        {err && <div style={{ color: "#B91C1C", fontSize: 13, background: "#FEF2F2", padding: "8px 10px", borderRadius: 8 }}>{err === "Invalid login credentials" ? "Email o password non corrette." : err}</div>}
+        <button disabled={att} style={{ padding: 11, borderRadius: 8, border: "none", background: "#4F46E5", color: "#fff", fontWeight: 600, fontSize: 14, cursor: "pointer" }}>{att ? "Accesso…" : "Entra"}</button>
+        <a href="https://valentelivingcrm.netlify.app" target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: "#4F46E5", textAlign: "center", textDecoration: "none" }}>Password dimenticata? Recuperala dal CRM</a>
+      </form>
+    </div>
   );
 }
 
