@@ -173,6 +173,7 @@ const INFO = {
   "Base di calcolo": "Su quale cifra si applica la commissione. La regola standard è: pernottamenti meno commissioni OTA comprese di IVA.",
   "Commissione OTA a carico del proprietario": "Sì: la commissione di Airbnb/Booking (con IVA) si toglie dalla quota del proprietario. No: la paga Valente.",
   "Costo dell'impresa per ogni pulizia (€ + IVA)": "Quanto paghiamo l'impresa di pulizie a ogni check-out, scritto senza IVA. Vale per tutte le prenotazioni dell'appartamento; sulla singola prenotazione si può cambiare.",
+  "Chi fa le pulizie": "Impresa: si paga a ogni pulizia e il costo va sulla prenotazione. Personale assunto: nessun costo a pulizia, pesa lo stipendio, diviso sugli appartamenti che pulisce.",
   "Chi paga l'impresa": "Il proprietario: il costo della pulizia con IVA si toglie dalla base di calcolo e dalla sua quota. Valente: il costo resta a noi e pesa sul nostro margine.",
   "Pulizie pagate dall'ospite": "È l'importo «pulizie» che l'ospite paga sulla prenotazione (arriva da Kross). Può restare a Valente o andare al proprietario.",
   "Le pulizie pagate dall'ospite comprendono l'IVA?": "Serve solo per calcolare quanto resta a Valente al netto dell'IVA sulle pulizie pagate dall'ospite.",
@@ -237,10 +238,10 @@ function contoPrenotazione(r, a, costoPulizia, ivaSub = 10, pctPmGenerale = 0) {
   const agente = (Number(r.prov_netta) || 0) * agPct / 100;
   const pmPct = reg.pm_pct != null ? Number(reg.pm_pct) : pctPmGenerale;
   const pm = Math.max(ricavo, 0) * pmPct / 100;
-  const pul = costoPulizia ?? (r.costo_pulizia != null ? Number(r.costo_pulizia) : reg.costo_pulizia != null ? Number(reg.costo_pulizia) : null);
+  const pul = reg.pulizie_dipendente ? 0 : costoPulizia ?? (r.costo_pulizia != null ? Number(r.costo_pulizia) : reg.costo_pulizia != null ? Number(reg.costo_pulizia) : null);
   const aCaricoProprietario = !sub && !!r.base_meno_pulizie;   // tolta dalla base: la paga il proprietario
   const pulNoi = aCaricoProprietario ? 0 : (pul || 0);
-  return { sub, ricavo, pulizieNoi, agente, agPct, pm, pmPct, pulizia: pul, aCaricoProprietario, resta: ricavo - agente - pm - pulNoi };
+  return { sub, ricavo, pulizieNoi, agente, agPct, pm, pmPct, pulizia: pul, personale: !!reg.pulizie_dipendente, aCaricoProprietario, resta: ricavo - agente - pm - pulNoi };
 }
 
 /* ───────────────────────────── Prenotazioni ───────────────────────────── */
@@ -405,7 +406,7 @@ function Prenotazioni({ modello }) {
                       <td className="num">{euro(r.quota_proprietario_lorda)}</td>
                     </>}
                     {(() => { const c = conto(r); return <>
-                      <td className="num">{c.pulizia == null ? <span className="pill warn">manca</span> : euro(c.pulizia)}</td>
+                      <td className="num">{c.personale ? <span className="pill">personale</span> : c.pulizia == null ? <span className="pill warn">manca</span> : euro(c.pulizia)}</td>
                       <td className="num" style={{ fontWeight: 600, color: c.resta < 0 ? "var(--err)" : undefined }}>{euro(c.resta)}</td>
                     </>; })()}
                     <td>{nav ? <span className="pill warn">{nav} {nav === 1 ? "avviso" : "avvisi"}</span> : <span className="pill ok">Pronta</span>}</td>
@@ -744,7 +745,7 @@ const nomeOwn = (o) => (o ? [o.nome, o.cognome].filter(Boolean).join(" ") : "");
 const DEFAULT_REGOLA = {
   modello: "gestione", commissione: null, commissione_iva_inclusa: true, base_calcolo: "alloggio_meno_ota",
   addebita_ota_al_proprietario: true, addebita_pulizie_al_proprietario: true, sostituto_imposta: null, cedolare_pct: 21,
-  chi_fattura_ospite: null, iva_alloggio: null, pulizie_iva_inclusa: true, attiva_fatturazione: false, confermata: false, note: null, agente_pct: null, pm_pct: null, base_meno_pulizie: false, costo_pulizia: null,
+  chi_fattura_ospite: null, iva_alloggio: null, pulizie_iva_inclusa: true, attiva_fatturazione: false, confermata: false, note: null, agente_pct: null, pm_pct: null, base_meno_pulizie: false, costo_pulizia: null, pulizie_dipendente: false,
 };
 const statoRegola = (r) => (r.attiva_fatturazione ? ["ok", "Attiva"] : r.confermata ? ["acc", "Confermata"] : ["warn", "Da confermare"]);
 const triVal = (v) => (v === null || v === undefined ? "" : String(v));
@@ -906,7 +907,7 @@ function SchedaRegola({ a, team, salvato, proprietaLibere = [] }) {
       addebita_pulizie_al_proprietario: !!b.addebita_pulizie_al_proprietario, sostituto_imposta: b.sostituto_imposta,
       cedolare_pct: num(b.cedolare_pct), chi_fattura_ospite: b.chi_fattura_ospite || null, iva_alloggio: num(b.iva_alloggio),
       pulizie_iva_inclusa: !!b.pulizie_iva_inclusa, confermata: !!b.confermata, attiva_fatturazione: !!b.confermata && !!b.attiva_fatturazione,
-      note: b.note || null, agente_pct: num(b.agente_pct), pm_pct: num(b.pm_pct), base_meno_pulizie: !!b.base_meno_pulizie, costo_pulizia: num(b.costo_pulizia), aggiornato_il: new Date().toISOString(),
+      note: b.note || null, agente_pct: num(b.agente_pct), pm_pct: num(b.pm_pct), base_meno_pulizie: !!b.base_meno_pulizie, costo_pulizia: b.pulizie_dipendente ? null : num(b.costo_pulizia), pulizie_dipendente: !!b.pulizie_dipendente, aggiornato_il: new Date().toISOString(),
     };
     let ok = a.regola ? await aggiorna("fat_regole", `id_room_type=eq.${a.id_room_type}`, corpo) : await inserisciOAggiorna("fat_regole", corpo, "id_room_type");
     if (ok && a.prop && JSON.stringify(pers) !== JSON.stringify(persIniz)) ok = await aggiorna("proprieta", `id=eq.${a.prop.id}`, pers);
@@ -1026,9 +1027,15 @@ function SchedaRegola({ a, team, salvato, proprietaLibere = [] }) {
         <h2 style={{ marginBottom: 4 }}>Pulizie</h2>
         <div className="sub" style={{ marginBottom: 14 }}>Due cose diverse: quanto <b>paghiamo noi</b> l'impresa e quanto <b>paga l'ospite</b> come costo di pulizia sulla prenotazione.</div>
         <div className="grid2">
-          <Campo l="Costo dell'impresa per ogni pulizia (€ + IVA)" h={`Scrivi l'importo senza IVA: ${b.costo_pulizia ? `${euro(Number(b.costo_pulizia))} + IVA = ${euro(Number(b.costo_pulizia) * 1.22)}` : "es. 85 → 103,70 € con IVA"}. Sulla singola prenotazione si può cambiare.`}>
-            <input type="number" step="0.01" value={b.costo_pulizia ?? ""} onChange={(e) => set("costo_pulizia", e.target.value)} placeholder="es. 85" />
+          <Campo l="Chi fa le pulizie">
+            <select value={b.pulizie_dipendente ? "dip" : "imp"} onChange={(e) => set("pulizie_dipendente", e.target.value === "dip")}>
+              <option value="imp">Un'impresa (si paga a pulizia)</option><option value="dip">Il nostro personale assunto</option>
+            </select>
           </Campo>
+          {!b.pulizie_dipendente && <Campo l="Costo dell'impresa per ogni pulizia (€ + IVA)" h={`Scrivi l'importo senza IVA: ${b.costo_pulizia ? `${euro(Number(b.costo_pulizia))} + IVA = ${euro(Number(b.costo_pulizia) * 1.22)}` : "es. 85 → 103,70 € con IVA"}. Sulla singola prenotazione si può cambiare.`}>
+            <input type="number" step="0.01" value={b.costo_pulizia ?? ""} onChange={(e) => set("costo_pulizia", e.target.value)} placeholder="es. 85" />
+          </Campo>}
+          {b.pulizie_dipendente && <div style={{ gridColumn: "span 2" }} className="note info">Nessun costo a pulizia: il costo è lo stipendio, inserito in «Costi e compensi» e diviso sugli appartamenti che pulisce.</div>}
           {b.modello !== "sublocazione" && (
             <Campo l="Chi paga l'impresa" h="Se la paga il proprietario, il costo con IVA si toglie dalla base di calcolo.">
               <SiNo v={b.base_meno_pulizie} onChange={(x) => set("base_meno_pulizie", x)} si="Il proprietario (tolto dalla base)" no="Valente" />
@@ -1229,6 +1236,7 @@ function calcolaMargini(eco, periodo) {
       if (!attivoNelMese(k, m)) return;
       let v = 0;
       if (k.id_room_type === a.id_room_type) v = Number(k.importo_mensile) || 0;
+      else if (k.id_room_type == null && (k.ripartisci_su || []).length) v = k.ripartisci_su.includes(a.id_room_type) ? (Number(k.importo_mensile) || 0) / k.ripartisci_su.length : 0;
       else if (k.id_room_type == null) v = (Number(k.importo_mensile) || 0) / nApp;
       if (v) perCat[k.categoria] = (perCat[k.categoria] || 0) + v;
     }));
@@ -1555,6 +1563,7 @@ function Costi({ modello }) {
 
   const salvaCosto = async (c) => {
     const corpo = { id_room_type: c.id_room_type === "" || c.id_room_type == null ? null : Number(c.id_room_type), voce: c.voce.trim(), categoria: c.categoria,
+      ripartisci_su: c.id_room_type == null && (c.ripartisci_su || []).length ? c.ripartisci_su : null,
       importo_mensile: Number(c.importo_mensile) || 0, dal: c.dal || null, al: c.al || null, note: c.note || null, aggiornato_il: new Date().toISOString() };
     if (!corpo.voce) { setMsg("Scrivi il nome della voce."); return false; }
     const r = await fetch(`${SUPABASE_URL}/rest/v1/fat_costi${c.id ? `?id=eq.${c.id}` : ""}`, {
@@ -1603,7 +1612,7 @@ function Costi({ modello }) {
         </div>
         {nuovo && nuovo.id_room_type === null && (
           <div className="sec" style={{ background: "#FAFAFB" }}>
-            <FormCosto c={nuovo} set={setNuovo} generale salva={() => salvaCosto(nuovo)} annulla={() => setNuovo(null)} />
+            <FormCosto c={nuovo} set={setNuovo} generale tutti={dati.app} salva={() => salvaCosto(nuovo)} annulla={() => setNuovo(null)} />
           </div>
         )}
         {generali.length ? <div style={{ overflowX: "auto" }}><Tabella righe={generali} /></div> : <Vuoto t="Nessun costo generale." />}
@@ -1617,8 +1626,10 @@ function Costi({ modello }) {
   );
 }
 
-function FormCosto({ c, set, app, generale, salva, annulla }) {
+function FormCosto({ c, set, app, generale, salva, annulla, tutti = [] }) {
   const s = (k, v) => set((x) => ({ ...x, [k]: v }));
+  const scelti = new Set(c.ripartisci_su || []);
+  const tocca = (id) => { const n = new Set(scelti); n.has(id) ? n.delete(id) : n.add(id); s("ripartisci_su", [...n]); };
   return (
     <div style={{ display: "grid", gap: 14 }}>
       <div className="grid2">
@@ -1630,6 +1641,19 @@ function FormCosto({ c, set, app, generale, salva, annulla }) {
         <Campo l="Al (facoltativo)"><input type="date" value={c.al || ""} onChange={(e) => s("al", e.target.value)} /></Campo>
         <Campo l="Note"><input value={c.note || ""} onChange={(e) => s("note", e.target.value)} /></Campo>
       </div>
+      {generale && tutti.length > 0 && (
+        <div>
+          <label className="lab">Su quali appartamenti si divide <Info t="Nessuno spuntato = diviso su tutti gli appartamenti. Spunta solo quelli interessati, es. lo stipendio dell'addetta alle pulizie sugli appartamenti che pulisce." /></label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {tutti.map((a) => (
+              <label key={a.id_room_type} className={"pill" + (scelti.has(a.id_room_type) ? " acc" : "")} style={{ cursor: "pointer", padding: "5px 10px", gap: 6 }}>
+                <input type="checkbox" checked={scelti.has(a.id_room_type)} onChange={() => tocca(a.id_room_type)} style={{ width: 13, height: 13 }} />{a.nome_kross.trim()}
+              </label>
+            ))}
+          </div>
+          <div className="hint">{scelti.size ? `Diviso su ${scelti.size} appartamenti.` : "Diviso su tutti gli appartamenti."}</div>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
         <button className="btn" onClick={annulla}>Annulla</button>
         <button className="btn pri" onClick={salva}>Salva</button>
@@ -1642,14 +1666,14 @@ function RigaCosto({ c, conApp, nomeApp, salva, elimina }) {
   const [mod, setMod] = useState(null);
   if (mod) return (
     <tr style={{ cursor: "default" }}><td colSpan={conApp ? 6 : 5} style={{ background: "#FAFAFB" }}>
-      <FormCosto c={mod} set={setMod} generale={!conApp} app={Object.entries(nomeApp).map(([id, n]) => ({ id_room_type: Number(id), nome_kross: n }))} salva={async () => { if (await salva(mod)) setMod(null); }} annulla={() => setMod(null)} />
+      <FormCosto c={mod} set={setMod} generale={!conApp} tutti={Object.entries(nomeApp).map(([id, n]) => ({ id_room_type: Number(id), nome_kross: n }))} app={Object.entries(nomeApp).map(([id, n]) => ({ id_room_type: Number(id), nome_kross: n }))} salva={async () => { if (await salva(mod)) setMod(null); }} annulla={() => setMod(null)} />
     </td></tr>
   );
   const periodo = c.dal || c.al ? `${c.dal ? dataIt(c.dal) : "…"} → ${c.al ? dataIt(c.al) : "…"}` : "sempre";
   return (
     <tr style={{ cursor: "default" }}>
       {conApp && <td style={{ fontWeight: 500 }}>{nomeApp[c.id_room_type] || `#${c.id_room_type}`}</td>}
-      <td>{c.voce}{c.note && <div className="muted">{c.note}</div>}</td>
+      <td>{c.voce}{c.note && <div className="muted">{c.note}</div>}{(c.ripartisci_su || []).length > 0 && <div className="muted">diviso su: {c.ripartisci_su.map((id) => nomeApp[id] || `#${id}`).join(", ")}</div>}</td>
       <td><span className="pill">{etiCat(c.categoria)}</span></td>
       <td className="num">{euro(c.importo_mensile)}</td>
       <td className="muted">{periodo}</td>
@@ -1878,7 +1902,7 @@ function RendicontoMensile({ modello }) {
   const VIS = COL.filter(([k]) => !["agente", "pm", "canale"].includes(k));   // a video; nell'Excel ci sono tutte
   const somma = (lista, k) => lista.reduce((t, x) => t + (Number(x.v[k]) || 0), 0);
   const fmt = (k, v) => (v == null ? "—" : !NUMERICHE.has(k) ? v : k === "notti" ? v : euro(v));
-  const mancano = voci.filter((x) => x.c.pulizia == null && !(x.r.base_meno_pulizie && !sub)).length;
+  const mancano = voci.filter((x) => x.c.pulizia == null && !x.c.personale && !(x.r.base_meno_pulizie && !sub)).length;
 
   const esportaExcel = async () => {
     const XLSX = await import("xlsx");
@@ -1936,7 +1960,7 @@ function RendicontoMensile({ modello }) {
                 {lista.map((x) => (
                   <tr key={x.r.id_reservation} style={{ cursor: "default" }}>
                     {VIS.map(([k]) => <td key={k} className={NUMERICHE.has(k) ? "num" : ""} style={k === "resta" ? { fontWeight: 600, color: x.v.resta < 0 ? "var(--err)" : undefined } : undefined}>
-                      {k === "costoPul" && x.v.costoPul == null ? <span className="pill warn">manca</span> : fmt(k, x.v[k])}</td>)}
+                      {k === "costoPul" && x.c.personale ? <span className="pill">personale</span> : k === "costoPul" && x.v.costoPul == null ? <span className="pill warn">manca</span> : fmt(k, x.v[k])}</td>)}
                   </tr>
                 ))}
               </tbody>
