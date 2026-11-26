@@ -179,6 +179,8 @@ const INFO = {
   "Facciamo da sostituto d'imposta": "Sì: tratteniamo la cedolare secca dalla quota del proprietario e la versiamo noi. Va deciso con il commercialista.",
   "Cedolare secca (%)": "Aliquota trattenuta al proprietario quando facciamo da sostituto d'imposta. Di solito 21%.",
   "IVA sull'alloggio (%)": "Aliquota IVA sull'affitto all'ospite, usata per calcolare il ricavo delle sublocazioni senza IVA. Vuoto = il valore generale delle Impostazioni.",
+  "Affitto mensile al proprietario (€)": "Il canone che paghiamo al proprietario ogni mese. Se cambia, scegli da quando: il vecchio importo resta per i mesi precedenti.",
+  "Il nuovo affitto vale dal": "Primo giorno in cui vale il nuovo canone. I mesi prima restano con il vecchio importo.",
   "Chi emette la fattura all'ospite": "Chi intesta la fattura all'ospite: Valente o il proprietario. Va deciso con il commercialista.",
   "Note": "Accordi particolari o eccezioni da ricordare su questo appartamento.",
   "Property manager": "Chi segue l'appartamento ogni giorno. Lo vede nel CRM e, se ha un compenso a percentuale, pesa sul margine.",
@@ -860,9 +862,41 @@ function SchedaRegola({ a, team, salvato, proprietaLibere = [] }) {
   const [msg, setMsg] = useState(null);
   const [lavoro, setLavoro] = useState(false);
   const set = (k, v) => { setB((x) => ({ ...x, [k]: v })); setMsg(null); };
-  const modificato = JSON.stringify(b) !== JSON.stringify(iniziale) || JSON.stringify(pers) !== JSON.stringify(persIniz) || JSON.stringify(own) !== JSON.stringify(ownIniz);
   const sub = b.modello === "sublocazione";
   const num = (v) => (v === "" || v == null ? null : Number(v));
+
+  /* Affitto al proprietario (sublocazioni): sta in fat_costi, categoria «affitto», con lo storico per date. */
+  const oggiMese = new Date().toISOString().slice(0, 7);
+  const primoDelMese = `${oggiMese}-01`;
+  const [affitti, setAffitti] = useState(null);
+  const [aff, setAff] = useState({ importo: "", dal: primoDelMese, iniz: "" });
+  const caricaAffitti = useCallback(async () => {
+    const r = await leggi("fat_costi", `?id_room_type=eq.${a.id_room_type}&categoria=eq.affitto&select=*&order=dal.asc.nullsfirst`);
+    setAffitti(r);
+    const attivi = r.filter((c) => Number(c.importo_mensile) > 0 && attivoNelMese(c, oggiMese));
+    const v = attivi.length ? String(attivi.reduce((x, c) => x + Number(c.importo_mensile), 0)) : "";
+    setAff({ importo: v, dal: primoDelMese, iniz: v });
+  }, [a.id_room_type, oggiMese, primoDelMese]);
+  useEffect(() => { caricaAffitti(); }, [caricaAffitti]);
+  const affModificato = sub && aff.importo !== aff.iniz;
+  const modificato = JSON.stringify(b) !== JSON.stringify(iniziale) || JSON.stringify(pers) !== JSON.stringify(persIniz) || JSON.stringify(own) !== JSON.stringify(ownIniz) || affModificato;
+  const salvaAffitto = async () => {
+    const attivi = (affitti || []).filter((c) => Number(c.importo_mensile) > 0 && attivoNelMese(c, oggiMese));
+    const dal = aff.dal || primoDelMese;
+    const giornoPrima = new Date(new Date(dal + "T00:00:00").getTime() - 86400000).toISOString().slice(0, 10);
+    for (const c of attivi) {
+      const ok = c.dal && c.dal >= dal
+        ? (await fetch(`${SUPABASE_URL}/rest/v1/fat_costi?id=eq.${c.id}`, { method: "DELETE", headers: intest() })).ok
+        : await aggiorna("fat_costi", `id=eq.${c.id}`, { al: giornoPrima, aggiornato_il: new Date().toISOString() });
+      if (!ok) return false;
+    }
+    if (aff.importo === "" || Number(aff.importo) <= 0) return true;
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/fat_costi`, {
+      method: "POST", headers: intest({ "Content-Type": "application/json", Prefer: "return=minimal" }),
+      body: JSON.stringify({ id_room_type: a.id_room_type, voce: `Affitto ${a.nome_kross.trim()}`, categoria: "affitto", importo_mensile: Number(aff.importo), dal: attivi.length || (affitti || []).length ? dal : null }),
+    });
+    return r.ok;
+  };
 
   const salva = async () => {
     setLavoro(true);
@@ -876,6 +910,7 @@ function SchedaRegola({ a, team, salvato, proprietaLibere = [] }) {
     };
     let ok = a.regola ? await aggiorna("fat_regole", `id_room_type=eq.${a.id_room_type}`, corpo) : await inserisciOAggiorna("fat_regole", corpo, "id_room_type");
     if (ok && a.prop && JSON.stringify(pers) !== JSON.stringify(persIniz)) ok = await aggiorna("proprieta", `id=eq.${a.prop.id}`, pers);
+    if (ok && affModificato) { ok = await salvaAffitto(); if (ok) await caricaAffitti(); }
     if (ok && a.own && JSON.stringify(own) !== JSON.stringify(ownIniz)) ok = await aggiorna("proprietari", `id=eq.${a.own.id}`, Object.fromEntries(Object.entries(own).map(([k, v]) => [k, String(v).trim() || null])));
     setLavoro(false);
     if (ok) { setMsg(["ok", "Modifiche salvate"]); salvato(); }
@@ -955,6 +990,25 @@ function SchedaRegola({ a, team, salvato, proprietaLibere = [] }) {
         <h2 style={{ marginBottom: 14 }}>{b.modello === "sublocazione" ? "Contratto" : "Contratto e commissione"}</h2>
         <div className="grid2">
           <Campo l="Modello"><select value={b.modello} onChange={(e) => set("modello", e.target.value)}><option value="gestione">Gestione per conto terzi</option><option value="sublocazione">Sublocazione</option></select></Campo>
+          {sub && <>
+            <Campo l="Affitto mensile al proprietario (€)" h={aff.iniz ? `Oggi: ${euro(Number(aff.iniz))} al mese.` : "Non ancora inserito."}>
+              <input type="number" step="0.01" value={aff.importo} onChange={(e) => { const v = e.target.value; setAff((x) => ({ ...x, importo: v })); setMsg(null); }} placeholder="es. 1250" />
+            </Campo>
+            {aff.iniz !== "" && affModificato && (
+              <Campo l="Il nuovo affitto vale dal" h="Il vecchio importo resta per i mesi prima: i margini passati non cambiano.">
+                <input type="date" value={aff.dal} onChange={(e) => setAff((x) => ({ ...x, dal: e.target.value }))} />
+              </Campo>
+            )}
+            {(affitti || []).length > 0 && (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label className="lab">Storico affitto</label>
+                {(affitti || []).map((c) => (
+                  <div className="row" key={c.id}><span>{c.voce}{c.note ? <span className="muted"> · {c.note}</span> : ""}</span>
+                    <span>{euro(c.importo_mensile)} <span className="muted">{c.dal ? `dal ${dataIt(c.dal)}` : "da sempre"}{c.al ? ` al ${dataIt(c.al)}` : ""}</span></span></div>
+                ))}
+              </div>
+            )}
+          </>}
           {b.modello !== "sublocazione" && <>
           <Campo l="Commissione (%)"><input type="number" step="0.01" value={b.commissione ?? ""} onChange={(e) => set("commissione", e.target.value)} placeholder="es. 20" /></Campo>
           <Campo l="La commissione comprende l'IVA"><SiNo v={b.commissione_iva_inclusa} onChange={(x) => set("commissione_iva_inclusa", x)} si="Sì, IVA inclusa" no="No, IVA in aggiunta" /></Campo>
@@ -1778,7 +1832,9 @@ function RendicontoMensile({ modello }) {
   const [cfg, setCfg] = useState({ ivaSub: 10, comp: {} });
   const [mese, setMese] = useState("");
   const [app, setApp] = useState("");
-
+  const [affitti, setAffitti] = useState([]);
+  useEffect(() => { if (sub) leggi("fat_costi", "?categoria=eq.affitto&select=*").then(setAffitti); }, [sub]);
+  const affittoDel = (idRoom) => affitti.filter((c) => c.id_room_type === idRoom && attivoNelMese(c, mese)).reduce((x, c) => x + (Number(c.importo_mensile) || 0), 0);
   useEffect(() => {
     Promise.all([
       leggiTutto("v_fat_prenotazione", "?select=*&order=arrivo.asc"), caricaAnagrafica(),
@@ -1871,7 +1927,7 @@ function RendicontoMensile({ modello }) {
         <div key={g} className="card" style={{ overflow: "hidden", breakInside: "avoid" }}>
           <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <div><b>{g}</b>{lista[0].proprietario && <span className="muted"> · {lista[0].proprietario}</span>}</div>
-            <span className="muted">{lista.length} prenotazioni</span>
+            <span className="muted">{lista.length} prenotazioni{sub && (() => { const af = affittoDel(lista[0].r.id_room_type); const resta = somma(lista, "resta") - af; return <> · affitto del mese <b style={{ color: "var(--ink)" }}>{af ? euro(af) : "non inserito"}</b> · resta dopo l'affitto <b style={{ color: resta < 0 ? "var(--err)" : "var(--ink)" }}>{euro(resta)}</b></>; })()}</span>
           </div>
           <div style={{ overflowX: "auto" }}>
             <table>
