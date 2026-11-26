@@ -57,7 +57,7 @@ function App() {
         <div style={{ color: "#64748B", fontSize: 14 }}>Fatturazione</div>
         <button onClick={() => { scrivi(null); setOk(false); }} style={{ marginLeft: "auto", fontSize: 13, padding: "6px 12px", borderRadius: 8, border: "1px solid #E5E7EB", background: "#fff", cursor: "pointer", color: "#334155" }}>Esci</button>
       </header>
-      <main style={{ maxWidth: 1360, margin: "0 auto", padding: "28px 28px 60px" }}><Fatturazione /></main>
+      <main style={{ maxWidth: 1600, margin: "0 auto", padding: "28px 28px 60px" }}><Fatturazione /></main>
     </div>
   );
   return (

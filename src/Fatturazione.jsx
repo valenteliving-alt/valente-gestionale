@@ -146,6 +146,7 @@ const ICONE = {
   warn: "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z",
   check: "M20 6 9 17l-5-5",
   chart: "M3 3v18h18M7 15l4-4 3 3 5-6",
+  doc: "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h6",
   user: "M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z",
   euro: "M18 7a7 7 0 1 0 0 10M4 10h9M4 14h9",
 };
@@ -1689,9 +1690,149 @@ function Persone({ ruolo }) {
   );
 }
 
+/* ───────────────────────────── Rendiconto mensile ─────────────────────────────
+   Una riga per prenotazione (mese del check-in), voce per voce fino al netto, raggruppate per
+   appartamento con i subtotali. Si scarica in Excel o si stampa. */
+
+const COLONNE_G = [
+  ["arrivo", "Arrivo"], ["ospite", "Ospite"], ["canale", "Canale"], ["notti", "Notti"],
+  ["pernottamenti", "Pernottamenti"], ["pulizieOspite", "Pulizie ospite"], ["ota", "Comm. OTA + IVA"], ["costoPul", "Costo pulizia (+IVA)"],
+  ["base", "Base di calcolo"], ["percValente", "% Valente (IVA incl.)"], ["proprietario", "Totale proprietario"], ["imposta", "Imposta trattenuta"],
+  ["netto", "Netto proprietario"], ["agente", "Agente"], ["pm", "PM %"], ["resta", "Resta a Valente"],
+];
+const COLONNE_S = [
+  ["arrivo", "Arrivo"], ["ospite", "Ospite"], ["canale", "Canale"], ["notti", "Notti"],
+  ["pernottamenti", "Pernottamenti"], ["pulizieOspite", "Pulizie ospite"], ["totale", "Totale ospite"], ["ota", "Comm. OTA + IVA"],
+  ["ricavo", "Ricavo (senza IVA, − OTA)"], ["costoPul", "Costo pulizia"], ["pm", "PM %"], ["resta", "Resta a Valente"],
+];
+const NUMERICHE = new Set(["notti", "pernottamenti", "pulizieOspite", "ota", "costoPul", "base", "percValente", "proprietario", "imposta", "netto", "agente", "pm", "resta", "totale", "ricavo"]);
+
+function RendicontoMensile({ modello }) {
+  const sub = modello === "sublocazione";
+  const [righe, setRighe] = useState(null);
+  const [ana, setAna] = useState({});
+  const [cfg, setCfg] = useState({ ivaSub: 10, comp: {} });
+  const [mese, setMese] = useState("");
+  const [app, setApp] = useState("");
+
+  useEffect(() => {
+    Promise.all([
+      leggiTutto("v_fat_prenotazione", "?select=*&order=arrivo.asc"), caricaAnagrafica(),
+      leggi("fat_config", "?select=chiave,valore"), leggi("fat_compensi", "?select=*"),
+    ]).then(([r, { app }, c, k]) => {
+      setRighe(r); setAna(Object.fromEntries(app.map((a) => [a.id_room_type, a])));
+      setCfg({ ivaSub: Number((c.find((x) => x.chiave === "iva_sublocazione") || {}).valore) || 0, comp: Object.fromEntries(k.map((x) => [x.persona.toLowerCase(), x])) });
+      const oggi = new Date(); oggi.setMonth(oggi.getMonth() - 1);
+      setMese(oggi.toISOString().slice(0, 7));
+    });
+  }, []);
+
+  const mesi = useMemo(() => [...new Set((righe || []).map((r) => r.mese_rendiconto).filter(Boolean))].sort().reverse(), [righe]);
+  const delMese = useMemo(() => (righe || []).filter((r) => (r.tipo_gestione || "gestione") === modello && r.mese_rendiconto === mese), [righe, modello, mese]);
+  const appartamenti = useMemo(() => [...new Set(delMese.map((r) => r.nome_proprieta || r.nome_kross))].sort((a, b) => a.localeCompare(b, "it")), [delMese]);
+
+  const voci = useMemo(() => delMese.filter((r) => !app || (r.nome_proprieta || r.nome_kross) === app).map((r) => {
+    const a = ana[r.id_room_type];
+    const pmGen = Number(cfg.comp[String(a?.prop?.gestore_interno || "").trim().toLowerCase()]?.pct_provvigione) || 0;
+    const c = contoPrenotazione(r, a, undefined, cfg.ivaSub, pmGen);
+    const otaTot = (Number(r.ota) || 0) + (Number(r.ota_iva) || 0);
+    return {
+      gruppo: r.nome_proprieta || r.nome_kross, proprietario: nomeOwn(a?.own), r, c,
+      v: {
+        arrivo: dataBreve(r.arrivo) + " – " + dataBreve(r.partenza), ospite: r.ospite || "—", canale: canale(r.canale)[1], notti: Number(r.notti) || 0,
+        pernottamenti: Number(r.alloggio) || 0, pulizieOspite: Number(r.pulizie) || 0, totale: Number(r.totale_ospite) || 0, ota: otaTot,
+        costoPul: sub ? (c.pulizia ?? null) : (r.base_meno_pulizie ? Number(r.costo_pulizia_lordo) || null : c.pulizia),
+        base: Number(r.base_importo) || 0, percValente: (Number(r.prov_netta) || 0) + (Number(r.prov_iva) || 0),
+        proprietario: r.quota_proprietario_lorda != null ? Number(r.quota_proprietario_lorda) : null, imposta: r.cedolare != null ? Number(r.cedolare) : null,
+        netto: r.netto_proprietario != null ? Number(r.netto_proprietario) : null, agente: c.agente, pm: c.pm, ricavo: c.ricavo, resta: c.resta,
+      },
+    };
+  }), [delMese, app, ana, cfg, sub]);
+
+  const gruppi = useMemo(() => {
+    const m = new Map();
+    voci.forEach((x) => { if (!m.has(x.gruppo)) m.set(x.gruppo, []); m.get(x.gruppo).push(x); });
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], "it"));
+  }, [voci]);
+  const COL = sub ? COLONNE_S : COLONNE_G;
+  const VIS = COL.filter(([k]) => !["agente", "pm", "canale"].includes(k));   // a video; nell'Excel ci sono tutte
+  const somma = (lista, k) => lista.reduce((t, x) => t + (Number(x.v[k]) || 0), 0);
+  const fmt = (k, v) => (v == null ? "—" : !NUMERICHE.has(k) ? v : k === "notti" ? v : euro(v));
+  const mancano = voci.filter((x) => x.c.pulizia == null && !(x.r.base_meno_pulizie && !sub)).length;
+
+  const esportaExcel = async () => {
+    const XLSX = await import("xlsx");
+    const dati = [];
+    gruppi.forEach(([g, lista]) => {
+      lista.forEach((x) => dati.push({ Appartamento: g, Proprietario: x.proprietario, Codice: x.r.cod_reservation, ...Object.fromEntries(COL.map(([k, l]) => [l, x.v[k] == null ? "" : NUMERICHE.has(k) ? Math.round(x.v[k] * 100) / 100 : x.v[k]])) }));
+      dati.push({ Appartamento: `Totale ${g}`, ...Object.fromEntries(COL.filter(([k]) => NUMERICHE.has(k)).map(([k, l]) => [l, Math.round(somma(lista, k) * 100) / 100])) });
+    });
+    dati.push({ Appartamento: "TOTALE MESE", ...Object.fromEntries(COL.filter(([k]) => NUMERICHE.has(k)).map(([k, l]) => [l, Math.round(somma(voci, k) * 100) / 100])) });
+    const ws = XLSX.utils.json_to_sheet(dati); const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Rendiconto");
+    XLSX.writeFile(wb, `Rendiconto ${sub ? "sublocazioni" : "gestioni"} ${mese}${app ? " - " + app : ""}.xlsx`);
+  };
+
+  if (!righe) return <Vuoto t="Preparo il rendiconto…" />;
+  return (
+    <div style={{ display: "grid", gap: 16 }} className="rend">
+      <style>{`.rend table{font-size:12px}.rend th,.rend td{padding:8px 8px;white-space:nowrap}.rend th{font-size:10.5px}.rend td:nth-child(2){white-space:normal;min-width:110px}@media print{body *{visibility:hidden}.rend,.rend *{visibility:visible}.rend{position:absolute;left:0;top:0;width:100%}.rend .noprint{display:none!important}.fx table{font-size:9px}.fx td,.fx th{padding:4px 5px}}`}</style>
+      <div className="noprint" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <select value={mese} onChange={(e) => { setMese(e.target.value); setApp(""); }} style={{ width: 190 }}>
+          {!mesi.includes(mese) && <option value={mese}>{meseEsteso(mese)}</option>}
+          {mesi.map((m) => <option key={m} value={m}>{meseEsteso(m)}</option>)}
+        </select>
+        <select value={app} onChange={(e) => setApp(e.target.value)} style={{ width: 260 }}>
+          <option value="">Tutti gli appartamenti</option>
+          {appartamenti.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button className="btn" onClick={() => window.print()}>Stampa / PDF</button>
+          <button className="btn pri" onClick={esportaExcel} disabled={!voci.length}>Scarica Excel</button>
+        </div>
+      </div>
+      <div>
+        <h2 style={{ fontSize: 18 }}>Rendiconto {sub ? "sublocazioni" : "gestioni"} · {meseEsteso(mese)}{app ? ` · ${app}` : ""}</h2>
+        <div className="sub">{voci.length} prenotazioni con check-in nel mese · importi in euro</div>
+      </div>
+      <div className="kpis">
+        <Kpi t="Pernottamenti" v={euro(somma(voci, "pernottamenti"))} />
+        <Kpi t="Commissioni OTA + IVA" v={euro(somma(voci, "ota"))} />
+        {!sub && <Kpi t="Netto ai proprietari" v={euro(somma(voci, "netto"))} n={`imposta trattenuta ${euro(somma(voci, "imposta"))}`} />}
+        {sub && <Kpi t="Ricavo" v={euro(somma(voci, "ricavo"))} />}
+        <Kpi t="Resta a Valente" v={euro(somma(voci, "resta"))} n="prima dei costi fissi" tono={somma(voci, "resta") < 0 ? "warn" : "ok"} />
+      </div>
+      {mancano > 0 && <div className="note warn noprint"><Ico n="warn" />{mancano} prenotazioni non hanno il costo pulizia: il «Resta a Valente» è più alto del vero. Inseriscilo dalla scheda dell'appartamento o sulla singola prenotazione.</div>}
+      {!voci.length ? <div className="card"><Vuoto t="Nessuna prenotazione in questo mese." /></div> : gruppi.map(([g, lista]) => (
+        <div key={g} className="card" style={{ overflow: "hidden", breakInside: "avoid" }}>
+          <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div><b>{g}</b>{lista[0].proprietario && <span className="muted"> · {lista[0].proprietario}</span>}</div>
+            <span className="muted">{lista.length} prenotazioni</span>
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table>
+              <thead><tr>{VIS.map(([k, l]) => <th key={k} className={NUMERICHE.has(k) ? "num" : ""}>{l}</th>)}</tr></thead>
+              <tbody>
+                {lista.map((x) => (
+                  <tr key={x.r.id_reservation} style={{ cursor: "default" }}>
+                    {VIS.map(([k]) => <td key={k} className={NUMERICHE.has(k) ? "num" : ""} style={k === "resta" ? { fontWeight: 600, color: x.v.resta < 0 ? "var(--err)" : undefined } : undefined}>
+                      {k === "costoPul" && x.v.costoPul == null ? <span className="pill warn">manca</span> : fmt(k, x.v[k])}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot><tr>{VIS.map(([k], i) => <td key={k} className={NUMERICHE.has(k) ? "num" : ""} style={{ fontWeight: 600, borderTop: "1px solid var(--line)", padding: "10px 14px" }}>
+                {i === 0 ? "Totale" : NUMERICHE.has(k) ? fmt(k, somma(lista, k)) : ""}</td>)}</tr></tfoot>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ───────────────────────────── Pagina ───────────────────────────── */
 
-const TABS = [["prenotazioni", "Prenotazioni", "list"], ["margini", "Margini", "chart"], ["planner", "Planner", "cal"], ["appartamenti", "Appartamenti e criteri", "home"], ["pm", "Property manager", "user"], ["agenti", "Agenti", "user"], ["costi", "Costi e compensi", "euro"], ["impostazioni", "Impostazioni", "gear"]];
+const TABS = [["prenotazioni", "Prenotazioni", "list"], ["rendiconto", "Rendiconto mensile", "doc"], ["margini", "Margini", "chart"], ["planner", "Planner", "cal"], ["appartamenti", "Appartamenti e criteri", "home"], ["pm", "Property manager", "user"], ["agenti", "Agenti", "user"], ["costi", "Costi e compensi", "euro"], ["impostazioni", "Impostazioni", "gear"]];
 
 export default function Fatturazione() {
   const [tab, setTab] = useState("prenotazioni");
@@ -1755,6 +1896,7 @@ export default function Fatturazione() {
       {tab === "prenotazioni" && <Prenotazioni modello={modello} />}
       {tab === "appartamenti" && <Appartamenti modello={modello} />}
       {tab === "margini" && <Margini modello={modello} />}
+      {tab === "rendiconto" && <RendicontoMensile key={modello} modello={modello} />}
       {tab === "costi" && <Costi modello={modello} />}
       {tab === "agenti" && <Persone key="ag" ruolo="agente" />}
       {tab === "pm" && <Persone key="pm" ruolo="pm" />}
