@@ -906,9 +906,6 @@ function SchedaRegola({ a, team, salvato, proprietaLibere = [] }) {
         <h2 style={{ marginBottom: 14 }}>{b.modello === "sublocazione" ? "Contratto" : "Contratto e commissione"}</h2>
         <div className="grid2">
           <Campo l="Modello"><select value={b.modello} onChange={(e) => set("modello", e.target.value)}><option value="gestione">Gestione per conto terzi</option><option value="sublocazione">Sublocazione</option></select></Campo>
-          <Campo l="Costo standard di una pulizia (€, IVA esclusa)" h="Es. 85 = 85 € + IVA (103,70 €). Vale per ogni prenotazione; sulla singola prenotazione si può cambiare.">
-            <input type="number" step="0.01" value={b.costo_pulizia ?? ""} onChange={(e) => set("costo_pulizia", e.target.value)} placeholder="es. 85" />
-          </Campo>
           {b.modello !== "sublocazione" && <>
           <Campo l="Commissione (%)"><input type="number" step="0.01" value={b.commissione ?? ""} onChange={(e) => set("commissione", e.target.value)} placeholder="es. 20" /></Campo>
           <Campo l="La commissione comprende l'IVA"><SiNo v={b.commissione_iva_inclusa} onChange={(x) => set("commissione_iva_inclusa", x)} si="Sì, IVA inclusa" no="No, IVA in aggiunta" /></Campo>
@@ -917,12 +914,31 @@ function SchedaRegola({ a, team, salvato, proprietaLibere = [] }) {
               <option value="alloggio_meno_ota">Alloggio meno commissione OTA</option><option value="alloggio_lordo">Alloggio lordo</option><option value="lordo_ospite">Totale pagato dall'ospite</option>
             </select>
           </Campo>
-          <Campo l="Togli le pulizie dalla base di calcolo" h="La commissione si calcola senza il costo delle pulizie.">
-            <SiNo v={b.base_meno_pulizie} onChange={(x) => set("base_meno_pulizie", x)} si="Sì, togli le pulizie" no="No" />
-          </Campo>
           <Campo l="Commissione OTA a carico del proprietario"><SiNo v={b.addebita_ota_al_proprietario} onChange={(x) => set("addebita_ota_al_proprietario", x)} /></Campo>
-          <Campo l="Pulizie a carico del proprietario"><SiNo v={b.addebita_pulizie_al_proprietario} onChange={(x) => set("addebita_pulizie_al_proprietario", x)} /></Campo>
           </>}
+        </div>
+      </div>
+
+      <div className="sec">
+        <h2 style={{ marginBottom: 4 }}>Pulizie</h2>
+        <div className="sub" style={{ marginBottom: 14 }}>Due cose diverse: quanto <b>paghiamo noi</b> l'impresa e quanto <b>paga l'ospite</b> come costo di pulizia sulla prenotazione.</div>
+        <div className="grid2">
+          <Campo l="Costo dell'impresa per ogni pulizia (€ + IVA)" h={`Scrivi l'importo senza IVA: ${b.costo_pulizia ? `${euro(Number(b.costo_pulizia))} + IVA = ${euro(Number(b.costo_pulizia) * 1.22)}` : "es. 85 → 103,70 € con IVA"}. Sulla singola prenotazione si può cambiare.`}>
+            <input type="number" step="0.01" value={b.costo_pulizia ?? ""} onChange={(e) => set("costo_pulizia", e.target.value)} placeholder="es. 85" />
+          </Campo>
+          {b.modello !== "sublocazione" && (
+            <Campo l="Chi paga l'impresa" h="Se la paga il proprietario, il costo con IVA si toglie dalla base di calcolo.">
+              <SiNo v={b.base_meno_pulizie} onChange={(x) => set("base_meno_pulizie", x)} si="Il proprietario (tolto dalla base)" no="Valente" />
+            </Campo>
+          )}
+          {b.modello !== "sublocazione" && (
+            <Campo l="Pulizie pagate dall'ospite" h="L'importo «pulizie» che arriva da Kross sulla prenotazione.">
+              <SiNo v={b.addebita_pulizie_al_proprietario} onChange={(x) => set("addebita_pulizie_al_proprietario", x)} si="Restano a Valente" no="Vanno al proprietario" />
+            </Campo>
+          )}
+          <Campo l="Le pulizie pagate dall'ospite comprendono l'IVA?" h="Serve solo a calcolare quanto resta a Valente senza IVA.">
+            <SiNo v={b.pulizie_iva_inclusa} onChange={(x) => set("pulizie_iva_inclusa", x)} si="Sì, IVA compresa" no="No, IVA da aggiungere" />
+          </Campo>
         </div>
       </div>
 
@@ -936,7 +952,6 @@ function SchedaRegola({ a, team, salvato, proprietaLibere = [] }) {
           <Campo l="Cedolare secca (%)"><input type="number" step="0.01" value={b.cedolare_pct ?? ""} onChange={(e) => set("cedolare_pct", e.target.value)} /></Campo>
           </>}
           <Campo l="IVA sull'alloggio (%)" h="Vuoto = valore generale delle impostazioni."><input type="number" step="0.01" value={b.iva_alloggio ?? ""} onChange={(e) => set("iva_alloggio", e.target.value)} /></Campo>
-          <Campo l="Pulizie: importo già con IVA"><SiNo v={b.pulizie_iva_inclusa} onChange={(x) => set("pulizie_iva_inclusa", x)} no="No, IVA da aggiungere" /></Campo>
         </div>
       </div>
 
