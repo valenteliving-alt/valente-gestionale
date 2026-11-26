@@ -362,7 +362,10 @@ function Impostazioni() {
   const sincronizza = async () => {
     setLavoro(true); setSync("Avviata. Di solito ci mette un paio di minuti…");
     const prima = stato?.ultimo_sync;
-    try { await fetch("/.netlify/functions/kross-sync-background", { method: "POST" }); } catch { /* la funzione parte comunque in background */ }
+    /* Dal file scaricato sul PC l'indirizzo relativo non esiste: si punta al CRM online.
+      no-cors perché la risposta non serve, basta che la sincronizzazione parta. */
+    const base = location.protocol === "file:" ? "https://valentelivingcrm.netlify.app" : "";
+    try { await fetch(`${base}/.netlify/functions/kross-sync-background`, { method: "POST", mode: "no-cors" }); } catch { /* la funzione parte comunque in background */ }
     for (let i = 0; i < 40; i++) {
       await new Promise((r) => setTimeout(r, 6000));
       const s = await caricaStato();
