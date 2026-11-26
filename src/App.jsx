@@ -16,6 +16,7 @@ import Valutazione from "./Valutazione";
 import Krossbooking from "./Krossbooking";
 import ReportAppartamenti from "./ReportAppartamenti";
 import Planner from "./Planner";
+import Fatturazione from "./Fatturazione";
 import Trattative from "./Trattative";
 import LeadPannello from "./LeadPannello";
 import { CartellaValutazione } from "./LeadValutazione";
@@ -3986,6 +3987,8 @@ function App({ utente, onLogout }) {
     { id: "report", label: "Report appartamenti", icon: "📈", count: null, ...(sonoAgente ? {} : { group: "Operativo" }) },
     // Archivio fatture estere da autofatturare (TD17) e girare a Pachino. Solo master/soci (RLS)
     ...(vedoTutto ? [{ id: "autofatture", label: "Autofatture", icon: "🧾", count: null, group: "Operativo" }] : []),
+    // App Fatturazione: planner, prenotazioni, criteri per appartamento, bozze per Fatture in Cloud
+    ...(vedoTutto ? [{ id: "fatturazione", label: "Fatturazione", icon: "💶", count: null, group: "Operativo" }] : []),
     { id: "proprieta", label: "Proprietà", icon: "🏠", count: stats.totale, group: "Operativo" },
     { id: "proprietari", label: "Proprietari", icon: "👤", count: owners.length, group: "Operativo" },
     /* Le trattative vengono PRIMA del lancio: un immobile e un lead finche
@@ -4196,6 +4199,7 @@ function App({ utente, onLogout }) {
             view === "team" ? <Team proprieta={proprieta} sonoMaster={sonoMaster} onDataChanged={load} /> :
             view === "report" ? <ReportAppartamenti sb={sb} vedoTutto={vedoTutto} sonoAgente={sonoAgente} /> :
             view === "autofatture" && vedoTutto ? <Autofatture sb={sb} /> :
+            view === "fatturazione" && vedoTutto ? <Fatturazione /> :
             view === "portale" ? <PortaleAgente proprieta={proprieta} nomeAgente={mioNome} sb={sb} onDataChanged={load} /> :
             view === "valutazione" ? <Valutazione nomeAgente={mioNome} prefill={valutaPrefill} vedoTutto={vedoTutto} /> :
             view === "trattative" ? <Trattative nomeAgente={mioNome} /> :
