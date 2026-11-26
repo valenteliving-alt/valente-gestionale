@@ -1,0 +1,9 @@
+-- App Fatturazione e Rendicontazione (26/11/2026)
+-- Applicato su Supabase come migrazioni: fatturazione_app_schema_iniziale,
+-- fatturazione_regole_per_appartamento, fatturazione_intestatari_per_prenotazione,
+-- fatturazione_intestatario_regola_kross, fatturazione_conta_prenotazioni_senza_billing.
+-- Tabelle: fat_config, fat_bozze, fat_regole, fat_intestatari, fat_kross_billing.
+-- Viste: v_fat_prenotazione (calcolo per prenotazione), v_fat_intestatario_calcolato
+-- (regola: dati di fatturazione del check-in Kross se presenti, altrimenti ospite principale).
+-- Funzioni: fat_piva_valida(text), fat_conta_senza_billing().
+-- Il testo completo delle migrazioni sta nella cronologia delle migrazioni di Supabase.

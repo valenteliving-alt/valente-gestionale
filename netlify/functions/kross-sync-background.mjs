@@ -201,6 +201,66 @@ async function sincronizzaDocumenti(dal, al, log) {
   return righe.length;
 }
 
+// ─────────────────── dati di fatturazione (app Fatturazione) ───────────────────
+// Kross restituisce il blocco billing_data con with_billing_data: ragione sociale,
+// P.IVA (tax_code), codice fiscale, codice SDI (electronic_invoice_code), PEC e
+// indirizzo, compilati dall'ospite nel check-in online. L'ospite puo compilarli
+// DOPO la prenotazione, quindi a ogni giro rileggiamo le prenotazioni recenti e
+// future, e recuperiamo quelle del 2026 che non abbiamo ancora.
+// Un errore qui non deve mai fermare la sincronizzazione principale.
+async function sincronizzaFatturazione(log) {
+  try {
+    const oggi = new Date();
+    const giorno = (d) => d.toISOString().slice(0, 10);
+    const finestre = [{
+      check_out_date_from: giorno(new Date(oggi.getTime() - 15 * 864e5)),
+      check_out_date_to: giorno(new Date(oggi.getTime() + 90 * 864e5)),
+    }];
+
+    const rc = await fetch(K.sbUrl("rpc/fat_conta_senza_billing"), {
+      method: "POST", headers: K.sbHead(), body: "{}",
+    });
+    const mancanti = Number(await rc.json().catch(() => 0)) || 0;
+    if (mancanti > 0) {
+      log(`Fatturazione: ${mancanti} prenotazioni 2026 senza dati, le recupero`);
+      const annoA = oggi.getFullYear() + 1;
+      for (let a = 2026; a <= annoA; a++) {
+        finestre.push({ check_out_date_from: `${a}-01-01`, check_out_date_to: `${a}-12-31` });
+      }
+    }
+
+    const righe = new Map();
+    for (const filtro of finestre) {
+      let off = 0;
+      while (true) {
+        const j = await K.chiamaConAttesa("/reservations/get-list", {
+          ...filtro, cod_reservation_status_all: true, with_billing_data: true,
+          limit: PAGINA, offset: off,
+        });
+        const d = j.data || [];
+        for (const r of d) {
+          if (!r.id_reservation) continue;
+          const b = r.billing_data && typeof r.billing_data === "object" ? r.billing_data : {};
+          righe.set(r.id_reservation, {
+            id_reservation: r.id_reservation,
+            billing: b,
+            letto_il: new Date().toISOString(),
+          });
+        }
+        if (d.length < PAGINA) break;
+        off += PAGINA;
+      }
+    }
+    const lista = [...righe.values()];
+    if (lista.length) await K.upsert("fat_kross_billing", lista, "id_reservation");
+    log(`Fatturazione: dati di fatturazione letti per ${lista.length} prenotazioni`);
+    return lista.length;
+  } catch (e) {
+    log("Fatturazione: ATTENZIONE, lettura dati non riuscita — " + String(e.message || e).slice(0, 200));
+    return 0;
+  }
+}
+
 // ─────────────────── handler ───────────────────
 export const handler = async (event) => {
   const righeLog = [];
@@ -243,6 +303,8 @@ export const handler = async (event) => {
       const dal = new Date(oggi.getTime() - 45 * 864e5).toISOString().slice(0, 10);
       await sincronizzaDocumenti(dal, oggi.toISOString().slice(0, 10), log);
     }
+
+    await sincronizzaFatturazione(log);
 
     const esito = `${completo ? "Ricarica completa" : "Incrementale"}: ${totale} prenotazioni.`;
     await K.statoScrivi({ ultimo_sync: new Date().toISOString(), ultimo_esito: esito });
