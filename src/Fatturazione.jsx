@@ -165,7 +165,56 @@ const Cerca = ({ v, set, ph, w = 320 }) => (
   <div className="search" style={{ flex: `0 1 ${w}px`, minWidth: 200 }}><Ico n="search" s={15} /><input value={v} onChange={(e) => set(e.target.value)} placeholder={ph} /></div>
 );
 const Vuoto = ({ t }) => <div style={{ padding: "48px 20px", textAlign: "center", color: "var(--mute)" }}>{t}</div>;
-const Campo = ({ l, h, children }) => <div><label className="lab">{l}</label>{children}{h && <div className="hint">{h}</div>}</div>;
+/* Spiegazioni brevi accanto ai campi: icona «i», si leggono passandoci sopra o toccandola. */
+const INFO = {
+  "Modello": "Gestione: l'appartamento è del proprietario, noi prendiamo una commissione. Sublocazione: lo affittiamo noi, paghiamo un canone e teniamo l'incasso.",
+  "Commissione (%)": "La percentuale che prende Valente, calcolata sulla base di calcolo. Es. 20 = 20%.",
+  "La commissione comprende l'IVA": "«IVA inclusa»: il 20% è già comprensivo di IVA (a noi resta circa 16,4% + IVA). «IVA in aggiunta»: il 20% è netto e al proprietario si addebita 20% + IVA.",
+  "Base di calcolo": "Su quale cifra si applica la commissione. La regola standard è: pernottamenti meno commissioni OTA comprese di IVA.",
+  "Commissione OTA a carico del proprietario": "Sì: la commissione di Airbnb/Booking (con IVA) si toglie dalla quota del proprietario. No: la paga Valente.",
+  "Costo dell'impresa per ogni pulizia (€ + IVA)": "Quanto paghiamo l'impresa di pulizie a ogni check-out, scritto senza IVA. Vale per tutte le prenotazioni dell'appartamento; sulla singola prenotazione si può cambiare.",
+  "Chi paga l'impresa": "Il proprietario: il costo della pulizia con IVA si toglie dalla base di calcolo e dalla sua quota. Valente: il costo resta a noi e pesa sul nostro margine.",
+  "Pulizie pagate dall'ospite": "È l'importo «pulizie» che l'ospite paga sulla prenotazione (arriva da Kross). Può restare a Valente o andare al proprietario.",
+  "Le pulizie pagate dall'ospite comprendono l'IVA?": "Serve solo per calcolare quanto resta a Valente al netto dell'IVA sulle pulizie pagate dall'ospite.",
+  "Facciamo da sostituto d'imposta": "Sì: tratteniamo la cedolare secca dalla quota del proprietario e la versiamo noi. Va deciso con il commercialista.",
+  "Cedolare secca (%)": "Aliquota trattenuta al proprietario quando facciamo da sostituto d'imposta. Di solito 21%.",
+  "IVA sull'alloggio (%)": "Aliquota IVA sull'affitto all'ospite, usata per calcolare il ricavo delle sublocazioni senza IVA. Vuoto = il valore generale delle Impostazioni.",
+  "Chi emette la fattura all'ospite": "Chi intesta la fattura all'ospite: Valente o il proprietario. Va deciso con il commercialista.",
+  "Note": "Accordi particolari o eccezioni da ricordare su questo appartamento.",
+  "Property manager": "Chi segue l'appartamento ogni giorno. Lo vede nel CRM e, se ha un compenso a percentuale, pesa sul margine.",
+  "Agente": "Chi ha portato l'appartamento. Prende una quota sulla nostra provvigione senza IVA.",
+  "Quota dell'agente (% sulla provvigione netta)": "Percentuale della nostra provvigione senza IVA che va all'agente. Mandati attuali: 20%.",
+  "% property manager solo per questo appartamento": "Se il property manager ha una percentuale diversa solo qui. Vuoto = vale quella generale in «Costi e compensi».",
+  "Codice fiscale / P.IVA": "Serve per intestare la fattura delle provvigioni e per il rendiconto.",
+  "Fisso al mese (€)": "Compenso fisso mensile del property manager. Si divide in parti uguali sugli appartamenti che segue.",
+  "% sul ricavo": "Parte variabile del property manager, in percentuale su quanto resta a Valente degli appartamenti che segue.",
+  "Importo al mese (€)": "Costo mensile. Per una spesa annuale o bimestrale dividi l'importo per i mesi.",
+  "Categoria": "Serve a raggruppare i costi nei Margini (affitto, bollette, gestionale…).",
+  "Dal (facoltativo)": "Da quando vale il costo. Vuoto = da sempre.",
+  "Al (facoltativo)": "Fino a quando vale il costo. Vuoto = senza scadenza.",
+  "Importo totale (€)": "Totale della bolletta. Si divide sugli appartamenti scelti e sui mesi del periodo.",
+  "Periodo dal": "Inizio del periodo fatturato nella bolletta.",
+  "Periodo al": "Fine del periodo fatturato nella bolletta.",
+  "POD / PDR / codice cliente": "Il codice dell'utenza scritto in bolletta: POD per la luce, PDR per il gas.",
+  "È già su Kross?": "Se l'appartamento esiste già su Kross, sceglilo: arrivano le prenotazioni e si impostano i criteri di fatturazione.",
+  "Stato": "A che punto è l'appartamento: da avviare, mandato firmato, in lancio, attivo.",
+  "Soggiorno": "Concluse: ospite già partito. In corso: ospite in casa oggi. Future: arrivo dopo oggi.",
+  "Totale ospite almeno (€)": "Mostra solo le prenotazioni con un totale pagato dall'ospite pari o superiore a questa cifra.",
+};
+function Info({ t }) {
+  const [aperta, setAperta] = useState(false);
+  return (
+    <span style={{ position: "relative", display: "inline-flex", marginLeft: 5, verticalAlign: "middle" }}
+      onMouseEnter={() => setAperta(true)} onMouseLeave={() => setAperta(false)} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAperta((x) => !x); }}>
+      <span aria-label="Informazioni" style={{ width: 15, height: 15, borderRadius: "50%", border: "1px solid #CBD5E1", color: "var(--mute)", fontSize: 10, fontWeight: 700, fontStyle: "italic", fontFamily: "Georgia,serif", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "help", background: "#fff" }}>i</span>
+      {aperta && <span role="tooltip" style={{ position: "absolute", left: -12, bottom: "calc(100% + 8px)", width: 260, background: "#0F172A", color: "#fff", fontSize: 12, fontWeight: 400, lineHeight: 1.45, padding: "9px 11px", borderRadius: 8, boxShadow: "0 8px 24px rgba(15,23,42,.25)", zIndex: 80, whiteSpace: "normal", textTransform: "none", letterSpacing: 0 }}>{t}</span>}
+    </span>
+  );
+}
+const Campo = ({ l, h, i, children }) => {
+  const testo = i || INFO[l];
+  return <div><label className="lab">{l}{testo && <Info t={testo} />}</label>{children}{h && <div className="hint">{h}</div>}</div>;
+};
 const SiNo = ({ v, onChange, si = "Sì", no = "No" }) => (
   <select value={String(!!v)} onChange={(e) => onChange(e.target.value === "true")}><option value="true">{si}</option><option value="false">{no}</option></select>
 );
