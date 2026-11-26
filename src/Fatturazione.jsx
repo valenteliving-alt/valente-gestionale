@@ -180,24 +180,56 @@ function Prenotazioni({ modello }) {
   const [filtro, setFiltro] = useState("tutte");
   const [aperta, setAperta] = useState(null);
   const [limite, setLimite] = useState(100);
+  const VUOTI = { app: "", canale: "", pm: "", agente: "", own: "", dal: "", al: "", quando: "", fatt: "", minimo: "", ordine: "arrivo_desc" };
+  const [f, setF] = useState(VUOTI);
+  const sf = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const nFiltri = Object.entries(f).filter(([k, v]) => k !== "ordine" && v).length + (mese ? 1 : 0) + (filtro !== "tutte" ? 1 : 0) + (cerca ? 1 : 0);
 
   useEffect(() => { leggiTutto("v_fat_prenotazione", "?select=*&order=arrivo.desc").then(setRighe); }, []);
   const mesi = useMemo(() => [...new Set((righe || []).map((r) => r.mese_rendiconto).filter(Boolean))].sort().reverse(), [righe]);
 
+  /* Le scelte dei menu a tendina, prese solo dalle prenotazioni di questo modello. */
+  const scelte = useMemo(() => {
+    const mie = (righe || []).filter((r) => (r.tipo_gestione || "gestione") === modello);
+    const uniq = (fn) => [...new Set(mie.map(fn).map((v) => String(v || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "it"));
+    return {
+      app: uniq((r) => r.nome_proprieta || r.nome_kross), canale: uniq((r) => r.canale),
+      pm: uniq((r) => ana[r.id_room_type]?.prop?.gestore_interno), agente: uniq((r) => ana[r.id_room_type]?.prop?.agente),
+      own: uniq((r) => nomeOwn(ana[r.id_room_type]?.own)),
+    };
+  }, [righe, modello, ana]);
+
   const filtrate = useMemo(() => {
     const q = cerca.trim().toLowerCase();
-    return (righe || []).filter((r) => {
+    const oggi = new Date().toISOString().slice(0, 10);
+    const out = (righe || []).filter((r) => {
       if ((r.tipo_gestione || "gestione") !== modello) return false;
       if (mese && r.mese_rendiconto !== mese) return false;
+      const x = ana[r.id_room_type];
+      if (f.app && (r.nome_proprieta || r.nome_kross) !== f.app) return false;
+      if (f.canale && String(r.canale || "") !== f.canale) return false;
+      if (f.pm && String(x?.prop?.gestore_interno || "").trim() !== f.pm) return false;
+      if (f.agente && String(x?.prop?.agente || "").trim() !== f.agente) return false;
+      if (f.own && nomeOwn(x?.own) !== f.own) return false;
+      if (f.dal && r.arrivo < f.dal) return false;
+      if (f.al && r.arrivo > f.al) return false;
+      if (f.quando === "passate" && !(r.partenza <= oggi)) return false;
+      if (f.quando === "incorso" && !(r.arrivo <= oggi && r.partenza > oggi)) return false;
+      if (f.quando === "future" && !(r.arrivo > oggi)) return false;
+      if (f.minimo && (Number(r.totale_ospite) || 0) < Number(f.minimo)) return false;
       if (filtro === "avvisi" && !(r.avvisi || []).length) return false;
       if (filtro === "pronte" && (r.avvisi || []).length) return false;
       if (!q) return true;
-      const x = ana[r.id_room_type];
       return [r.ospite, r.cod_reservation, r.nome_kross, r.nome_proprieta, r.email, r.canale, String(r.id_reservation), nomeOwn(x?.own), x?.prop?.agente, x?.prop?.gestore_interno]
-        .some((x) => String(x || "").toLowerCase().includes(q));
+        .some((v) => String(v || "").toLowerCase().includes(q));
     });
-  }, [righe, cerca, mese, filtro, modello, ana]);
-  useEffect(() => { setLimite(100); setAperta(null); }, [cerca, mese, filtro, modello]);
+    const [campo, verso] = f.ordine.split("_");
+    const val = (r) => (campo === "arrivo" ? r.arrivo : campo === "importo" ? Number(r.totale_ospite) || 0 : campo === "notti" ? Number(r.notti) || 0 : String(r.ospite || "").toLowerCase());
+    out.sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * (verso === "desc" ? -1 : 1); });
+    return out;
+  }, [righe, cerca, mese, filtro, modello, ana, f]);
+  useEffect(() => { setLimite(100); setAperta(null); }, [cerca, mese, filtro, modello, f]);
+  useEffect(() => { setF(VUOTI); setMese(""); setFiltro("tutte"); setCerca(""); }, [modello]); // eslint-disable-line
 
   const tot = useMemo(() => filtrate.reduce((a, r) => ({
     ospite: a.ospite + (Number(r.totale_ospite) || 0),
@@ -213,7 +245,7 @@ function Prenotazioni({ modello }) {
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <div className="kpis">
-        <Kpi t="Prenotazioni" v={filtrate.length.toLocaleString("it-IT")} n={mese ? meseEsteso(mese) : "tutti i mesi"} />
+        <Kpi t="Prenotazioni" v={filtrate.length.toLocaleString("it-IT")} n={nFiltri ? `${nFiltri} filtri attivi` : "nessun filtro"} />
         <Kpi t="Pagato dagli ospiti" v={euro(tot.ospite)} />
         {sub ? <>
           <Kpi t="Commissioni OTA" v={euro(tot.ota)} />
@@ -232,6 +264,23 @@ function Prenotazioni({ modello }) {
           </select>
           <div className="seg" style={{ marginLeft: "auto" }}>
             {[["tutte", "Tutte"], ["avvisi", "Con avvisi"], ["pronte", "Pronte"]].map(([k, t]) => <button key={k} className={filtro === k ? "on" : ""} onClick={() => setFiltro(k)}>{t}</button>)}
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 10, padding: "12px 14px", borderBottom: "1px solid var(--line)", background: "#FAFAFB" }}>
+          {[["app", "Appartamento", "Tutti"], ["own", "Proprietario", "Tutti"], ["pm", "Property manager", "Tutti"], ["agente", "Agente", "Tutti"], ["canale", "Canale", "Tutti"]].map(([k, l, t]) => (
+            <Campo key={k} l={l}><select value={f[k]} onChange={(e) => sf(k, e.target.value)}><option value="">{t}</option>{scelte[k].map((v) => <option key={v} value={v}>{k === "canale" ? canale(v)[1] : v}</option>)}</select></Campo>
+          ))}
+          <Campo l="Soggiorno"><select value={f.quando} onChange={(e) => sf("quando", e.target.value)}><option value="">Tutti</option><option value="passate">Concluse</option><option value="incorso">In corso</option><option value="future">Future</option></select></Campo>
+          <Campo l="Arrivo dal"><input type="date" value={f.dal} onChange={(e) => sf("dal", e.target.value)} /></Campo>
+          <Campo l="Arrivo al"><input type="date" value={f.al} onChange={(e) => sf("al", e.target.value)} /></Campo>
+          <Campo l="Totale ospite almeno (€)"><input type="number" value={f.minimo} onChange={(e) => sf("minimo", e.target.value)} placeholder="qualsiasi" /></Campo>
+          <Campo l="Ordina per"><select value={f.ordine} onChange={(e) => sf("ordine", e.target.value)}>
+            <option value="arrivo_desc">Arrivo, più recenti</option><option value="arrivo_asc">Arrivo, meno recenti</option>
+            <option value="importo_desc">Importo, più alto</option><option value="importo_asc">Importo, più basso</option>
+            <option value="notti_desc">Notti, più lunghe</option><option value="ospite_asc">Ospite, A–Z</option></select></Campo>
+          <div style={{ display: "flex", alignItems: "flex-end" }}>
+            <button className="btn" disabled={!nFiltri} onClick={() => { setF(VUOTI); setMese(""); setFiltro("tutte"); setCerca(""); }} style={{ width: "100%", justifyContent: "center", height: 37 }}>
+              Azzera filtri{nFiltri ? ` (${nFiltri})` : ""}</button>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -725,20 +774,21 @@ const attivoNelMese = (c, m) => c.attivo !== false && (!c.dal || c.dal.slice(0, 
 const pct = (v) => (v == null || !isFinite(v) ? "—" : `${v.toFixed(1).replace(".", ",")}%`);
 
 async function caricaEconomia() {
-  const [pren, { app, team }, costi, compensi, conf] = await Promise.all([
+  const [pren, { app, team }, costi, compensi, conf, bollette] = await Promise.all([
     leggiTutto("v_fat_prenotazione", "?select=id_room_type,mese_rendiconto,totale_ospite,ota,prov_netta,quota_proprietario_lorda,tipo_gestione"),
     caricaAnagrafica(),
     leggi("fat_costi", "?select=*&order=categoria,voce"),
     leggi("fat_compensi", "?select=*&order=persona"),
     leggi("fat_config", "?select=chiave,valore"),
+    leggi("fat_bollette", "?select=*"),
   ]);
   const cfg = Object.fromEntries(conf.map((c) => [c.chiave, c.valore]));
-  return { pren, app, team, costi, compensi, ivaSub: Number(cfg.iva_sublocazione) || 0 };
+  return { pren, app, team, costi, compensi, bollette, ivaSub: Number(cfg.iva_sublocazione) || 0 };
 }
 
 function calcolaMargini(eco, periodo) {
   const mesi = mesiDi(periodo);
-  const { pren, app, costi, compensi, ivaSub } = eco;
+  const { pren, app, costi, compensi, bollette = [], ivaSub } = eco;
   const comp = Object.fromEntries(compensi.map((c) => [c.persona.toLowerCase(), c]));
   const pmDi = (a) => String(a.prop?.gestore_interno || "").trim();
   const seguiti = {};
@@ -769,6 +819,12 @@ function calcolaMargini(eco, periodo) {
       else if (k.id_room_type == null) v = (Number(k.importo_mensile) || 0) / nApp;
       if (v) perCat[k.categoria] = (perCat[k.categoria] || 0) + v;
     }));
+    bollette.forEach((b) => {
+      const ids = b.id_room_types || [];
+      if (!ids.includes(a.id_room_type)) return;
+      const v = mesi.reduce((s, m) => s + quotaBollettaNelMese(b, m), 0) / ids.length;
+      if (v) perCat.bollette = (perCat.bollette || 0) + v;
+    });
     const costiTot = Object.values(perCat).reduce((s, v) => s + v, 0);
     const margine = ricavo - costoPm - costoAg - costiTot;
     return {
@@ -810,6 +866,7 @@ function Margini({ modello }) {
   const sub = modello === "sublocazione";
   const mancaAg = righe.filter((r) => r.agPctMancante).length;
   const senzaCosti = righe.filter((r) => sub && !r.perCat.affitto).length;
+  const bolDaAss = sub ? (eco.bollette || []).filter((b) => !(b.id_room_types || []).length).length : 0;
   const Th = ({ k, children }) => <th className="num" style={{ cursor: "pointer", color: ordine === k ? "var(--ink)" : undefined }} onClick={() => setOrdine(k)}>{children}{ordine === k ? " ↓" : ""}</th>;
 
   return (
@@ -828,13 +885,14 @@ function Margini({ modello }) {
         <Kpi t="Netto OTA" v={euro(tot.netto)} n={`commissioni OTA ${euro(tot.ota)}`} />
         <Kpi t={sub ? "Ricavo (IVA esclusa)" : "Provvigioni Valente"} v={euro(tot.ricavo)} n={sub ? null : `al proprietario ${euro(tot.proprietario)}`} />
         <Kpi t="Property manager + agenti" v={euro((tot.costoPm || 0) + (tot.costoAg || 0))} n={`PM ${euro(tot.costoPm)} · agenti ${euro(tot.costoAg)}`} />
-        <Kpi t="Costi fissi" v={euro(tot.costiTot)} n={sub ? "affitti, bollette, quota gestionale…" : "bollette, quota gestionale…"} />
+        <Kpi t="Costi fissi" v={euro(tot.costiTot)} n={sub ? "affitti, bollette, quota gestionale…" : "quota gestionale e altri costi"} />
         <Kpi t="Resta a Valente Living" v={euro(tot.margine)} tono={tot.margine < 0 ? "warn" : "ok"} n={tot.ricavo > 0 ? `${pct((tot.margine / tot.ricavo) * 100)} del ricavo` : null} />
       </div>
 
-      {(mancaAg > 0 || senzaCosti > 0) && (
+      {(mancaAg > 0 || senzaCosti > 0 || bolDaAss > 0) && (
         <div className="note warn"><Ico n="warn" /><div>
           {mancaAg > 0 && <div>{mancaAg} appartamenti hanno un agente ma la sua quota è «da decidere»: il costo agente qui vale zero.</div>}
+          {bolDaAss > 0 && <div>{bolDaAss} bollette non sono assegnate a nessun appartamento: assegnale in «Costi e compensi».</div>}
           {senzaCosti > 0 && <div>{senzaCosti} sublocazioni non hanno l'affitto inserito: il margine è sovrastimato. Inseriscilo in «Costi e compensi».</div>}
         </div></div>
       )}
@@ -941,6 +999,119 @@ function DettaglioMargine({ r, periodo, chiudi }) {
   );
 }
 
+/* Bollette (solo sublocazioni): ogni bolletta copre un periodo e si divide in parti uguali sugli
+   appartamenti indicati; nei margini va nei mesi in proporzione ai giorni del periodo. */
+const TIPI_BOLLETTA = [["luce", "Luce"], ["gas", "Gas"], ["acqua", "Acqua"], ["internet", "Internet"], ["rifiuti", "Rifiuti"], ["altro", "Altro"]];
+const GG = 86400000;
+function quotaBollettaNelMese(b, m) {
+  const d0 = new Date(b.periodo_dal + "T00:00:00"), d1 = new Date(b.periodo_al + "T00:00:00");
+  const giorni = Math.round((d1 - d0) / GG) + 1;
+  const [y, mm] = m.split("-").map(Number);
+  const m0 = new Date(y, mm - 1, 1), m1 = new Date(y, mm, 0);
+  const a = d0 > m0 ? d0 : m0, z = d1 < m1 ? d1 : m1;
+  const sovr = z >= a ? Math.round((z - a) / GG) + 1 : 0;
+  return giorni > 0 ? (Number(b.importo) || 0) * sovr / giorni : 0;
+}
+
+function Bollette({ app, bollette, ricarica }) {
+  const [nuova, setNuova] = useState(null);
+  const [mod, setMod] = useState(null);
+  const [err, setErr] = useState("");
+  const nome = Object.fromEntries(app.map((a) => [a.id_room_type, a.nome_kross]));
+  const daAssegnare = bollette.filter((b) => !(b.id_room_types || []).length).length;
+
+  const salva = async (b) => {
+    const corpo = { fornitore: b.fornitore.trim(), tipo: b.tipo, numero: b.numero || null, emessa_il: b.emessa_il || null,
+      periodo_dal: b.periodo_dal, periodo_al: b.periodo_al, importo: Number(b.importo) || 0, indirizzo: b.indirizzo || null,
+      codice_utenza: b.codice_utenza || null, id_room_types: b.id_room_types || [], note: b.note || null };
+    if (!corpo.fornitore || !corpo.periodo_dal || !corpo.periodo_al) { setErr("Servono fornitore e periodo."); return; }
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/fat_bollette${b.id ? `?id=eq.${b.id}` : ""}`, {
+      method: b.id ? "PATCH" : "POST", headers: intest({ "Content-Type": "application/json", Prefer: "return=minimal" }), body: JSON.stringify(corpo),
+    });
+    if (r.ok) { setErr(""); setNuova(null); setMod(null); ricarica(); } else setErr("Salvataggio non riuscito.");
+  };
+  const elimina = async (b) => {
+    if (!window.confirm(`Eliminare la bolletta ${b.fornitore} ${b.numero || ""}?`)) return;
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/fat_bollette?id=eq.${b.id}`, { method: "DELETE", headers: intest() });
+    if (r.ok) ricarica(); else setErr("Eliminazione non riuscita.");
+  };
+  const vuota = { fornitore: "", tipo: "luce", numero: "", emessa_il: "", periodo_dal: "", periodo_al: "", importo: "", indirizzo: "", codice_utenza: "", id_room_types: [], note: "" };
+
+  return (
+    <div className="card" style={{ overflow: "hidden" }}>
+      <div className="sec" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h2>Bollette</h2>
+          <div className="sub">Quelle arrivate per email. Ogni bolletta si divide in parti uguali sugli appartamenti scelti e va nei mesi del suo periodo.</div>
+          {daAssegnare > 0 && <div className="hint" style={{ color: "var(--warn)" }}>{daAssegnare} bollette senza appartamento: non entrano nei margini finché non le assegni.</div>}
+        </div>
+        <button className="btn pri" onClick={() => { setMod(null); setNuova({ ...vuota }); }}>+ Aggiungi bolletta</button>
+      </div>
+      {err && <div className="sec"><div className="note warn"><Ico n="warn" />{err}</div></div>}
+      {nuova && <div className="sec" style={{ background: "#FAFAFB" }}><FormBolletta b={nuova} set={setNuova} app={app} salva={() => salva(nuova)} annulla={() => setNuova(null)} /></div>}
+      <div style={{ overflowX: "auto" }}>
+        <table>
+          <thead><tr><th>Fornitore</th><th>Periodo</th><th className="num">Importo</th><th>Appartamenti</th><th></th></tr></thead>
+          <tbody>
+            {bollette.map((b) => mod?.id === b.id ? (
+              <tr key={b.id} style={{ cursor: "default" }}><td colSpan={5} style={{ background: "#FAFAFB" }}><FormBolletta b={mod} set={setMod} app={app} salva={() => salva(mod)} annulla={() => setMod(null)} /></td></tr>
+            ) : (
+              <tr key={b.id} style={{ cursor: "default" }}>
+                <td><div style={{ fontWeight: 500 }}>{b.fornitore} <span className="pill">{(TIPI_BOLLETTA.find(([k]) => k === b.tipo) || [0, b.tipo])[1]}</span></div>
+                  <div className="muted">{[b.numero, b.indirizzo].filter(Boolean).join(" · ")}</div>
+                  {b.note && <div className="muted">{b.note}</div>}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{dataIt(b.periodo_dal)} → {dataIt(b.periodo_al)}</td>
+                <td className="num">{euro(b.importo)}</td>
+                <td>{(b.id_room_types || []).length ? (b.id_room_types || []).map((id) => <span key={id} className="pill" style={{ marginRight: 4, marginBottom: 3 }}>{nome[id] || `#${id}`}</span>) : <span className="pill warn">da assegnare</span>}</td>
+                <td className="num" style={{ whiteSpace: "nowrap" }}>
+                  <button className="btn" style={{ padding: "4px 10px" }} onClick={() => { setNuova(null); setMod({ ...vuota, ...b, numero: b.numero || "", emessa_il: b.emessa_il || "", indirizzo: b.indirizzo || "", codice_utenza: b.codice_utenza || "", note: b.note || "" }); }}>Modifica</button>{" "}
+                  <button className="btn" style={{ padding: "4px 10px", color: "var(--err)" }} onClick={() => elimina(b)}>Elimina</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!bollette.length && <Vuoto t="Nessuna bolletta." />}
+      </div>
+    </div>
+  );
+}
+
+function FormBolletta({ b, set, app, salva, annulla }) {
+  const s = (k, v) => set((x) => ({ ...x, [k]: v }));
+  const scelti = new Set(b.id_room_types || []);
+  const tocca = (id) => { const n = new Set(scelti); n.has(id) ? n.delete(id) : n.add(id); s("id_room_types", [...n]); };
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <div className="grid2">
+        <Campo l="Fornitore"><input value={b.fornitore} onChange={(e) => s("fornitore", e.target.value)} placeholder="es. Enel" /></Campo>
+        <Campo l="Tipo"><select value={b.tipo} onChange={(e) => s("tipo", e.target.value)}>{TIPI_BOLLETTA.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Campo>
+        <Campo l="Importo totale (€)"><input type="number" step="0.01" value={b.importo} onChange={(e) => s("importo", e.target.value)} /></Campo>
+        <Campo l="Periodo dal"><input type="date" value={b.periodo_dal} onChange={(e) => s("periodo_dal", e.target.value)} /></Campo>
+        <Campo l="Periodo al"><input type="date" value={b.periodo_al} onChange={(e) => s("periodo_al", e.target.value)} /></Campo>
+        <Campo l="Numero bolletta"><input value={b.numero} onChange={(e) => s("numero", e.target.value)} /></Campo>
+        <Campo l="Indirizzo fornitura"><input value={b.indirizzo} onChange={(e) => s("indirizzo", e.target.value)} /></Campo>
+        <Campo l="POD / PDR / codice cliente"><input value={b.codice_utenza} onChange={(e) => s("codice_utenza", e.target.value)} /></Campo>
+        <Campo l="Note"><input value={b.note} onChange={(e) => s("note", e.target.value)} /></Campo>
+      </div>
+      <div>
+        <label className="lab">Appartamenti su cui dividerla</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {app.map((a) => (
+            <label key={a.id_room_type} className={"pill" + (scelti.has(a.id_room_type) ? " acc" : "")} style={{ cursor: "pointer", padding: "5px 10px", gap: 6 }}>
+              <input type="checkbox" checked={scelti.has(a.id_room_type)} onChange={() => tocca(a.id_room_type)} style={{ width: 13, height: 13 }} />{a.nome_kross}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <button className="btn" onClick={annulla}>Annulla</button>
+        <button className="btn pri" onClick={salva}>Salva</button>
+      </div>
+    </div>
+  );
+}
+
 /* ───────────────────────────── Costi e compensi ───────────────────────────── */
 
 function Costi({ modello }) {
@@ -948,10 +1119,11 @@ function Costi({ modello }) {
   const [nuovo, setNuovo] = useState(null);
   const [msg, setMsg] = useState("");
   const carica = useCallback(async () => {
-    const [costi, compensi, { app, team }] = await Promise.all([
+    const [costi, compensi, { app, team }, bollette] = await Promise.all([
       leggi("fat_costi", "?select=*&order=categoria,voce"), leggi("fat_compensi", "?select=*&order=persona"), caricaAnagrafica(),
+      leggi("fat_bollette", "?select=*&order=periodo_dal.desc"),
     ]);
-    setDati({ costi, compensi, app, team });
+    setDati({ costi, compensi, app, team, bollette });
   }, []);
   useEffect(() => { carica(); }, [carica]);
   if (!dati) return <Vuoto t="Carico i costi…" />;
@@ -992,10 +1164,12 @@ function Costi({ modello }) {
     <div style={{ display: "grid", gap: 16, maxWidth: 1180 }}>
       {msg && <div className="note warn"><Ico n="warn" />{msg}</div>}
 
+      {modello === "sublocazione" && <Bollette app={appModello} bollette={dati.bollette} ricarica={carica} />}
+
       <div className="card" style={{ overflow: "hidden" }}>
         <div className="sec" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <div><h2>Costi dei singoli appartamenti</h2><div className="sub">{modello === "sublocazione" ? "Affitto al proprietario, bollette, pulizie, manutenzione…" : "Bollette o altri costi che restano a carico di Valente."}</div></div>
-          <button className="btn pri" onClick={() => setNuovo({ id_room_type: appModello[0]?.id_room_type ?? "", voce: "", categoria: modello === "sublocazione" ? "affitto" : "bollette", importo_mensile: "", dal: "", al: "", note: "" })}>+ Aggiungi costo</button>
+          <div><h2>Costi dei singoli appartamenti</h2><div className="sub">{modello === "sublocazione" ? "Affitto al proprietario, pulizie, manutenzione… (le bollette stanno sopra)." : "Eventuali costi che restano a carico di Valente."}</div></div>
+          <button className="btn pri" onClick={() => setNuovo({ id_room_type: appModello[0]?.id_room_type ?? "", voce: "", categoria: modello === "sublocazione" ? "affitto" : "altro", importo_mensile: "", dal: "", al: "", note: "" })}>+ Aggiungi costo</button>
         </div>
         {nuovo && nuovo.id_room_type !== null && (
           <div className="sec" style={{ background: "#FAFAFB" }}>
