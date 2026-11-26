@@ -146,6 +146,7 @@ const ICONE = {
   warn: "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z",
   check: "M20 6 9 17l-5-5",
   chart: "M3 3v18h18M7 15l4-4 3 3 5-6",
+  user: "M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z",
   euro: "M18 7a7 7 0 1 0 0 10M4 10h9M4 14h9",
 };
 const Ico = ({ n, s = 16 }) => (
@@ -408,6 +409,163 @@ function DettaglioPrenotazione({ r, a, chiudi }) {
   );
 }
 
+/* ───────────────────────────── Aggiungi / collega appartamenti ─────────────────────────────
+   Un appartamento nasce nel CRM come "proprietà" (con proprietario, PM, agente). Quando esiste anche
+   su Kross si collega: da lì arrivano le prenotazioni e si impostano i criteri di fatturazione. */
+
+async function inserisci(tabella, corpo) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${tabella}`, {
+    method: "POST", headers: intest({ "Content-Type": "application/json", Prefer: "return=representation" }), body: JSON.stringify(corpo),
+  });
+  const d = await r.json().catch(() => null);
+  return r.ok && Array.isArray(d) ? d[0] : null;
+}
+async function collegaKross(idRoom, proprietaId, modello, commissione) {
+  const ok = await aggiorna("kross_appartamenti", `id_room_type=eq.${idRoom}`, { proprieta_id: proprietaId });
+  if (!ok) return false;
+  const corpo = { id_room_type: Number(idRoom), modello, aggiornato_il: new Date().toISOString() };
+  if (commissione !== "" && commissione != null) corpo.commissione = Number(commissione);
+  return inserisciOAggiorna("fat_regole", corpo, "id_room_type");
+}
+
+function NuovoAppartamento({ modello, team, owners, krossLiberi, chiudi, creato }) {
+  const [d, setD] = useState({ nome: "", indirizzo: "", citta: "", provincia: "", modello, stato: "da avviare", commissione: modello === "sublocazione" ? "0" : "",
+    ownSel: "", ownNome: "", ownCognome: "", ownCf: "", ownEmail: "", ownTel: "", gestore: "", agente: "", kross: "" });
+  const [err, setErr] = useState(""); const [lav, setLav] = useState(false);
+  const s = (k, v) => setD((x) => ({ ...x, [k]: v }));
+  const nuovoOwn = d.ownSel === "__nuovo";
+
+  const scegliKross = (id) => {
+    s("kross", id);
+    const k = krossLiberi.find((x) => String(x.id_room_type) === String(id));
+    if (k) setD((x) => ({ ...x, kross: id, nome: x.nome || k.nome_kross.trim(), indirizzo: x.indirizzo || k.indirizzo || "", citta: x.citta || k.citta || "", provincia: x.provincia || k.provincia || "" }));
+  };
+
+  const salva = async () => {
+    if (!d.nome.trim()) { setErr("Scrivi il nome dell'appartamento."); return; }
+    if (nuovoOwn && !d.ownNome.trim() && !d.ownCognome.trim()) { setErr("Scrivi almeno nome o cognome del proprietario."); return; }
+    setLav(true); setErr("");
+    let proprietarioId = d.ownSel && !nuovoOwn ? d.ownSel : null;
+    if (nuovoOwn) {
+      const o = await inserisci("proprietari", { nome: d.ownNome.trim() || null, cognome: d.ownCognome.trim() || null, codice_fiscale: d.ownCf.trim() || null,
+        email: d.ownEmail.trim() || null, telefono: d.ownTel.trim() || null });
+      if (!o) { setErr("Non sono riuscito a creare il proprietario."); setLav(false); return; }
+      proprietarioId = o.id;
+    }
+    const p = await inserisci("proprieta", { nome: d.nome.trim(), indirizzo: d.indirizzo.trim() || null, citta: d.citta.trim() || null, provincia: d.provincia.trim() || null,
+      tipo_contratto: d.modello, stato: d.stato, commissione: d.commissione === "" ? null : Number(d.commissione), proprietario_id: proprietarioId,
+      gestore_interno: d.gestore || null, agente: d.agente || null, nome_kross: d.kross ? (krossLiberi.find((k) => String(k.id_room_type) === String(d.kross))?.nome_kross || null) : null });
+    if (!p) { setErr("Non sono riuscito a creare l'appartamento."); setLav(false); return; }
+    if (d.kross && !(await collegaKross(d.kross, p.id, d.modello, d.commissione))) { setErr("Appartamento creato, ma il collegamento a Kross non è riuscito: riprova dalla sua scheda."); setLav(false); creato(); return; }
+    setLav(false); creato(d.kross ? `k${d.kross}` : `p${p.id}`);
+  };
+
+  return (
+    <>
+      <div className="drawer-bg" onClick={chiudi} />
+      <aside className="drawer" style={{ width: "min(640px,100vw)" }}>
+        <div style={{ padding: "20px 22px", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", gap: 12 }}>
+          <div><h2 style={{ fontSize: 18 }}>Nuovo appartamento</h2><div className="sub">Si crea anche nel CRM, tra le Proprietà.</div></div>
+          <button className="btn" onClick={chiudi} aria-label="Chiudi" style={{ padding: 7, height: 34 }}><Ico n="x" /></button>
+        </div>
+        <div style={{ overflow: "auto", flex: 1 }}>
+          <div className="sec">
+            <h2 style={{ marginBottom: 12 }}>Kross</h2>
+            <Campo l="È già su Kross?" h={krossLiberi.length ? "Qui compaiono solo gli appartamenti di Kross non ancora collegati." : "Tutti gli appartamenti di Kross sono già collegati."}>
+              <select value={d.kross} onChange={(e) => scegliKross(e.target.value)}>
+                <option value="">No, non ancora</option>
+                {krossLiberi.map((k) => <option key={k.id_room_type} value={k.id_room_type}>Sì: {k.nome_kross.trim()}{k.citta ? ` · ${k.citta}` : ""}</option>)}
+              </select>
+            </Campo>
+          </div>
+          <div className="sec">
+            <h2 style={{ marginBottom: 12 }}>Appartamento</h2>
+            <div className="grid2">
+              <Campo l="Nome"><input value={d.nome} onChange={(e) => s("nome", e.target.value)} placeholder="es. Lucca Via Fillungo" /></Campo>
+              <Campo l="Modello"><select value={d.modello} onChange={(e) => s("modello", e.target.value)}><option value="gestione">Gestione per conto terzi</option><option value="sublocazione">Sublocazione</option></select></Campo>
+              <Campo l="Indirizzo"><input value={d.indirizzo} onChange={(e) => s("indirizzo", e.target.value)} /></Campo>
+              <Campo l="Città"><input value={d.citta} onChange={(e) => s("citta", e.target.value)} /></Campo>
+              <Campo l="Provincia"><input value={d.provincia} onChange={(e) => s("provincia", e.target.value)} placeholder="es. LU" /></Campo>
+              <Campo l="Stato"><select value={d.stato} onChange={(e) => s("stato", e.target.value)}>{["da avviare", "mandato firmato", "in lancio", "attivo"].map((x) => <option key={x} value={x}>{x}</option>)}</select></Campo>
+              {d.modello !== "sublocazione" && <Campo l="Commissione (%)"><input type="number" step="0.01" value={d.commissione} onChange={(e) => s("commissione", e.target.value)} placeholder="es. 20" /></Campo>}
+            </div>
+          </div>
+          <div className="sec">
+            <h2 style={{ marginBottom: 12 }}>{d.modello === "sublocazione" ? "Proprietario (locatore)" : "Proprietario"}</h2>
+            <Campo l="Proprietario">
+              <select value={d.ownSel} onChange={(e) => s("ownSel", e.target.value)}>
+                <option value="">Da indicare dopo</option>
+                <option value="__nuovo">+ Nuovo proprietario</option>
+                {owners.map((o) => <option key={o.id} value={o.id}>{nomeOwn(o) || "(senza nome)"}{o.citta ? ` · ${o.citta}` : ""}</option>)}
+              </select>
+            </Campo>
+            {nuovoOwn && (
+              <div className="grid2" style={{ marginTop: 12 }}>
+                <Campo l="Nome"><input value={d.ownNome} onChange={(e) => s("ownNome", e.target.value)} /></Campo>
+                <Campo l="Cognome"><input value={d.ownCognome} onChange={(e) => s("ownCognome", e.target.value)} /></Campo>
+                <Campo l="Codice fiscale / P.IVA"><input value={d.ownCf} onChange={(e) => s("ownCf", e.target.value)} /></Campo>
+                <Campo l="Email"><input value={d.ownEmail} onChange={(e) => s("ownEmail", e.target.value)} /></Campo>
+                <Campo l="Telefono"><input value={d.ownTel} onChange={(e) => s("ownTel", e.target.value)} /></Campo>
+              </div>
+            )}
+          </div>
+          <div className="sec">
+            <h2 style={{ marginBottom: 12 }}>Chi lo segue</h2>
+            <div className="grid2">
+              <Campo l="Property manager"><SceltaPersona v={d.gestore} onChange={(v) => s("gestore", v || "")} team={team} ph="Nessuno" /></Campo>
+              <Campo l="Agente"><SceltaPersona v={d.agente} onChange={(v) => s("agente", v || "")} team={team} ph="Nessun agente" /></Campo>
+            </div>
+          </div>
+        </div>
+        <div style={{ padding: "14px 22px", borderTop: "1px solid var(--line)", display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end" }}>
+          {err && <span style={{ color: "var(--err)", fontSize: 12.5, marginRight: "auto" }}>{err}</span>}
+          <button className="btn" onClick={chiudi}>Annulla</button>
+          <button className="btn pri" onClick={salva} disabled={lav}>{lav ? "Creo…" : "Crea appartamento"}</button>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+/* Scheda di un appartamento che esiste nel CRM ma non ancora su Kross. */
+function SchedaSoloCrm({ a, krossLiberi, salvato }) {
+  const [k, setK] = useState(""); const [msg, setMsg] = useState(null);
+  const collega = async () => {
+    const ok = await collegaKross(k, a.prop.id, a.prop.tipo_contratto || "gestione", a.prop.commissione);
+    setMsg(ok ? ["ok", "Collegato a Kross."] : ["err", "Collegamento non riuscito."]);
+    if (ok) salvato(`k${k}`);
+  };
+  return (
+    <div className="card" style={{ overflow: "hidden" }}>
+      <div style={{ padding: "18px 22px", borderBottom: "1px solid var(--line)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}><h2 style={{ fontSize: 17 }}>{a.prop.nome}</h2><span className="pill">Non ancora su Kross</span></div>
+        <div className="sub">{[a.prop.indirizzo, a.prop.citta].filter(Boolean).join(", ") || "Indirizzo non inserito"} · {a.prop.stato || "—"}</div>
+      </div>
+      <div className="sec">
+        <h2 style={{ marginBottom: 6 }}>Persone</h2>
+        <div className="row"><span>Proprietario</span><span>{nomeOwn(a.own) || "—"}</span></div>
+        <div className="row"><span>Property manager</span><span>{a.prop.gestore_interno || "—"}</span></div>
+        <div className="row"><span>Agente</span><span>{a.prop.agente || "—"}</span></div>
+        <div className="row"><span>Commissione</span><span>{a.prop.commissione != null ? `${a.prop.commissione}%` : "—"}</span></div>
+      </div>
+      <div className="sec">
+        <h2 style={{ marginBottom: 4 }}>Collega a Kross</h2>
+        <div className="sub" style={{ marginBottom: 12 }}>Quando l'appartamento è stato creato su Kross, collegalo qui: arrivano le prenotazioni e si impostano i criteri di fatturazione.</div>
+        {krossLiberi.length ? (
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <select value={k} onChange={(e) => setK(e.target.value)} style={{ flex: "1 1 260px" }}>
+              <option value="">Scegli l'appartamento di Kross…</option>
+              {krossLiberi.map((x) => <option key={x.id_room_type} value={x.id_room_type}>{x.nome_kross.trim()}{x.citta ? ` · ${x.citta}` : ""}</option>)}
+            </select>
+            <button className="btn pri" disabled={!k} onClick={collega}>Collega</button>
+          </div>
+        ) : <div className="muted">Su Kross non ci sono appartamenti liberi da collegare: prima va creato lì.</div>}
+        {msg && <div className="hint" style={{ color: msg[0] === "ok" ? "var(--ok)" : "var(--err)" }}>{msg[1]}</div>}
+      </div>
+    </div>
+  );
+}
+
 /* ───────────────────────────── Appartamenti (criteri) ───────────────────────────── */
 
 /* Anagrafica: appartamenti Kross + proprietà CRM (agente, property manager) + proprietario + regola. */
@@ -415,7 +573,7 @@ async function caricaAnagrafica() {
   const [k, r, pr, ow, co] = await Promise.all([
     leggi("kross_appartamenti", "?select=id_room_type,nome_kross,citta,provincia,indirizzo,cin,tipo_gestione,proprieta_id&order=nome_kross"),
     leggi("fat_regole", "?select=*"),
-    leggi("proprieta", "?select=id,nome,agente,gestore_interno,proprietario_id"),
+    leggi("proprieta", "?select=id,nome,agente,gestore_interno,proprietario_id,indirizzo,citta,stato,tipo_contratto,commissione&order=nome"),
     leggi("proprietari", "?select=id,nome,cognome,codice_fiscale,email,telefono,pec,indirizzo,citta"),
     leggi("collaboratori", "?select=nome,ruolo,attivo&order=nome"),
   ]);
@@ -427,7 +585,12 @@ async function caricaAnagrafica() {
     return { ...a, regola: reg[a.id_room_type] || null, prop: p, own: p ? own[p.proprietario_id] || null : null };
   });
   const team = co.filter((c) => c.attivo !== false).map((c) => ({ nome: String(c.nome || "").trim(), ruolo: c.ruolo || "" })).filter((c) => c.nome);
-  return { app, team };
+  const collegate = new Set(k.map((a) => a.proprieta_id).filter(Boolean));
+  /* Appartamenti del CRM non ancora su Kross (esclusi quelli chiusi o solo in trattativa). */
+  const soloCrm = pr.filter((p) => !collegate.has(p.id) && !["inattivo", "in trattativa"].includes(String(p.stato || "").toLowerCase()))
+    .map((p) => ({ soloCrm: true, id_room_type: null, nome_kross: p.nome, citta: p.citta, indirizzo: p.indirizzo, tipo_gestione: p.tipo_contratto || "gestione", prop: p, own: own[p.proprietario_id] || null, regola: null }));
+  const krossLiberi = k.filter((a) => !a.proprieta_id || !prop[a.proprieta_id]);
+  return { app, team, soloCrm, krossLiberi, owners: ow };
 }
 const nomeOwn = (o) => (o ? [o.nome, o.cognome].filter(Boolean).join(" ") : "");
 
@@ -446,34 +609,39 @@ function Appartamenti({ modello }) {
   const [filtro, setFiltro] = useState("tutti");
   const [sel, setSel] = useState(null);
   const [team, setTeam] = useState([]);
+  const [extra, setExtra] = useState({ soloCrm: [], krossLiberi: [], owners: [] });
+  const [nuovo, setNuovo] = useState(false);
 
-  const carica = useCallback(async () => {
-    const { app: lista, team: t } = await caricaAnagrafica();
-    setApp(lista); setTeam(t);
+  const carica = useCallback(async (selezione) => {
+    const { app: lista, team: t, soloCrm, krossLiberi, owners } = await caricaAnagrafica();
+    setApp(lista); setTeam(t); setExtra({ soloCrm, krossLiberi, owners });
+    if (typeof selezione === "string") setSel(selezione);
     return lista;
   }, []);
+  const chiave = (a) => (a.soloCrm ? `p${a.prop.id}` : `k${a.id_room_type}`);
   useEffect(() => { carica(); }, [carica]);
 
   const elenco = useMemo(() => {
     const q = cerca.trim().toLowerCase();
-    return (app || []).filter((a) => {
+    return [...(app || []), ...extra.soloCrm].filter((a) => {
       const r = a.regola || DEFAULT_REGOLA;
+      if (a.soloCrm && filtro !== "tutti") return false;
       if ((a.regola?.modello || a.tipo_gestione || "gestione") !== modello) return false;
       if (filtro === "attivi" && !r.attiva_fatturazione) return false;
       if (filtro === "daconf" && r.confermata) return false;
       return !q || [a.nome_kross, a.citta, a.indirizzo, nomeOwn(a.own), a.prop?.agente, a.prop?.gestore_interno].some((x) => String(x || "").toLowerCase().includes(q));
     });
-  }, [app, cerca, filtro, modello]);
+  }, [app, extra, cerca, filtro, modello]);
 
   const conti = useMemo(() => {
     const r = (app || []).filter((a) => (a.regola?.modello || a.tipo_gestione || "gestione") === modello).map((a) => a.regola || DEFAULT_REGOLA);
     return { tot: r.length, conf: r.filter((x) => x.confermata).length, att: r.filter((x) => x.attiva_fatturazione).length,
       aperti: r.filter((x) => x.sostituto_imposta === null || x.chi_fattura_ospite === null).length };
   }, [app, modello]);
-  useEffect(() => { if (elenco.length && !elenco.some((a) => a.id_room_type === sel)) setSel(elenco[0].id_room_type); }, [elenco, sel]);
+  useEffect(() => { if (elenco.length && !elenco.some((a) => chiave(a) === sel)) setSel(chiave(elenco[0])); }, [elenco, sel]);
 
   if (!app) return <Vuoto t="Carico gli appartamenti da Kross…" />;
-  const scelto = elenco.find((a) => a.id_room_type === sel);
+  const scelto = elenco.find((a) => chiave(a) === sel);
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -486,16 +654,19 @@ function Appartamenti({ modello }) {
       <div className="split">
         <div className="card" style={{ overflow: "hidden" }}>
           <div style={{ padding: 12, borderBottom: "1px solid var(--line)", display: "grid", gap: 10 }}>
-            <Cerca v={cerca} set={setCerca} ph="Cerca appartamento, città, proprietario…" w={400} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <Cerca v={cerca} set={setCerca} ph="Cerca appartamento, città, proprietario…" w={400} />
+              <button className="btn pri" onClick={() => setNuovo(true)} title="Aggiungi appartamento" style={{ whiteSpace: "nowrap" }}>+ Aggiungi</button>
+            </div>
             <div className="seg">
               {[["tutti", "Tutti"], ["daconf", "Da confermare"], ["attivi", "Attivi"]].map(([k, t]) => <button key={k} className={filtro === k ? "on" : ""} onClick={() => setFiltro(k)}>{t}</button>)}
             </div>
           </div>
           <div className="alist">
             {elenco.map((a) => {
-              const [tono, eti] = statoRegola(a.regola || DEFAULT_REGOLA);
+              const [tono, eti] = a.soloCrm ? ["", "Non su Kross"] : !a.prop ? ["err", "Da collegare"] : statoRegola(a.regola || DEFAULT_REGOLA);
               return (
-                <div key={a.id_room_type} className={"aitem" + (sel === a.id_room_type ? " on" : "")} onClick={() => setSel(a.id_room_type)}>
+                <div key={chiave(a)} className={"aitem" + (sel === chiave(a) ? " on" : "")} onClick={() => setSel(chiave(a))}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.nome_kross}</div>
                     <div className="muted" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{[a.citta, nomeOwn(a.own)].filter(Boolean).join(" · ") || "—"}</div>
@@ -507,7 +678,10 @@ function Appartamenti({ modello }) {
             {elenco.length === 0 && <Vuoto t="Nessun appartamento." />}
           </div>
         </div>
-        {scelto ? <SchedaRegola key={scelto.id_room_type} a={scelto} team={team} salvato={carica} /> : <div className="card"><Vuoto t="Scegli un appartamento dall'elenco." /></div>}
+        {!scelto ? <div className="card"><Vuoto t="Scegli un appartamento dall'elenco." /></div>
+          : scelto.soloCrm ? <SchedaSoloCrm key={chiave(scelto)} a={scelto} krossLiberi={extra.krossLiberi} salvato={carica} />
+          : <SchedaRegola key={chiave(scelto)} a={scelto} team={team} salvato={carica} proprietaLibere={extra.soloCrm} />}
+      {nuovo && <NuovoAppartamento modello={modello} team={team} owners={extra.owners} krossLiberi={extra.krossLiberi} chiudi={() => setNuovo(false)} creato={(k) => { setNuovo(false); carica(k); }} />}
       </div>
     </div>
   );
@@ -530,7 +704,8 @@ function SceltaPersona({ v, onChange, team, ph }) {
   );
 }
 
-function SchedaRegola({ a, team, salvato }) {
+function SchedaRegola({ a, team, salvato, proprietaLibere = [] }) {
+  const [propSel, setPropSel] = useState("");
   const iniziale = useMemo(() => ({ ...DEFAULT_REGOLA, ...(a.regola || {}), id_room_type: a.id_room_type }), [a]);
   const [b, setB] = useState(iniziale);
   const persIniz = useMemo(() => ({ agente: a.prop?.agente || null, gestore_interno: a.prop?.gestore_interno || null }), [a]);
@@ -578,7 +753,22 @@ function SchedaRegola({ a, team, salvato }) {
         <h2 style={{ marginBottom: 4 }}>{sub ? "Proprietario (locatore)" : "Proprietario"}</h2>
         <div className="sub" style={{ marginBottom: 14 }}>{sub ? "Chi ci affitta l'immobile." : "Intestatario della fattura delle provvigioni e destinatario del rendiconto."}</div>
         {!a.prop ? (
-          <div className="note warn"><Ico n="warn" />Questo appartamento di Kross non è collegato a nessuna proprietà del CRM: niente proprietario, agente né property manager. Va collegato nel CRM, sezione Proprietà.</div>
+          <div style={{ display: "grid", gap: 10 }}>
+            <div className="note warn"><Ico n="warn" />Questo appartamento di Kross non è collegato a nessuna proprietà del CRM: niente proprietario, agente né property manager.</div>
+            {proprietaLibere.length > 0 && (
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <select value={propSel} onChange={(e) => setPropSel(e.target.value)} style={{ flex: "1 1 260px" }}>
+                  <option value="">Collega a una proprietà del CRM…</option>
+                  {proprietaLibere.map((x) => <option key={x.prop.id} value={x.prop.id}>{x.prop.nome}{nomeOwn(x.own) ? ` · ${nomeOwn(x.own)}` : ""}</option>)}
+                </select>
+                <button className="btn pri" disabled={!propSel} onClick={async () => {
+                  const ok = await aggiorna("kross_appartamenti", `id_room_type=eq.${a.id_room_type}`, { proprieta_id: propSel });
+                  setMsg(ok ? ["ok", "Collegato"] : ["err", "Collegamento non riuscito."]); if (ok) salvato(`k${a.id_room_type}`);
+                }}>Collega</button>
+              </div>
+            )}
+            <div className="hint">Se non è nell'elenco, crealo con «+ Aggiungi» e scegli questo appartamento di Kross.</div>
+          </div>
         ) : !a.own ? (
           <div className="note warn"><Ico n="warn" />La proprietà «{a.prop.nome}» non ha un proprietario collegato nel CRM.</div>
         ) : (
@@ -1267,9 +1457,131 @@ function RigaCompenso({ persona, c, n, salva }) {
   );
 }
 
+/* ───────────────────────────── Agenti: quali appartamenti ha portato ognuno ─────────────────────────────
+   L'agente di un appartamento sta in proprieta.agente (uno solo per appartamento); la sua quota
+   in fat_regole.agente_pct, % sulla provvigione di Valente senza IVA (20% per i mandati attuali). */
+
+function Agenti() {
+  const [dati, setDati] = useState(null);
+  const [sel, setSel] = useState("");
+  const [cerca, setCerca] = useState("");
+  const [lav, setLav] = useState(null);
+  const [msg, setMsg] = useState("");
+  const anno = String(new Date().getFullYear());
+
+  const carica = useCallback(async () => {
+    const [{ app, team, soloCrm }, pren] = await Promise.all([
+      caricaAnagrafica(),
+      leggiTutto("v_fat_prenotazione", `?select=id_room_type,mese_rendiconto,prov_netta&mese_rendiconto=like.${anno}-*`),
+    ]);
+    setDati({ app, team, soloCrm, pren });
+  }, [anno]);
+  useEffect(() => { carica(); }, [carica]);
+
+  const agenti = useMemo(() => {
+    if (!dati) return [];
+    const nomi = new Map();
+    dati.team.filter((t) => /agent/i.test(t.ruolo)).forEach((t) => nomi.set(t.nome.toLowerCase(), t.nome));
+    [...dati.app, ...dati.soloCrm].forEach((a) => { const n = String(a.prop?.agente || "").trim(); if (n && !nomi.has(n.toLowerCase())) nomi.set(n.toLowerCase(), n); });
+    return [...nomi.values()].sort((a, b) => a.localeCompare(b, "it")).map((nome) => {
+      const mie = [...dati.app, ...dati.soloCrm].filter((a) => String(a.prop?.agente || "").trim().toLowerCase() === nome.toLowerCase());
+      const maturato = mie.filter((a) => a.id_room_type != null).reduce((s, a) => {
+        const pct = Number(a.regola?.agente_pct) || 0;
+        const prov = dati.pren.filter((p) => p.id_room_type === a.id_room_type).reduce((x, p) => x + (Number(p.prov_netta) || 0), 0);
+        return s + prov * pct / 100;
+      }, 0);
+      return { nome, n: mie.length, maturato, nelTeam: dati.team.some((t) => t.nome.toLowerCase() === nome.toLowerCase()) };
+    });
+  }, [dati]);
+  useEffect(() => { if (!sel && agenti.length) setSel(agenti[0].nome); }, [agenti, sel]);
+
+  if (!dati) return <Vuoto t="Carico gli agenti…" />;
+  const tutti = [...dati.app, ...dati.soloCrm].sort((a, b) => String(a.nome_kross).localeCompare(String(b.nome_kross), "it"));
+  const q = cerca.trim().toLowerCase();
+  const lista = tutti.filter((a) => !q || [a.nome_kross, a.citta, nomeOwn(a.own), a.prop?.agente].some((x) => String(x || "").toLowerCase().includes(q)));
+  const suo = (a) => String(a.prop?.agente || "").trim().toLowerCase() === sel.toLowerCase();
+  const chiave = (a) => (a.soloCrm ? `p${a.prop.id}` : `k${a.id_room_type}`);
+
+  const spunta = async (a) => {
+    if (!a.prop) return;
+    const togli = suo(a);
+    const altro = String(a.prop.agente || "").trim();
+    if (!togli && altro && !window.confirm(`«${a.nome_kross.trim()}» oggi è di ${altro}. Lo passo a ${sel}?`)) return;
+    setLav(chiave(a)); setMsg("");
+    let ok = await aggiorna("proprieta", `id=eq.${a.prop.id}`, { agente: togli ? null : sel });
+    const gestione = (a.regola?.modello || a.tipo_gestione || "gestione") === "gestione";
+    if (ok && a.id_room_type != null && gestione) {
+      const pct = togli ? null : a.regola?.agente_pct > 0 ? a.regola.agente_pct : 20;
+      ok = await inserisciOAggiorna("fat_regole", { id_room_type: a.id_room_type, agente_pct: pct, aggiornato_il: new Date().toISOString() }, "id_room_type");
+    }
+    if (!ok) setMsg("Salvataggio non riuscito.");
+    await carica(); setLav(null);
+  };
+  const cambiaPct = async (a, v) => {
+    const ok = await inserisciOAggiorna("fat_regole", { id_room_type: a.id_room_type, agente_pct: v === "" ? null : Number(v), aggiornato_il: new Date().toISOString() }, "id_room_type");
+    if (!ok) setMsg("Salvataggio non riuscito."); else carica();
+  };
+  const ag = agenti.find((x) => x.nome === sel);
+
+  return (
+    <div className="split">
+      <div className="card" style={{ overflow: "hidden" }}>
+        <div className="sec" style={{ padding: "14px 16px" }}><h2>Agenti</h2><div className="sub">Provvigione maturata nel {anno} (sulla nostra provvigione, IVA esclusa).</div></div>
+        <div className="alist" style={{ minHeight: 0 }}>
+          {agenti.map((x) => (
+            <div key={x.nome} className={"aitem" + (sel === x.nome ? " on" : "")} onClick={() => setSel(x.nome)}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 500 }}>{x.nome}</div>
+                <div className="muted">{x.n} appartamenti{!x.nelTeam ? " · non è nel team" : ""}</div>
+              </div>
+              <span className="num" style={{ fontWeight: 600, fontSize: 13 }}>{euro(x.maturato)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="card" style={{ overflow: "hidden" }}>
+        <div className="sec" style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div>
+            <h2 style={{ fontSize: 17 }}>{sel || "—"}</h2>
+            <div className="sub">Spunta gli appartamenti che ha portato. La quota parte dal 20% e si cambia sulla riga.</div>
+            {ag && !ag.nelTeam && <div className="hint" style={{ color: "var(--warn)" }}>Questo nome non corrisponde a nessun collaboratore del CRM: conviene spostare i suoi appartamenti sul nome giusto.</div>}
+          </div>
+          <Cerca v={cerca} set={setCerca} ph="Cerca appartamento…" w={280} />
+        </div>
+        {msg && <div className="sec"><div className="note warn"><Ico n="warn" />{msg}</div></div>}
+        <div style={{ maxHeight: "calc(100vh - 300px)", overflow: "auto" }}>
+          <table>
+            <thead><tr><th style={{ width: 40 }}></th><th>Appartamento</th><th>Modello</th><th>Oggi è di</th><th className="num">Quota</th></tr></thead>
+            <tbody>
+              {lista.map((a) => {
+                const mio = suo(a), gest = (a.regola?.modello || a.tipo_gestione || "gestione") === "gestione";
+                const altro = String(a.prop?.agente || "").trim();
+                return (
+                  <tr key={chiave(a)} style={{ cursor: a.prop ? "pointer" : "default", opacity: lav === chiave(a) ? 0.5 : 1 }} className={mio ? "sel" : ""} onClick={() => spunta(a)}>
+                    <td><input type="checkbox" checked={mio} disabled={!a.prop} readOnly /></td>
+                    <td><div style={{ fontWeight: 500 }}>{a.nome_kross.trim()}</div><div className="muted">{[a.citta, nomeOwn(a.own), a.soloCrm && "non ancora su Kross", !a.prop && "da collegare a una proprietà"].filter(Boolean).join(" · ")}</div></td>
+                    <td><span className="pill">{gest ? "Gestione" : "Sublocazione"}</span></td>
+                    <td className="muted">{altro && !mio ? altro : mio ? "—" : "nessuno"}</td>
+                    <td className="num" onClick={(e) => e.stopPropagation()}>
+                      {mio && gest && a.id_room_type != null
+                        ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><input type="number" step="0.5" defaultValue={a.regola?.agente_pct ?? ""} onBlur={(e) => e.target.value !== String(a.regola?.agente_pct ?? "") && cambiaPct(a, e.target.value)} style={{ width: 70, padding: "5px 8px", textAlign: "right" }} />%</span>
+                        : <span className="muted">{mio && !gest ? "—" : ""}</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ───────────────────────────── Pagina ───────────────────────────── */
 
-const TABS = [["prenotazioni", "Prenotazioni", "list"], ["margini", "Margini", "chart"], ["planner", "Planner", "cal"], ["appartamenti", "Appartamenti e criteri", "home"], ["costi", "Costi e compensi", "euro"], ["impostazioni", "Impostazioni", "gear"]];
+const TABS = [["prenotazioni", "Prenotazioni", "list"], ["margini", "Margini", "chart"], ["planner", "Planner", "cal"], ["appartamenti", "Appartamenti e criteri", "home"], ["agenti", "Agenti", "user"], ["costi", "Costi e compensi", "euro"], ["impostazioni", "Impostazioni", "gear"]];
 
 export default function Fatturazione() {
   const [tab, setTab] = useState("prenotazioni");
@@ -1334,6 +1646,7 @@ export default function Fatturazione() {
       {tab === "appartamenti" && <Appartamenti modello={modello} />}
       {tab === "margini" && <Margini modello={modello} />}
       {tab === "costi" && <Costi modello={modello} />}
+      {tab === "agenti" && <Agenti />}
       {tab === "impostazioni" && <Impostazioni stato={stato} sincronizza={sincronizza} lavoro={lavoro} esitoSync={esitoSync} />}
     </div>
   );
